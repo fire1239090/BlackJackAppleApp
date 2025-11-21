@@ -328,26 +328,35 @@ class BlackjackSimulator {
                 return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: false)
             }
         default:
-            var stood = false
-            var currentAction = action
-            while true {
-                switch currentAction {
-                case .hit:
-                    hand.cards.append(drawCard())
-                    if hand.isBusted {
-                        stood = true
-                        break
-                    }
-                    currentAction = applyDeviations(base: basicStrategy(for: hand, dealerUp: dealerUp), hand: hand, dealerUp: dealerUp)
-                case .stand:
-                    stood = true
-                    break
-                default:
-                    stood = true
-                    break
-                }
+    var stood = false
+    var currentAction = action
+
+handLoop: while true {
+        switch currentAction {
+        case .hit:
+            hand.cards.append(drawCard())
+            if hand.isBusted {
+                stood = true
+                break handLoop   // exit the while loop
             }
-            return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: stood)
+            currentAction = applyDeviations(
+                base: basicStrategy(for: hand, dealerUp: dealerUp),
+                hand: hand,
+                dealerUp: dealerUp
+            )
+
+        case .stand:
+            stood = true
+            break handLoop       // exit the while loop
+
+        default:
+            stood = true
+            break handLoop       // safety
+        }
+    }
+
+    return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: stood)
+}
         }
     }
 
