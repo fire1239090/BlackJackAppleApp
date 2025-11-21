@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct GameRules: Codable {
+struct GameRules {
     var decks: Int
     var dealerHitsSoft17: Bool
     var doubleAfterSplit: Bool
@@ -34,6 +35,19 @@ struct BettingModel: Codable {
 }
 
 struct SimulationInput: Codable {
+struct BettingModel {
+    var minBet: Double
+    var maxBet: Double
+    var trueCountForMaxBet: Double
+
+    func bet(for trueCount: Double) -> Double {
+        guard maxBet > minBet else { return minBet }
+        let ramp = max(0, min(trueCount / trueCountForMaxBet, 1))
+        return (minBet + (maxBet - minBet) * ramp).rounded(.toNearestOrEven)
+    }
+}
+
+struct SimulationInput {
     var rules: GameRules
     var betting: BettingModel
     var handsToSimulate: Int
@@ -43,6 +57,7 @@ struct SimulationInput: Codable {
 }
 
 struct SimulationResult: Codable {
+struct SimulationResult {
     var expectedValuePerHour: Double
     var standardDeviationPerHour: Double
     var riskOfRuin: Double
@@ -376,14 +391,17 @@ class BlackjackSimulator {
         return 0
     }
 
-    func simulate(hands: Int, handsPerHour: Double, bankroll: Double, progress: @escaping (Int) -> Void, shouldCancel: @escaping () -> Bool) async -> SimulationResult? {
+    func simulate(hands: Int, handsPerHour: Double, bankroll: Double, progress: @escaping (Int) -> Void, shouldCancel: @escaping () -> Bool) -> SimulationResult? {
+    func simulate(hands: Int, handsPerHour: Double, bankroll: Double) -> SimulationResult {
         var totalProfit: Double = 0
         var profits: [Double] = []
         var bets: [Double] = []
 
         for handIndex in 0..<hands {
-            if shouldCancel() { return nil }
-            if handIndex % 500 == 0 { await Task.yield() }
+            if shouldCancel() {
+                return nil
+            }
+        for _ in 0..<hands {
             let wager = betting.bet(for: trueCount)
             bets.append(wager)
             let playerHand = Hand(cards: [drawCard(), drawCard()])
@@ -393,10 +411,8 @@ class BlackjackSimulator {
             let handProfit = playHand(initialHand: playerHand, dealerHand: dealerHand, bet: wager)
             totalProfit += handProfit
             profits.append(handProfit)
-            if handIndex % 50 == 0 || handIndex == hands - 1 {
-                await MainActor.run {
-                    progress(handIndex + 1)
-                }
+            if handIndex % 500 == 0 || handIndex == hands - 1 {
+                progress(handIndex + 1)
             }
         }
 
@@ -464,6 +480,8 @@ struct ContentView: View {
         BetRampEntry(trueCount: 3, bet: 80),
         BetRampEntry(trueCount: 4, bet: 100)
     ]
+    @State private var maxBet: Double = 100
+    @State private var tcForMax: Double = 5
     @State private var handsToSimulate: Int = 10000
     @State private var handsPerHour: Double = 100
     @State private var bankroll: Double = 10000
@@ -487,6 +505,7 @@ struct ContentView: View {
                     progressSection
                     resultSection
                     savedRunsSection
+                    resultSection
                 }
                 .padding()
             }
@@ -517,6 +536,7 @@ struct ContentView: View {
 
     private var bettingSection: some View {
         Section(header: Text("Bet Spreads").font(.headline)) {
+        Section(header: Text("Betting").font(.headline)) {
             HStack {
                 Text("Min bet")
                 TextField("Min", value: $minBet, format: .number)
@@ -552,6 +572,18 @@ struct ContentView: View {
             Text("Define wager amounts up to a TC of 12; the highest matching level will be used.")
                 .font(.caption)
                 .foregroundColor(.secondary)
+            HStack {
+                Text("Max bet")
+                TextField("Max", value: $maxBet, format: .number)
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+            }
+            HStack {
+                Text("TC for max bet")
+                TextField("5", value: $tcForMax, format: .number)
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+            }
         }
     }
 
@@ -603,6 +635,13 @@ struct ContentView: View {
                     }
                 }
             }
+            Button(action: runSimulation) {
+                HStack {
+                    if isSimulating { ProgressView() }
+                    Text("Run simulation")
+                }
+            }
+            .disabled(isSimulating)
         }
     }
 
@@ -712,6 +751,15 @@ struct ContentView: View {
         userCancelled = false
         completedHands = 0
         startTime = Date()
+                    Text(String(format: "EV/hand: $%.2f", result.totalEv))
+                    Text(String(format: "SD/hand: $%.2f", result.totalSd))
+                }
+            }
+        }
+    }
+
+    private func runSimulation() {
+        isSimulating = true
         result = nil
         let input = SimulationInput(
             rules: GameRules(
@@ -725,6 +773,8 @@ struct ContentView: View {
             betting: BettingModel(
                 minBet: minBet,
                 spreads: spreads
+                maxBet: maxBet,
+                trueCountForMaxBet: tcForMax
             ),
             handsToSimulate: handsToSimulate,
             handsPerHour: handsPerHour,
@@ -732,14 +782,16 @@ struct ContentView: View {
             useBasicDeviations: useDeviations
         )
 
-        simulationTask = Task(priority: .userInitiated) {
+        simulationTask = Task.detached(priority: .userInitiated) {
             let simulator = BlackjackSimulator(input: input)
-            let outcome = await simulator.simulate(
+            let outcome = simulator.simulate(
                 hands: input.handsToSimulate,
                 handsPerHour: input.handsPerHour,
                 bankroll: input.bankroll,
                 progress: { count in
-                    self.completedHands = count
+                    Task { @MainActor in
+                        self.completedHands = count
+                    }
                 },
                 shouldCancel: { Task.isCancelled || self.userCancelled }
             )
@@ -753,6 +805,13 @@ struct ContentView: View {
                         self.savedRuns.append(saved)
                         self.persistSavedRuns()
                     }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let simulator = BlackjackSimulator(input: input)
+            let outcome = simulator.simulate(hands: input.handsToSimulate, handsPerHour: input.handsPerHour, bankroll: input.bankroll)
+            DispatchQueue.main.async {
+                withAnimation {
+                    self.result = outcome
+                    self.isSimulating = false
                 }
             }
         }
