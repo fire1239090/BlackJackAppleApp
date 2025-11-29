@@ -5,6 +5,7 @@ struct GameRules: Codable {
     var dealerHitsSoft17: Bool
     var doubleAfterSplit: Bool
     var surrenderAllowed: Bool
+    /// Net profit multiple for a blackjack, e.g. 1.5 for 3:2, 1.2 for 6:5
     var blackjackPayout: Double
     var penetration: Double
 }
@@ -206,7 +207,7 @@ class BlackjackSimulator {
         }
 
         let total = hand.bestValue
-        let containsAce = hand.values.contains( total - 10 ) && total <= 21
+        let containsAce = hand.values.contains(total - 10) && total <= 21
         var action: PlayerAction
         if containsAce && total <= 21 {
             action = basicSoftStrategy(total: total, dealerUp: dealerUp)
@@ -299,15 +300,21 @@ class BlackjackSimulator {
         return base
     }
 
+    // playHand with labeled loop to avoid infinite loop
     private func playHand(initialHand: Hand, dealerHand: Hand, bet: Double, splitDepth: Int = 0) -> Double {
         var hand = initialHand
         var wager = bet
         let dealerUp = dealerHand.cards.first ?? Card(rank: 10)
-        let action = applyDeviations(base: basicStrategy(for: hand, dealerUp: dealerUp), hand: hand, dealerUp: dealerUp)
+        let action = applyDeviations(
+            base: basicStrategy(for: hand, dealerUp: dealerUp),
+            hand: hand,
+            dealerUp: dealerUp
+        )
 
         switch action {
         case .surrender:
             return -wager / 2.0
+
         case .split where splitDepth < 3 && hand.canSplit && (!hand.isSplitAce):
             let firstCard = hand.cards[0]
             let secondCard = hand.cards[1]
@@ -315,10 +322,15 @@ class BlackjackSimulator {
             var secondHand = Hand(cards: [secondCard], isSplitAce: secondCard.rank == 1, fromSplit: true)
             firstHand.cards.append(drawCard())
             secondHand.cards.append(drawCard())
-            if firstHand.isSplitAce { return settle(hand: firstHand, dealerHand: dealerHand, bet: wager, stood: true) + settle(hand: secondHand, dealerHand: dealerHand, bet: wager, stood: true) }
+            if firstHand.isSplitAce {
+                // Many rules: split Aces get only one card each
+                return settle(hand: firstHand, dealerHand: dealerHand, bet: wager, stood: true)
+                     + settle(hand: secondHand, dealerHand: dealerHand, bet: wager, stood: true)
+            }
             let win1 = playHand(initialHand: firstHand, dealerHand: dealerHand, bet: wager, splitDepth: splitDepth + 1)
             let win2 = playHand(initialHand: secondHand, dealerHand: dealerHand, bet: wager, splitDepth: splitDepth + 1)
             return win1 + win2
+
         case .double:
             if hand.cards.count == 2 {
                 wager *= 2
@@ -327,43 +339,43 @@ class BlackjackSimulator {
             } else {
                 return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: false)
             }
-        default:
-    var stood = false
-    var currentAction = action
 
-handLoop: while true {
-        switch currentAction {
-        case .hit:
-            hand.cards.append(drawCard())
-            if hand.isBusted {
-                stood = true
-                break handLoop   // exit the while loop
+        default:
+            var stood = false
+            var currentAction = action
+
+        handLoop: while true {
+                switch currentAction {
+                case .hit:
+                    hand.cards.append(drawCard())
+                    if hand.isBusted {
+                        stood = true
+                        break handLoop
+                    }
+                    currentAction = applyDeviations(
+                        base: basicStrategy(for: hand, dealerUp: dealerUp),
+                        hand: hand,
+                        dealerUp: dealerUp
+                    )
+
+                case .stand:
+                    stood = true
+                    break handLoop
+
+                default:
+                    stood = true   // safety
+                    break handLoop
+                }
             }
-            currentAction = applyDeviations(
-                base: basicStrategy(for: hand, dealerUp: dealerUp),
-                hand: hand,
-                dealerUp: dealerUp
-            )
 
-        case .stand:
-            stood = true
-            break handLoop       // exit the while loop
-
-        default:
-            stood = true
-            break handLoop       // safety
-        }
-    }
-
-    return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: stood)
-}
+            return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: stood)
         }
     }
 
     private func settle(hand: Hand, dealerHand: Hand, bet: Double, stood: Bool) -> Double {
         if hand.isBusted { return -bet }
         if hand.cards.count == 2 && hand.isBlackjack {
-            // No blackjack after split aces in many rules; handle in caller by passing isSplitAce flag
+            // No blackjack after split aces in many rules; handle via fromSplit flag
         }
         var dealerHand = dealerHand
         if dealerHand.isBlackjack {
@@ -371,8 +383,10 @@ handLoop: while true {
             return -bet
         }
 
+        // ✅ FIXED BLACKJACK PAYOUT:
+        // blackjackPayout is the net profit multiple, e.g. 1.5 for 3:2
         if hand.isBlackjack && !hand.fromSplit {
-            return bet * (rules.blackjackPayout - 1)
+            return bet * rules.blackjackPayout
         }
 
         dealerHand = dealerPlay(dealerHand)
@@ -385,7 +399,13 @@ handLoop: while true {
         return 0
     }
 
-    func simulate(hands: Int, handsPerHour: Double, bankroll: Double, progress: @escaping (Int) -> Void, shouldCancel: @escaping () -> Bool) async -> SimulationResult? {
+    func simulate(
+        hands: Int,
+        handsPerHour: Double,
+        bankroll: Double,
+        progress: @escaping (Int) -> Void,
+        shouldCancel: @escaping () -> Bool
+    ) async -> SimulationResult? {
         var totalProfit: Double = 0
         var profits: [Double] = []
         var bets: [Double] = []
@@ -393,15 +413,19 @@ handLoop: while true {
         for handIndex in 0..<hands {
             if shouldCancel() { return nil }
             if handIndex % 500 == 0 { await Task.yield() }
+
             let wager = betting.bet(for: trueCount)
             bets.append(wager)
+
             let playerHand = Hand(cards: [drawCard(), drawCard()])
             let dealerUp = drawCard()
             let dealerHole = drawCard()
             let dealerHand = Hand(cards: [dealerUp, dealerHole])
+
             let handProfit = playHand(initialHand: playerHand, dealerHand: dealerHand, bet: wager)
             totalProfit += handProfit
             profits.append(handProfit)
+
             if handIndex % 50 == 0 || handIndex == hands - 1 {
                 await MainActor.run {
                     progress(handIndex + 1)
@@ -410,14 +434,25 @@ handLoop: while true {
         }
 
         let avgProfitPerHand = totalProfit / Double(hands)
-        let variance = profits.reduce(0.0) { $0 + pow($1 - avgProfitPerHand, 2) } / Double(max(hands - 1, 1))
+        let variance = profits.reduce(0.0) {
+            $0 + pow($1 - avgProfitPerHand, 2)
+        } / Double(max(hands - 1, 1))
+
         let sdPerHand = sqrt(variance)
 
         let hourlyEv = avgProfitPerHand * handsPerHour
         let hourlySd = sdPerHand * sqrt(handsPerHour)
 
         let sortedBets = bets.sorted()
-        let medianBet = sortedBets.count % 2 == 0 ? (sortedBets[sortedBets.count/2] + sortedBets[sortedBets.count/2 - 1]) / 2 : sortedBets[sortedBets.count/2]
+        let medianBet: Double
+        if sortedBets.isEmpty {
+            medianBet = 0
+        } else if sortedBets.count % 2 == 0 {
+            medianBet = (sortedBets[sortedBets.count / 2]
+                        + sortedBets[sortedBets.count / 2 - 1]) / 2
+        } else {
+            medianBet = sortedBets[sortedBets.count / 2]
+        }
 
         let riskOfRuin: Double
         if hourlyEv <= 0 {
@@ -443,7 +478,7 @@ handLoop: while true {
             expectedValuePerHour: hourlyEv,
             standardDeviationPerHour: hourlySd,
             riskOfRuin: riskOfRuin,
-            averageBet: bets.reduce(0, +) / Double(bets.count),
+            averageBet: bets.reduce(0, +) / Double(max(bets.count, 1)),
             medianBet: medianBet,
             hoursToPositive: [hours50, hours90, hours99],
             totalEv: avgProfitPerHand,
@@ -605,7 +640,14 @@ struct ContentView: View {
             if isSimulating {
                 Section(header: Text("Progress").font(.headline)) {
                     ProgressView(value: Double(completedHands), total: Double(max(handsToSimulate, 1)))
-                    Text(String(format: "Hands: %d / %d (%.1f%%)", completedHands, handsToSimulate, (Double(completedHands) / Double(max(handsToSimulate, 1))) * 100))
+                    Text(
+                        String(
+                            format: "Hands: %d / %d (%.1f%%)",
+                            completedHands,
+                            handsToSimulate,
+                            (Double(completedHands) / Double(max(handsToSimulate, 1))) * 100
+                        )
+                    )
                     if let startTime {
                         let elapsed = Date().timeIntervalSince(startTime)
                         Text(String(format: "Elapsed: %.1f seconds", elapsed))
@@ -645,8 +687,15 @@ struct ContentView: View {
                     VStack(alignment: .leading) {
                         Text(run.timestamp, style: .date)
                             .font(.subheadline)
-                        Text(String(format: "EV/hr $%.2f | Hands %d | Min bet $%.0f", run.result.expectedValuePerHour, run.input.handsToSimulate, run.input.betting.minBet))
-                            .font(.caption)
+                        Text(
+                            String(
+                                format: "EV/hr $%.2f | Hands %d | Min bet $%.0f",
+                                run.result.expectedValuePerHour,
+                                run.input.handsToSimulate,
+                                run.input.betting.minBet
+                            )
+                        )
+                        .font(.caption)
                         HStack {
                             Button("Load", action: { load(run: run) })
                             Spacer()
@@ -722,6 +771,7 @@ struct ContentView: View {
         completedHands = 0
         startTime = Date()
         result = nil
+
         let input = SimulationInput(
             rules: GameRules(
                 decks: decks,
@@ -776,3 +826,4 @@ struct BlackJackAppV1App: App {
         }
     }
 }
+
