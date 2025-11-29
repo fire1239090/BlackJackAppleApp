@@ -37,10 +37,11 @@ struct BettingModel: Codable {
 struct SimulationInput: Codable {
     var rules: GameRules
     var betting: BettingModel
-    var handsToSimulate: Int
+    var hoursToSimulate: Double
     var handsPerHour: Double
     var bankroll: Double
     var useBasicDeviations: Bool
+    var simulations: Int
 }
 
 struct SimulationResult: Codable {
@@ -399,13 +400,15 @@ class BlackjackSimulator {
         return 0
     }
 
-    func simulate(
+    private func simulateSingleReality(
         hands: Int,
         handsPerHour: Double,
         bankroll: Double,
         progress: @escaping (Int) -> Void,
         shouldCancel: @escaping () -> Bool
     ) async -> SimulationResult? {
+        guard hands > 0 else { return nil }
+        reshuffle()
         var totalProfit: Double = 0
         var profits: [Double] = []
         var bets: [Double] = []
@@ -485,6 +488,76 @@ class BlackjackSimulator {
             totalSd: sdPerHand
         )
     }
+
+    func simulate(
+        simulations: Int,
+        hours: Double,
+        handsPerHour: Double,
+        bankroll: Double,
+        progress: @escaping (Int) -> Void,
+        shouldCancel: @escaping () -> Bool
+    ) async -> SimulationResult? {
+        guard simulations > 0 else { return nil }
+        let hands = Int(hours * handsPerHour)
+        guard hands > 0 else { return nil }
+        var evPerHourSum: Double = 0
+        var sdPerHourSum: Double = 0
+        var riskSum: Double = 0
+        var avgBetSum: Double = 0
+        var medianBets: [Double] = []
+        var hoursToPositiveTotals = Array(repeating: 0.0, count: 3)
+        var evPerHandSum: Double = 0
+        var sdPerHandSum: Double = 0
+
+        for simulationIndex in 0..<simulations {
+            if shouldCancel() { return nil }
+            let realityProgress: (Int) -> Void = { _ in }
+            if let result = await simulateSingleReality(
+                hands: hands,
+                handsPerHour: handsPerHour,
+                bankroll: bankroll,
+                progress: realityProgress,
+                shouldCancel: shouldCancel
+            ) {
+                evPerHourSum += result.expectedValuePerHour
+                sdPerHourSum += result.standardDeviationPerHour
+                riskSum += result.riskOfRuin
+                avgBetSum += result.averageBet
+                medianBets.append(result.medianBet)
+                hoursToPositiveTotals = zip(hoursToPositiveTotals, result.hoursToPositive).map { $0 + $1 }
+                evPerHandSum += result.totalEv
+                sdPerHandSum += result.totalSd
+                await MainActor.run {
+                    progress(simulationIndex + 1)
+                }
+            } else {
+                return nil
+            }
+        }
+
+        let count = Double(simulations)
+        let medianBet: Double
+        let sortedMedianBets = medianBets.sorted()
+        if sortedMedianBets.isEmpty {
+            medianBet = 0
+        } else if sortedMedianBets.count % 2 == 0 {
+            medianBet = (sortedMedianBets[sortedMedianBets.count / 2]
+                         + sortedMedianBets[sortedMedianBets.count / 2 - 1]) / 2
+        } else {
+            medianBet = sortedMedianBets[sortedMedianBets.count / 2]
+        }
+
+        return SimulationResult(
+            expectedValuePerHour: evPerHourSum / count,
+            standardDeviationPerHour: sdPerHourSum / count,
+            riskOfRuin: riskSum / count,
+            averageBet: avgBetSum / count,
+            medianBet: medianBet,
+            hoursToPositive: hoursToPositiveTotals.map { $0 / count },
+            totalEv: evPerHandSum / count,
+            totalSd: sdPerHandSum / count
+        )
+    }
 }
 
 struct SavedRun: Identifiable, Codable {
@@ -508,13 +581,14 @@ struct ContentView: View {
         BetRampEntry(trueCount: 3, bet: 80),
         BetRampEntry(trueCount: 4, bet: 100)
     ]
-    @State private var handsToSimulate: Int = 10000
+    @State private var hoursToSimulate: Double = 100
     @State private var handsPerHour: Double = 100
     @State private var bankroll: Double = 10000
     @State private var useDeviations: Bool = true
+    @State private var simulations: Int = 1000
     @State private var result: SimulationResult?
     @State private var isSimulating: Bool = false
-    @State private var completedHands: Int = 0
+    @State private var completedSimulations: Int = 0
     @State private var startTime: Date?
     @State private var simulationTask: Task<Void, Never>?
     @State private var userCancelled: Bool = false
@@ -602,14 +676,20 @@ struct ContentView: View {
     private var simSection: some View {
         Section(header: Text("Simulation").font(.headline)) {
             HStack {
-                Text("Hands to simulate")
-                TextField("10000", value: $handsToSimulate, format: .number)
+                Text("Hours to simulate")
+                TextField("100", value: $hoursToSimulate, format: .number)
                     .keyboardType(.numberPad)
                     .textFieldStyle(.roundedBorder)
             }
             HStack {
                 Text("Hands per hour")
                 TextField("100", value: $handsPerHour, format: .number)
+                    .keyboardType(.numberPad)
+                    .textFieldStyle(.roundedBorder)
+            }
+            HStack {
+                Text("Simulations")
+                TextField("1000", value: $simulations, format: .number)
                     .keyboardType(.numberPad)
                     .textFieldStyle(.roundedBorder)
             }
@@ -639,13 +719,13 @@ struct ContentView: View {
         Group {
             if isSimulating {
                 Section(header: Text("Progress").font(.headline)) {
-                    ProgressView(value: Double(completedHands), total: Double(max(handsToSimulate, 1)))
+                    ProgressView(value: Double(completedSimulations), total: Double(max(simulations, 1)))
                     Text(
                         String(
-                            format: "Hands: %d / %d (%.1f%%)",
-                            completedHands,
-                            handsToSimulate,
-                            (Double(completedHands) / Double(max(handsToSimulate, 1))) * 100
+                            format: "Simulations: %d / %d (%.1f%%)",
+                            completedSimulations,
+                            simulations,
+                            (Double(completedSimulations) / Double(max(simulations, 1))) * 100
                         )
                     )
                     if let startTime {
@@ -689,9 +769,10 @@ struct ContentView: View {
                             .font(.subheadline)
                         Text(
                             String(
-                                format: "EV/hr $%.2f | Hands %d | Min bet $%.0f",
+                                format: "EV/hr $%.2f | Hours %.0f | Sims %d | Min bet $%.0f",
                                 run.result.expectedValuePerHour,
-                                run.input.handsToSimulate,
+                                run.input.hoursToSimulate,
+                                run.input.simulations,
                                 run.input.betting.minBet
                             )
                         )
@@ -736,10 +817,11 @@ struct ContentView: View {
         penetration = run.input.rules.penetration
         minBet = run.input.betting.minBet
         spreads = run.input.betting.spreads
-        handsToSimulate = run.input.handsToSimulate
+        hoursToSimulate = run.input.hoursToSimulate
         handsPerHour = run.input.handsPerHour
         bankroll = run.input.bankroll
         useDeviations = run.input.useBasicDeviations
+        simulations = run.input.simulations
         result = run.result
     }
 
@@ -768,7 +850,7 @@ struct ContentView: View {
         guard !isSimulating else { return }
         isSimulating = true
         userCancelled = false
-        completedHands = 0
+        completedSimulations = 0
         startTime = Date()
         result = nil
 
@@ -785,20 +867,22 @@ struct ContentView: View {
                 minBet: minBet,
                 spreads: spreads
             ),
-            handsToSimulate: handsToSimulate,
+            hoursToSimulate: hoursToSimulate,
             handsPerHour: handsPerHour,
             bankroll: bankroll,
-            useBasicDeviations: useDeviations
+            useBasicDeviations: useDeviations,
+            simulations: simulations
         )
 
         simulationTask = Task(priority: .userInitiated) {
             let simulator = BlackjackSimulator(input: input)
             let outcome = await simulator.simulate(
-                hands: input.handsToSimulate,
+                simulations: input.simulations,
+                hours: input.hoursToSimulate,
                 handsPerHour: input.handsPerHour,
                 bankroll: input.bankroll,
                 progress: { count in
-                    self.completedHands = count
+                    self.completedSimulations = count
                 },
                 shouldCancel: { Task.isCancelled || self.userCancelled }
             )
