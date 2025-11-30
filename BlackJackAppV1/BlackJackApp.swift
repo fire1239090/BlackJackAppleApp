@@ -56,6 +56,114 @@ struct SimulationResult: Codable {
     var worstBustHours: Double?
     var totalEv: Double
     var totalSd: Double
+    // Legacy/compatibility fields used by earlier UI code
+    var finalBankroll: Double?
+    var bustedHands: Int?
+    var handsPlayed: Int?
+    var hoursToPositive: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case expectedValuePerHour
+        case standardDeviationPerHour
+        case riskOfRuin
+        case averageBet
+        case medianBet
+        case positiveOutcomePercentage
+        case bestEndingBankroll
+        case worstEndingBankroll
+        case worstBustHours
+        case totalEv
+        case totalSd
+        case finalBankroll
+        case bustedHands
+        case handsPlayed
+        case hoursToPositive
+    }
+
+    init(
+        expectedValuePerHour: Double,
+        standardDeviationPerHour: Double,
+        riskOfRuin: Double,
+        averageBet: Double,
+        medianBet: Double,
+        positiveOutcomePercentage: Double,
+        bestEndingBankroll: Double,
+        worstEndingBankroll: Double,
+        worstBustHours: Double?,
+        totalEv: Double,
+        totalSd: Double,
+        finalBankroll: Double? = nil,
+        bustedHands: Int? = nil,
+        handsPlayed: Int? = nil,
+        hoursToPositive: Double? = nil
+    ) {
+        self.expectedValuePerHour = expectedValuePerHour
+        self.standardDeviationPerHour = standardDeviationPerHour
+        self.riskOfRuin = riskOfRuin
+        self.averageBet = averageBet
+        self.medianBet = medianBet
+        self.positiveOutcomePercentage = positiveOutcomePercentage
+        self.bestEndingBankroll = bestEndingBankroll
+        self.worstEndingBankroll = worstEndingBankroll
+        self.worstBustHours = worstBustHours
+        self.totalEv = totalEv
+        self.totalSd = totalSd
+        self.finalBankroll = finalBankroll
+        self.bustedHands = bustedHands
+        self.handsPlayed = handsPlayed
+        self.hoursToPositive = hoursToPositive
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        expectedValuePerHour = try container.decode(Double.self, forKey: .expectedValuePerHour)
+        standardDeviationPerHour = try container.decode(Double.self, forKey: .standardDeviationPerHour)
+        riskOfRuin = try container.decode(Double.self, forKey: .riskOfRuin)
+        averageBet = try container.decode(Double.self, forKey: .averageBet)
+        medianBet = try container.decode(Double.self, forKey: .medianBet)
+        positiveOutcomePercentage = try container.decode(Double.self, forKey: .positiveOutcomePercentage)
+        bestEndingBankroll = try container.decode(Double.self, forKey: .bestEndingBankroll)
+        worstEndingBankroll = try container.decode(Double.self, forKey: .worstEndingBankroll)
+        worstBustHours = try container.decodeIfPresent(Double.self, forKey: .worstBustHours)
+        totalEv = try container.decode(Double.self, forKey: .totalEv)
+        totalSd = try container.decode(Double.self, forKey: .totalSd)
+        finalBankroll = try container.decodeIfPresent(Double.self, forKey: .finalBankroll)
+        bustedHands = try container.decodeIfPresent(Int.self, forKey: .bustedHands)
+        handsPlayed = try container.decodeIfPresent(Int.self, forKey: .handsPlayed)
+        hoursToPositive = try container.decodeIfPresent(Double.self, forKey: .hoursToPositive)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(expectedValuePerHour, forKey: .expectedValuePerHour)
+        try container.encode(standardDeviationPerHour, forKey: .standardDeviationPerHour)
+        try container.encode(riskOfRuin, forKey: .riskOfRuin)
+        try container.encode(averageBet, forKey: .averageBet)
+        try container.encode(medianBet, forKey: .medianBet)
+        try container.encode(positiveOutcomePercentage, forKey: .positiveOutcomePercentage)
+        try container.encode(bestEndingBankroll, forKey: .bestEndingBankroll)
+        try container.encode(worstEndingBankroll, forKey: .worstEndingBankroll)
+        try container.encodeIfPresent(worstBustHours, forKey: .worstBustHours)
+        try container.encode(totalEv, forKey: .totalEv)
+        try container.encode(totalSd, forKey: .totalSd)
+        try container.encodeIfPresent(finalBankroll, forKey: .finalBankroll)
+        try container.encodeIfPresent(bustedHands, forKey: .bustedHands)
+        try container.encodeIfPresent(handsPlayed, forKey: .handsPlayed)
+        try container.encodeIfPresent(hoursToPositive, forKey: .hoursToPositive)
+    }
+}
+
+struct SingleRealityResult {
+    var expectedValuePerHour: Double
+    var standardDeviationPerHour: Double
+    var riskOfRuin: Double
+    var averageBet: Double
+    var medianBet: Double
+    var totalEv: Double
+    var totalSd: Double
+    var finalBankroll: Double
+    var bustedHands: Int?
+    var handsPlayed: Int
 }
 
 struct SingleRealityResult {
@@ -345,10 +453,12 @@ class BlackjackSimulator {
             var secondHand = Hand(cards: [secondCard], isSplitAce: secondCard.rank == 1, fromSplit: true)
             firstHand.cards.append(drawCard())
             secondHand.cards.append(drawCard())
+            let splitBankroll = availableBankroll / 2
+            let childBet = min(wager, splitBankroll)
             if firstHand.isSplitAce {
                 // Many rules: split Aces get only one card each
-                return settle(hand: firstHand, dealerHand: dealerHand, bet: wager, stood: true)
-                     + settle(hand: secondHand, dealerHand: dealerHand, bet: wager, stood: true)
+                return settle(hand: firstHand, dealerHand: dealerHand, bet: childBet, stood: true)
+                     + settle(hand: secondHand, dealerHand: dealerHand, bet: childBet, stood: true)
             }
             let splitBankroll = availableBankroll / 2
             let childBet = min(wager, splitBankroll)
