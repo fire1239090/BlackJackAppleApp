@@ -383,9 +383,9 @@ class BlackjackSimulator {
         }
     }
 
-    private func settle(hand: Hand, dealerHand: Hand, bet: Double, stood: Bool) -> Double {
+    private func settle(hand: Hand, resolvedDealer: Hand, bet: Double) -> Double {
         if hand.isBusted { return -bet }
-        if dealerHand.isBlackjack {
+        if resolvedDealer.isBlackjack {
             if hand.isBlackjack && !hand.fromSplit { return 0 }
             return -bet
         }
@@ -393,10 +393,6 @@ class BlackjackSimulator {
             return bet * rules.blackjackPayout
         }
 
-        var resolvedDealer = dealerHand
-        if !stood {
-            resolvedDealer = dealerPlay(dealerHand)
-        }
         let dealerValue = resolvedDealer.bestValue
         let playerValue = hand.bestValue
 
@@ -406,13 +402,23 @@ class BlackjackSimulator {
         return 0
     }
 
+    private struct PendingSettlement {
+        let hand: Hand
+        let wager: Double
+    }
+
+    private struct PlayResult {
+        var immediateProfit: Double
+        var settlements: [PendingSettlement]
+    }
+
     private func playHand(
         initialHand: Hand,
         dealerHand: Hand,
         bet: Double,
         availableBankroll: Double,
         splitDepth: Int = 0
-    ) -> Double {
+    ) -> PlayResult {
         var hand = initialHand
         var wager = min(bet, availableBankroll)
         let dealerUp = dealerHand.cards.first ?? Card(rank: 10)
@@ -428,7 +434,7 @@ class BlackjackSimulator {
 
         switch action {
         case .surrender:
-            return -wager / 2.0
+            return PlayResult(immediateProfit: -wager / 2.0, settlements: [])
 
         case .split where splitDepth < 3 && hand.canSplit:
             let firstCard = hand.cards[0]
@@ -442,9 +448,11 @@ class BlackjackSimulator {
 
             if firstHand.isSplitAce || secondHand.isSplitAce {
                 let wagerPerAce = splitStakePerHand
-                let win1 = settle(hand: firstHand, dealerHand: dealerHand, bet: wagerPerAce, stood: true)
-                let win2 = settle(hand: secondHand, dealerHand: dealerHand, bet: wagerPerAce, stood: true)
-                return win1 + win2
+                let settlements = [
+                    PendingSettlement(hand: firstHand, wager: wagerPerAce),
+                    PendingSettlement(hand: secondHand, wager: wagerPerAce)
+                ]
+                return PlayResult(immediateProfit: 0, settlements: settlements)
             }
 
             let win1 = playHand(
@@ -461,22 +469,24 @@ class BlackjackSimulator {
                 availableBankroll: splitStakePerHand,
                 splitDepth: splitDepth + 1
             )
-            return win1 + win2
+            return PlayResult(
+                immediateProfit: win1.immediateProfit + win2.immediateProfit,
+                settlements: win1.settlements + win2.settlements
+            )
 
         case .double:
             let doubleWager = min(wager * 2, availableBankroll)
             wager = doubleWager
             hand.cards.append(drawCard())
-            return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: true)
+            return PlayResult(immediateProfit: 0, settlements: [PendingSettlement(hand: hand, wager: wager)])
 
         default:
-            var stood = false
             var currentAction = action
             while true {
                 switch currentAction {
                 case .hit:
                     hand.cards.append(drawCard())
-                    if hand.isBusted { stood = true; break }
+                    if hand.isBusted { break }
                     currentAction = applyDeviations(
                         base: basicStrategy(for: hand, dealerUp: dealerUp),
                         hand: hand,
@@ -486,14 +496,13 @@ class BlackjackSimulator {
                         currentAction = .hit
                     }
                 case .stand:
-                    stood = true
                     break
                 default:
-                    stood = true
                     break
                 }
+                if currentAction != .hit { break }
             }
-            return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: stood)
+            return PlayResult(immediateProfit: 0, settlements: [PendingSettlement(hand: hand, wager: wager)])
         }
     }
 
@@ -526,22 +535,28 @@ class BlackjackSimulator {
             // dealer blackjack peek
             let dealerHasBlackjack = dealer.isBlackjack
             if dealerHasBlackjack {
-                let profit = settle(hand: player, dealerHand: dealer, bet: wager, stood: true)
-                profits.append(profit)
-                currentBankroll += profit
-                handsPlayed += 1
-                continue
-            }
-
-            let profit = playHand(
-                initialHand: player,
-                dealerHand: dealerPlay(dealer),
-                bet: wager,
-                availableBankroll: currentBankroll
-            )
+            let profit = settle(hand: player, resolvedDealer: dealer, bet: wager)
             profits.append(profit)
             currentBankroll += profit
             handsPlayed += 1
+            continue
+        }
+
+        let playResult = playHand(
+            initialHand: player,
+            dealerHand: dealer,
+            bet: wager,
+            availableBankroll: currentBankroll
+        )
+
+        let resolvedDealer = dealerPlay(dealer)
+        let profit = playResult.settlements.reduce(playResult.immediateProfit) { partial, settlement in
+            partial + settle(hand: settlement.hand, resolvedDealer: resolvedDealer, bet: settlement.wager)
+        }
+
+        profits.append(profit)
+        currentBankroll += profit
+        handsPlayed += 1
         }
 
         let avgProfitPerHand = profits.reduce(0, +) / Double(max(profits.count, 1))
