@@ -318,9 +318,15 @@ class BlackjackSimulator {
     }
 
     // playHand with labeled loop to avoid infinite loop
-    private func playHand(initialHand: Hand, dealerHand: Hand, bet: Double, splitDepth: Int = 0) -> Double {
+    private func playHand(
+        initialHand: Hand,
+        dealerHand: Hand,
+        bet: Double,
+        availableBankroll: Double,
+        splitDepth: Int = 0
+    ) -> Double {
         var hand = initialHand
-        var wager = bet
+        var wager = min(bet, availableBankroll)
         let dealerUp = dealerHand.cards.first ?? Card(rank: 10)
         let action = applyDeviations(
             base: basicStrategy(for: hand, dealerUp: dealerUp),
@@ -344,13 +350,28 @@ class BlackjackSimulator {
                 return settle(hand: firstHand, dealerHand: dealerHand, bet: wager, stood: true)
                      + settle(hand: secondHand, dealerHand: dealerHand, bet: wager, stood: true)
             }
-            let win1 = playHand(initialHand: firstHand, dealerHand: dealerHand, bet: wager, splitDepth: splitDepth + 1)
-            let win2 = playHand(initialHand: secondHand, dealerHand: dealerHand, bet: wager, splitDepth: splitDepth + 1)
+            let splitBankroll = availableBankroll / 2
+            let childBet = min(wager, splitBankroll)
+            let win1 = playHand(
+                initialHand: firstHand,
+                dealerHand: dealerHand,
+                bet: childBet,
+                availableBankroll: splitBankroll,
+                splitDepth: splitDepth + 1
+            )
+            let win2 = playHand(
+                initialHand: secondHand,
+                dealerHand: dealerHand,
+                bet: childBet,
+                availableBankroll: splitBankroll,
+                splitDepth: splitDepth + 1
+            )
             return win1 + win2
 
         case .double:
             if hand.cards.count == 2 {
-                wager *= 2
+                let maxDouble = min(wager * 2, availableBankroll)
+                wager = maxDouble
                 hand.cards.append(drawCard())
                 return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: true)
             } else {
@@ -445,7 +466,12 @@ class BlackjackSimulator {
             let dealerHole = drawCard()
             let dealerHand = Hand(cards: [dealerUp, dealerHole])
 
-            let handProfit = playHand(initialHand: playerHand, dealerHand: dealerHand, bet: wager)
+            let handProfit = playHand(
+                initialHand: playerHand,
+                dealerHand: dealerHand,
+                bet: wager,
+                availableBankroll: currentBankroll
+            )
             totalProfit += handProfit
             profits.append(handProfit)
             currentBankroll += handProfit
