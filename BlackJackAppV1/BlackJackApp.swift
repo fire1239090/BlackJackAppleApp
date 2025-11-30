@@ -166,19 +166,6 @@ struct SingleRealityResult {
     var handsPlayed: Int
 }
 
-struct SingleRealityResult {
-    var expectedValuePerHour: Double
-    var standardDeviationPerHour: Double
-    var riskOfRuin: Double
-    var averageBet: Double
-    var medianBet: Double
-    var totalEv: Double
-    var totalSd: Double
-    var finalBankroll: Double
-    var bustedHands: Int?
-    var handsPlayed: Int
-}
-
 struct Card {
     let rank: Int
 
@@ -245,6 +232,27 @@ struct Hand {
 enum PlayerAction {
     case hit, stand, double, split, surrender
 }
+
+// MARK: - Pending settlements + play result
+
+struct PendingSettlement {
+    var hand: Hand
+    var wager: Double
+}
+
+struct PlayResult {
+    var immediateProfit: Double
+    var settlements: [PendingSettlement]
+
+    static func + (lhs: PlayResult, rhs: PlayResult) -> PlayResult {
+        PlayResult(
+            immediateProfit: lhs.immediateProfit + rhs.immediateProfit,
+            settlements: lhs.settlements + rhs.settlements
+        )
+    }
+}
+
+// MARK: - Simulator
 
 class BlackjackSimulator {
     private var shoe: [Card] = []
@@ -357,8 +365,10 @@ class BlackjackSimulator {
 
         let total = hand.bestValue
         let containsAce = hand.values.contains(total - 10) && total <= 21
-        var action: PlayerAction = containsAce ? basicSoftStrategy(total: total, dealerUp: dealerUp)
-                                               : basicHardStrategy(total: total, dealerUp: dealerUp)
+        var action: PlayerAction = containsAce
+            ? basicSoftStrategy(total: total, dealerUp: dealerUp)
+            : basicHardStrategy(total: total, dealerUp: dealerUp)
+
         if action == .double && hand.fromSplit && !rules.doubleAfterSplit {
             action = .hit
         }
@@ -415,7 +425,7 @@ class BlackjackSimulator {
         return 0
     }
 
-    // playHand with labeled loop to avoid infinite loop
+    // playHand handles player decisions and returns immediate profit + pending settlements
     private func playHand(
         initialHand: Hand,
         dealerHand: Hand,
@@ -449,13 +459,14 @@ class BlackjackSimulator {
             secondHand.cards.append(drawCard())
             let splitBankroll = availableBankroll / 2
             let childBet = min(wager, splitBankroll)
+
             if firstHand.isSplitAce {
-                // Many rules: split Aces get only one card each
-                return settle(hand: firstHand, dealerHand: dealerHand, bet: childBet, stood: true)
-                     + settle(hand: secondHand, dealerHand: dealerHand, bet: childBet, stood: true)
+                // Many rules: split Aces get only one card each and are resolved immediately
+                let profit1 = settle(hand: firstHand, dealerHand: dealerHand, bet: childBet, stood: true)
+                let profit2 = settle(hand: secondHand, dealerHand: dealerHand, bet: childBet, stood: true)
+                return PlayResult(immediateProfit: profit1 + profit2, settlements: [])
             }
-            let splitBankroll = availableBankroll / 2
-            let childBet = min(wager, splitBankroll)
+
             let win1 = playHand(
                 initialHand: firstHand,
                 dealerHand: dealerHand,
@@ -477,9 +488,11 @@ class BlackjackSimulator {
                 let maxDouble = min(wager * 2, availableBankroll)
                 wager = maxDouble
                 hand.cards.append(drawCard())
-                return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: true)
+                let profit = settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: true)
+                return PlayResult(immediateProfit: profit, settlements: [])
             } else {
-                return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: false)
+                let profit = settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: false)
+                return PlayResult(immediateProfit: profit, settlements: [])
             }
 
         default:
@@ -504,7 +517,10 @@ class BlackjackSimulator {
                 }
                 if currentAction != .hit { break }
             }
-            return PlayResult(immediateProfit: 0, settlements: [PendingSettlement(hand: hand, wager: wager)])
+            return PlayResult(
+                immediateProfit: 0,
+                settlements: [PendingSettlement(hand: hand, wager: wager)]
+            )
         }
     }
 
@@ -519,7 +535,6 @@ class BlackjackSimulator {
             return -bet
         }
 
-        // ✅ FIXED BLACKJACK PAYOUT:
         // blackjackPayout is the net profit multiple, e.g. 1.5 for 3:2
         if hand.isBlackjack && !hand.fromSplit {
             return bet * rules.blackjackPayout
@@ -541,10 +556,9 @@ class BlackjackSimulator {
         bankroll: Double,
         progress: @escaping (Int) -> Void,
         shouldCancel: @escaping () -> Bool
-    ) async -> SimulationResult? {
+    ) async -> SingleRealityResult? {
         guard hands > 0 else { return nil }
         reshuffle()
-        var totalProfit: Double = 0
         var profits: [Double] = []
         var bets: [Double] = []
         var currentBankroll = bankroll
@@ -554,36 +568,46 @@ class BlackjackSimulator {
         for handIndex in 0..<hands {
             if shouldCancel() { return nil }
             if handIndex % 500 == 0 { await Task.yield() }
-            if currentBankroll <= 0 { break }
-
-            let wager = min(betting.bet(for: trueCount), currentBankroll)
-            bets.append(wager)
-            if wager <= 0 {
+            if currentBankroll <= 0 {
+                bustedAtHand = handIndex
                 break
             }
 
-            var player = Hand(cards: [drawCard(), drawCard()])
-            var dealer = Hand(cards: [drawCard(), drawCard()])
+            let wager = min(betting.bet(for: trueCount), currentBankroll)
+            if wager <= 0 {
+                break
+            }
+            bets.append(wager)
 
-            // dealer blackjack peek
-            let dealerHasBlackjack = dealer.isBlackjack
-            if dealerHasBlackjack {
-            let profit = settle(hand: player, resolvedDealer: dealer, bet: wager)
-            profits.append(profit)
-            currentBankroll += profit
-            handsPlayed += 1
-            continue
-        }
+            var playerHand = Hand(cards: [drawCard(), drawCard()])
+            var dealerHand = Hand(cards: [drawCard(), drawCard()])
 
-            let handProfit = playHand(
+            // Dealer blackjack peek
+            if dealerHand.isBlackjack {
+                let profit = settle(hand: playerHand, resolvedDealer: dealerHand, bet: wager)
+                profits.append(profit)
+                currentBankroll += profit
+                handsPlayed += 1
+                progress(handIndex + 1)
+                continue
+            }
+
+            // Player play
+            let playResult = playHand(
                 initialHand: playerHand,
                 dealerHand: dealerHand,
                 bet: wager,
                 availableBankroll: currentBankroll
             )
-            totalProfit += handProfit
-            profits.append(handProfit)
-            currentBankroll += handProfit
+
+            // Resolve pending settlements after dealer plays out
+            let resolvedDealer = dealerPlay(dealerHand)
+            let profit = playResult.settlements.reduce(playResult.immediateProfit) { partial, settlement in
+                partial + settle(hand: settlement.hand, resolvedDealer: resolvedDealer, bet: settlement.wager)
+            }
+
+            profits.append(profit)
+            currentBankroll += profit
             handsPlayed += 1
 
             if currentBankroll <= 0 {
@@ -591,15 +615,8 @@ class BlackjackSimulator {
                 break
             }
 
-        let resolvedDealer = dealerPlay(dealer)
-        let profit = playResult.settlements.reduce(playResult.immediateProfit) { partial, settlement in
-            partial + settle(hand: settlement.hand, resolvedDealer: resolvedDealer, bet: settlement.wager)
+            progress(handIndex + 1)
         }
-
-        let avgProfitPerHand = totalProfit / Double(max(handsPlayed, 1))
-        let variance = profits.reduce(0.0) {
-            $0 + pow($1 - avgProfitPerHand, 2)
-        } / Double(max(handsPlayed - 1, 1))
 
         let avgProfitPerHand = profits.reduce(0, +) / Double(max(profits.count, 1))
         let variance = profits.reduce(0) { $0 + pow($1 - avgProfitPerHand, 2) } / Double(max(profits.count, 1))
@@ -609,8 +626,9 @@ class BlackjackSimulator {
 
         let sortedBets = bets.sorted()
         let medianBet: Double
-        if sortedBets.isEmpty { medianBet = 0 }
-        else if sortedBets.count % 2 == 0 {
+        if sortedBets.isEmpty {
+            medianBet = 0
+        } else if sortedBets.count % 2 == 0 {
             medianBet = (sortedBets[sortedBets.count / 2] + sortedBets[sortedBets.count / 2 - 1]) / 2
         } else {
             medianBet = sortedBets[sortedBets.count / 2]
@@ -727,77 +745,9 @@ class BlackjackSimulator {
             totalSd: sdPerHandSum / count
         )
     }
-
-    func simulate(
-        simulations: Int,
-        hours: Double,
-        handsPerHour: Double,
-        bankroll: Double,
-        progress: @escaping (Int) -> Void,
-        shouldCancel: @escaping () -> Bool
-    ) async -> SimulationResult? {
-        guard simulations > 0 else { return nil }
-        let hands = Int(hours * handsPerHour)
-        guard hands > 0 else { return nil }
-        var evPerHourSum: Double = 0
-        var sdPerHourSum: Double = 0
-        var riskSum: Double = 0
-        var avgBetSum: Double = 0
-        var medianBets: [Double] = []
-        var hoursToPositiveTotals = Array(repeating: 0.0, count: 3)
-        var evPerHandSum: Double = 0
-        var sdPerHandSum: Double = 0
-
-        for simulationIndex in 0..<simulations {
-            if shouldCancel() { return nil }
-            let realityProgress: (Int) -> Void = { _ in }
-            if let result = await simulateSingleReality(
-                hands: hands,
-                handsPerHour: handsPerHour,
-                bankroll: bankroll,
-                progress: realityProgress,
-                shouldCancel: shouldCancel
-            ) {
-                evPerHourSum += result.expectedValuePerHour
-                sdPerHourSum += result.standardDeviationPerHour
-                riskSum += result.riskOfRuin
-                avgBetSum += result.averageBet
-                medianBets.append(result.medianBet)
-                hoursToPositiveTotals = zip(hoursToPositiveTotals, result.hoursToPositive).map { $0 + $1 }
-                evPerHandSum += result.totalEv
-                sdPerHandSum += result.totalSd
-                await MainActor.run {
-                    progress(simulationIndex + 1)
-                }
-            } else {
-                return nil
-            }
-        }
-
-        let count = Double(simulations)
-        let medianBet: Double
-        let sortedMedianBets = medianBets.sorted()
-        if sortedMedianBets.isEmpty {
-            medianBet = 0
-        } else if sortedMedianBets.count % 2 == 0 {
-            medianBet = (sortedMedianBets[sortedMedianBets.count / 2]
-                         + sortedMedianBets[sortedMedianBets.count / 2 - 1]) / 2
-        } else {
-            medianBet = sortedMedianBets[sortedMedianBets.count / 2]
-        }
-
-        return SimulationResult(
-            expectedValuePerHour: evPerHourSum / count,
-            standardDeviationPerHour: sdPerHourSum / count,
-            riskOfRuin: riskSum / count,
-            averageBet: avgBetSum / count,
-            medianBet: medianBet,
-            hoursToPositive: hoursToPositiveTotals.map { $0 / count },
-            totalEv: evPerHandSum / count,
-            totalSd: sdPerHandSum / count
-        )
-    }
 }
+
+// MARK: - Persistence + UI
 
 struct SavedRun: Identifiable, Codable {
     var id: UUID = .init()
@@ -1029,7 +979,9 @@ struct ContentView: View {
                             Button("Load", action: { load(run: run) })
                             Spacer()
                             Button(role: .destructive) {
-                                removeSavedRun(at: IndexSet(integer: index))
+                                if let index = savedRuns.firstIndex(where: { $0.id == run.id }) {
+                                    removeSavedRun(at: IndexSet(integer: index))
+                                }
                             } label: {
                                 Image(systemName: "trash")
                             }
