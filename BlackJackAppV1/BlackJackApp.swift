@@ -213,13 +213,13 @@ struct Hand {
             } else {
                 cardValues = [card.value]
             }
-            var newTotals: [Int] = []
+            var newTotals: Set<Int> = []
             for total in totals {
-                for cValue in cardValues {
-                    newTotals.append(total + cValue)
+                for candidate in cardValues {
+                    newTotals.insert(total + candidate)
                 }
             }
-            totals = Array(Set(newTotals))
+            totals = Array(newTotals)
         }
         return totals
     }
@@ -235,10 +235,6 @@ struct Hand {
 
     var isBusted: Bool {
         bestValue > 21
-    }
-
-    var isSoft: Bool {
-        values.contains(11 + (bestValue - 11)) && bestValue <= 21
     }
 
     var canSplit: Bool {
@@ -296,54 +292,17 @@ class BlackjackSimulator {
     }
 
     private func dealerPlay(_ hand: Hand) -> Hand {
-        var hand = hand
+        var dealerHand = hand
         while true {
-            let value = hand.bestValue
-            let isSoft = hand.values.contains(where: { $0 <= 21 && $0 + 10 == value }) && value <= 21
+            let value = dealerHand.bestValue
+            let isSoft = dealerHand.values.contains(where: { $0 <= 21 && $0 + 10 == value }) && value <= 21
             if value < 17 || (value == 17 && rules.dealerHitsSoft17 && isSoft) {
-                hand.cards.append(drawCard())
+                dealerHand.cards.append(drawCard())
             } else {
                 break
             }
         }
-        return hand
-    }
-
-    private func basicStrategy(for hand: Hand, dealerUp: Card) -> PlayerAction {
-        if rules.surrenderAllowed && hand.cards.count == 2 {
-            if hand.bestValue == 16 && [9,10,1].contains(dealerUp.value) { return .surrender }
-            if hand.bestValue == 15 && dealerUp.value == 10 { return .surrender }
-        }
-
-        if hand.canSplit {
-            let rank = hand.cards[0].rank
-            switch rank {
-            case 1: return .split
-            case 10: return .stand
-            case 9: return [2,3,4,5,6,8,9].contains(dealerUp.value) ? .split : .stand
-            case 8: return .split
-            case 7: return dealerUp.value <= 7 ? .split : .hit
-            case 6: return dealerUp.value <= 6 ? .split : .hit
-            case 5: return basicHardStrategy(total: 10, dealerUp: dealerUp)
-            case 4: return (5...6).contains(dealerUp.value) ? .split : .hit
-            case 3,2: return dealerUp.value <= 7 ? .split : .hit
-            default: break
-            }
-        }
-
-        let total = hand.bestValue
-        let containsAce = hand.values.contains(total - 10) && total <= 21
-        var action: PlayerAction
-        if containsAce && total <= 21 {
-            action = basicSoftStrategy(total: total, dealerUp: dealerUp)
-        } else {
-            action = basicHardStrategy(total: total, dealerUp: dealerUp)
-        }
-
-        if action == .double && hand.fromSplit && !rules.doubleAfterSplit {
-            action = .hit
-        }
-        return action
+        return dealerHand
     }
 
     private func basicHardStrategy(total: Int, dealerUp: Card) -> PlayerAction {
@@ -360,19 +319,50 @@ class BlackjackSimulator {
 
     private func basicSoftStrategy(total: Int, dealerUp: Card) -> PlayerAction {
         switch total {
-        case 13,14: return (5...6).contains(dealerUp.value) ? .double : .hit
-        case 15,16: return (4...6).contains(dealerUp.value) ? .double : .hit
+        case 13, 14: return (5...6).contains(dealerUp.value) ? .double : .hit
+        case 15, 16: return (4...6).contains(dealerUp.value) ? .double : .hit
         case 17: return (3...6).contains(dealerUp.value) ? .double : .hit
         case 18:
             if (3...6).contains(dealerUp.value) { return .double }
             if (2...8).contains(dealerUp.value) { return .stand }
             return .hit
         case 19:
-            if dealerUp.value == 6 { return .double }
-            return .stand
+            return dealerUp.value == 6 ? .double : .stand
         default:
             return .stand
         }
+    }
+
+    private func basicStrategy(for hand: Hand, dealerUp: Card) -> PlayerAction {
+        if rules.surrenderAllowed && hand.cards.count == 2 {
+            if hand.bestValue == 16 && [9, 10, 1].contains(dealerUp.value) { return .surrender }
+            if hand.bestValue == 15 && dealerUp.value == 10 { return .surrender }
+        }
+
+        if hand.canSplit {
+            let rank = hand.cards[0].rank
+            switch rank {
+            case 1: return .split
+            case 10: return .stand
+            case 9: return [2, 3, 4, 5, 6, 8, 9].contains(dealerUp.value) ? .split : .stand
+            case 8: return .split
+            case 7: return dealerUp.value <= 7 ? .split : .hit
+            case 6: return dealerUp.value <= 6 ? .split : .hit
+            case 5: return basicHardStrategy(total: 10, dealerUp: dealerUp)
+            case 4: return (5...6).contains(dealerUp.value) ? .split : .hit
+            case 3, 2: return dealerUp.value <= 7 ? .split : .hit
+            default: break
+            }
+        }
+
+        let total = hand.bestValue
+        let containsAce = hand.values.contains(total - 10) && total <= 21
+        var action: PlayerAction = containsAce ? basicSoftStrategy(total: total, dealerUp: dealerUp)
+                                               : basicHardStrategy(total: total, dealerUp: dealerUp)
+        if action == .double && hand.fromSplit && !rules.doubleAfterSplit {
+            action = .hit
+        }
+        return action
     }
 
     private func applyDeviations(base: PlayerAction, hand: Hand, dealerUp: Card) -> PlayerAction {
@@ -380,7 +370,6 @@ class BlackjackSimulator {
         let tc = Int(floor(trueCount))
         let total = hand.bestValue
 
-        // Surrender deviations (Fab 4)
         if rules.surrenderAllowed && hand.cards.count == 2 {
             if total == 15 && dealerUp.value == 10 && tc >= 0 { return .surrender }
             if total == 15 && dealerUp.value == 9 && tc >= 2 { return .surrender }
@@ -388,41 +377,42 @@ class BlackjackSimulator {
             if total == 14 && dealerUp.value == 10 && tc >= 3 { return .surrender }
         }
 
-        // Illustrious 18 style deviations
         switch (total, dealerUp.value) {
-        case (16, 10):
-            return tc >= 0 ? .stand : base
-        case (15, 10):
-            return tc >= 4 ? .stand : base
-        case (10, 10):
-            return tc >= 4 ? .double : base
-        case (12, 3):
-            return tc >= 2 ? .stand : base
-        case (12, 2):
-            return tc >= 3 ? .stand : base
-        case (11, 11):
-            return tc >= 1 ? .double : base
-        case (9, 2):
-            return tc >= 1 ? .double : base
-        case (9, 7):
-            return tc >= 3 ? .double : base
-        case (16, 9):
-            return tc >= 5 ? .stand : base
-        case (13, 2):
-            return tc >= -1 ? .stand : base
-        case (12, 4):
-            return tc >= 0 ? .stand : base
-        case (12, 5):
-            return tc >= -2 ? .stand : base
-        case (12, 6):
-            return tc >= -1 ? .stand : base
-        case (13, 3):
-            return tc >= -2 ? .stand : base
-        default:
-            break
+        case (16, 10): return tc >= 0 ? .stand : base
+        case (15, 10): return tc >= 4 ? .stand : base
+        case (10, 10): return tc >= 4 ? .double : base
+        case (12, 3): return tc >= 2 ? .stand : base
+        case (12, 2): return tc >= 3 ? .stand : base
+        case (11, 11): return tc >= 1 ? .double : base
+        case (9, 2): return tc >= 1 ? .double : base
+        case (9, 7): return tc >= 3 ? .double : base
+        case (16, 9): return tc >= 5 ? .stand : base
+        case (13, 2): return tc >= -1 ? .stand : base
+        case (12, 4): return tc >= 0 ? .stand : base
+        case (12, 5): return tc >= -2 ? .stand : base
+        case (12, 6): return tc >= -1 ? .stand : base
+        case (13, 3): return tc >= -2 ? .stand : base
+        default: return base
+        }
+    }
+
+    private func settle(hand: Hand, resolvedDealer: Hand, bet: Double) -> Double {
+        if hand.isBusted { return -bet }
+        if resolvedDealer.isBlackjack {
+            if hand.isBlackjack && !hand.fromSplit { return 0 }
+            return -bet
+        }
+        if hand.isBlackjack && !hand.fromSplit {
+            return bet * rules.blackjackPayout
         }
 
-        return base
+        let dealerValue = resolvedDealer.bestValue
+        let playerValue = hand.bestValue
+
+        if dealerValue > 21 { return bet }
+        if playerValue > dealerValue { return bet }
+        if playerValue < dealerValue { return -bet }
+        return 0
     }
 
     // playHand with labeled loop to avoid infinite loop
@@ -432,21 +422,25 @@ class BlackjackSimulator {
         bet: Double,
         availableBankroll: Double,
         splitDepth: Int = 0
-    ) -> Double {
+    ) -> PlayResult {
         var hand = initialHand
         var wager = min(bet, availableBankroll)
         let dealerUp = dealerHand.cards.first ?? Card(rank: 10)
-        let action = applyDeviations(
+        var action = applyDeviations(
             base: basicStrategy(for: hand, dealerUp: dealerUp),
             hand: hand,
             dealerUp: dealerUp
         )
 
+        if action == .double && hand.cards.count != 2 {
+            action = .hit
+        }
+
         switch action {
         case .surrender:
-            return -wager / 2.0
+            return PlayResult(immediateProfit: -wager / 2.0, settlements: [])
 
-        case .split where splitDepth < 3 && hand.canSplit && (!hand.isSplitAce):
+        case .split where splitDepth < 3 && hand.canSplit:
             let firstCard = hand.cards[0]
             let secondCard = hand.cards[1]
             var firstHand = Hand(cards: [firstCard], isSplitAce: firstCard.rank == 1, fromSplit: true)
@@ -489,34 +483,28 @@ class BlackjackSimulator {
             }
 
         default:
-            var stood = false
             var currentAction = action
-
-        handLoop: while true {
+            while true {
                 switch currentAction {
                 case .hit:
                     hand.cards.append(drawCard())
-                    if hand.isBusted {
-                        stood = true
-                        break handLoop
-                    }
+                    if hand.isBusted { break }
                     currentAction = applyDeviations(
                         base: basicStrategy(for: hand, dealerUp: dealerUp),
                         hand: hand,
                         dealerUp: dealerUp
                     )
-
+                    if currentAction == .double && hand.cards.count != 2 {
+                        currentAction = .hit
+                    }
                 case .stand:
-                    stood = true
-                    break handLoop
-
+                    break
                 default:
-                    stood = true   // safety
-                    break handLoop
+                    break
                 }
+                if currentAction != .hit { break }
             }
-
-            return settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: stood)
+            return PlayResult(immediateProfit: 0, settlements: [PendingSettlement(hand: hand, wager: wager)])
         }
     }
 
@@ -570,11 +558,22 @@ class BlackjackSimulator {
 
             let wager = min(betting.bet(for: trueCount), currentBankroll)
             bets.append(wager)
+            if wager <= 0 {
+                break
+            }
 
-            let playerHand = Hand(cards: [drawCard(), drawCard()])
-            let dealerUp = drawCard()
-            let dealerHole = drawCard()
-            let dealerHand = Hand(cards: [dealerUp, dealerHole])
+            var player = Hand(cards: [drawCard(), drawCard()])
+            var dealer = Hand(cards: [drawCard(), drawCard()])
+
+            // dealer blackjack peek
+            let dealerHasBlackjack = dealer.isBlackjack
+            if dealerHasBlackjack {
+            let profit = settle(hand: player, resolvedDealer: dealer, bet: wager)
+            profits.append(profit)
+            currentBankroll += profit
+            handsPlayed += 1
+            continue
+        }
 
             let handProfit = playHand(
                 initialHand: playerHand,
@@ -592,11 +591,9 @@ class BlackjackSimulator {
                 break
             }
 
-            if handIndex % 50 == 0 || handIndex == hands - 1 {
-                await MainActor.run {
-                    progress(handIndex + 1)
-                }
-            }
+        let resolvedDealer = dealerPlay(dealer)
+        let profit = playResult.settlements.reduce(playResult.immediateProfit) { partial, settlement in
+            partial + settle(hand: settlement.hand, resolvedDealer: resolvedDealer, bet: settlement.wager)
         }
 
         let avgProfitPerHand = totalProfit / Double(max(handsPlayed, 1))
@@ -604,18 +601,17 @@ class BlackjackSimulator {
             $0 + pow($1 - avgProfitPerHand, 2)
         } / Double(max(handsPlayed - 1, 1))
 
+        let avgProfitPerHand = profits.reduce(0, +) / Double(max(profits.count, 1))
+        let variance = profits.reduce(0) { $0 + pow($1 - avgProfitPerHand, 2) } / Double(max(profits.count, 1))
         let sdPerHand = sqrt(variance)
-
         let hourlyEv = avgProfitPerHand * handsPerHour
         let hourlySd = sdPerHand * sqrt(handsPerHour)
 
         let sortedBets = bets.sorted()
         let medianBet: Double
-        if sortedBets.isEmpty {
-            medianBet = 0
-        } else if sortedBets.count % 2 == 0 {
-            medianBet = (sortedBets[sortedBets.count / 2]
-                        + sortedBets[sortedBets.count / 2 - 1]) / 2
+        if sortedBets.isEmpty { medianBet = 0 }
+        else if sortedBets.count % 2 == 0 {
+            medianBet = (sortedBets[sortedBets.count / 2] + sortedBets[sortedBets.count / 2 - 1]) / 2
         } else {
             medianBet = sortedBets[sortedBets.count / 2]
         }
@@ -1012,11 +1008,10 @@ struct ContentView: View {
     private var savedRunsSection: some View {
         Section(header: Text("Saved runs").font(.headline)) {
             if savedRuns.isEmpty {
-                Text("No saved runs yet. Completed simulations are stored here for reuse.")
+                Text("No saved runs yet")
                     .foregroundColor(.secondary)
             } else {
-                ForEach(savedRuns.indices, id: \.self) { index in
-                    let run = savedRuns[index]
+                ForEach(savedRuns) { run in
                     VStack(alignment: .leading) {
                         Text(run.timestamp, style: .date)
                             .font(.subheadline)
@@ -1042,6 +1037,7 @@ struct ContentView: View {
                         .padding(.top, 4)
                     }
                 }
+                .onDelete(perform: removeSavedRun)
             }
         }
     }
@@ -1163,4 +1159,3 @@ struct BlackJackAppV1App: App {
         }
     }
 }
-
