@@ -1,5 +1,21 @@
 import SwiftUI
 
+// MARK: - Debug logging
+
+struct DebugRecord: Identifiable, Codable {
+    var id = UUID()
+    var trueCount: Double
+    var playerCards: [Int]
+    var dealerUp: Int
+    var dealerHole: Int
+    var isSoft: Bool
+    var total: Int
+    var baseAction: String
+    var finalAction: String
+}
+
+// MARK: - Core models
+
 struct GameRules: Codable {
     var decks: Int
     var dealerHitsSoft17: Bool
@@ -37,133 +53,33 @@ struct BettingModel: Codable {
 struct SimulationInput: Codable {
     var rules: GameRules
     var betting: BettingModel
+    /// Hours per simulation (per reality)
     var hoursToSimulate: Double
+    /// Hands per hour
     var handsPerHour: Double
+    /// Number of independent simulations (realities)
+    var numRealities: Int
     var bankroll: Double
     var useBasicDeviations: Bool
-    var simulations: Int
 }
 
 struct SimulationResult: Codable {
     var expectedValuePerHour: Double
     var standardDeviationPerHour: Double
+    /// 0–1 probability of going broke in a reality
     var riskOfRuin: Double
     var averageBet: Double
     var medianBet: Double
-    var positiveOutcomePercentage: Double
+    /// Fraction of realities that finished with bankroll > starting bankroll
+    var percentPositiveOutcomes: Double
+    /// Max final bankroll across realities
     var bestEndingBankroll: Double
+    /// Min final bankroll across realities
     var worstEndingBankroll: Double
-    var worstBustHours: Double?
-    var totalEv: Double
-    var totalSd: Double
-    // Legacy/compatibility fields used by earlier UI code
-    var finalBankroll: Double?
-    var bustedHands: Int?
-    var handsPlayed: Int?
-    var hoursToPositive: Double?
-
-    enum CodingKeys: String, CodingKey {
-        case expectedValuePerHour
-        case standardDeviationPerHour
-        case riskOfRuin
-        case averageBet
-        case medianBet
-        case positiveOutcomePercentage
-        case bestEndingBankroll
-        case worstEndingBankroll
-        case worstBustHours
-        case totalEv
-        case totalSd
-        case finalBankroll
-        case bustedHands
-        case handsPlayed
-        case hoursToPositive
-    }
-
-    init(
-        expectedValuePerHour: Double,
-        standardDeviationPerHour: Double,
-        riskOfRuin: Double,
-        averageBet: Double,
-        medianBet: Double,
-        positiveOutcomePercentage: Double,
-        bestEndingBankroll: Double,
-        worstEndingBankroll: Double,
-        worstBustHours: Double?,
-        totalEv: Double,
-        totalSd: Double,
-        finalBankroll: Double? = nil,
-        bustedHands: Int? = nil,
-        handsPlayed: Int? = nil,
-        hoursToPositive: Double? = nil
-    ) {
-        self.expectedValuePerHour = expectedValuePerHour
-        self.standardDeviationPerHour = standardDeviationPerHour
-        self.riskOfRuin = riskOfRuin
-        self.averageBet = averageBet
-        self.medianBet = medianBet
-        self.positiveOutcomePercentage = positiveOutcomePercentage
-        self.bestEndingBankroll = bestEndingBankroll
-        self.worstEndingBankroll = worstEndingBankroll
-        self.worstBustHours = worstBustHours
-        self.totalEv = totalEv
-        self.totalSd = totalSd
-        self.finalBankroll = finalBankroll
-        self.bustedHands = bustedHands
-        self.handsPlayed = handsPlayed
-        self.hoursToPositive = hoursToPositive
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        expectedValuePerHour = try container.decode(Double.self, forKey: .expectedValuePerHour)
-        standardDeviationPerHour = try container.decode(Double.self, forKey: .standardDeviationPerHour)
-        riskOfRuin = try container.decode(Double.self, forKey: .riskOfRuin)
-        averageBet = try container.decode(Double.self, forKey: .averageBet)
-        medianBet = try container.decode(Double.self, forKey: .medianBet)
-        positiveOutcomePercentage = try container.decode(Double.self, forKey: .positiveOutcomePercentage)
-        bestEndingBankroll = try container.decode(Double.self, forKey: .bestEndingBankroll)
-        worstEndingBankroll = try container.decode(Double.self, forKey: .worstEndingBankroll)
-        worstBustHours = try container.decodeIfPresent(Double.self, forKey: .worstBustHours)
-        totalEv = try container.decode(Double.self, forKey: .totalEv)
-        totalSd = try container.decode(Double.self, forKey: .totalSd)
-        finalBankroll = try container.decodeIfPresent(Double.self, forKey: .finalBankroll)
-        bustedHands = try container.decodeIfPresent(Int.self, forKey: .bustedHands)
-        handsPlayed = try container.decodeIfPresent(Int.self, forKey: .handsPlayed)
-        hoursToPositive = try container.decodeIfPresent(Double.self, forKey: .hoursToPositive)
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(expectedValuePerHour, forKey: .expectedValuePerHour)
-        try container.encode(standardDeviationPerHour, forKey: .standardDeviationPerHour)
-        try container.encode(riskOfRuin, forKey: .riskOfRuin)
-        try container.encode(averageBet, forKey: .averageBet)
-        try container.encode(medianBet, forKey: .medianBet)
-        try container.encode(positiveOutcomePercentage, forKey: .positiveOutcomePercentage)
-        try container.encode(bestEndingBankroll, forKey: .bestEndingBankroll)
-        try container.encode(worstEndingBankroll, forKey: .worstEndingBankroll)
-        try container.encodeIfPresent(worstBustHours, forKey: .worstBustHours)
-        try container.encode(totalEv, forKey: .totalEv)
-        try container.encode(totalSd, forKey: .totalSd)
-        try container.encodeIfPresent(finalBankroll, forKey: .finalBankroll)
-        try container.encodeIfPresent(bustedHands, forKey: .bustedHands)
-        try container.encodeIfPresent(handsPlayed, forKey: .handsPlayed)
-        try container.encodeIfPresent(hoursToPositive, forKey: .hoursToPositive)
-    }
-}
-
-struct SingleRealityResult {
-    var expectedValuePerHour: Double
-    var standardDeviationPerHour: Double
-    var riskOfRuin: Double
-    var averageBet: Double
-    var medianBet: Double
-    var totalEv: Double
-    var totalSd: Double
-    var finalBankroll: Double
-    var bustedHands: Int?
-    var handsPlayed: Int
+    /// Hours to bust for the worst reality (if that worst one busted)
+    var hoursToBustWorst: Double?
+    var totalEv: Double // EV/hand
+    var totalSd: Double // SD/hand
 }
 
 struct Card {
@@ -200,13 +116,14 @@ struct Hand {
             } else {
                 cardValues = [card.value]
             }
-            var newTotals: Set<Int> = []
+
+            var newTotals: [Int] = []
             for total in totals {
-                for candidate in cardValues {
-                    newTotals.insert(total + candidate)
+                for cValue in cardValues {
+                    newTotals.append(total + cValue)
                 }
             }
-            totals = Array(newTotals)
+            totals = Array(Set(newTotals))
         }
         return totals
     }
@@ -224,6 +141,13 @@ struct Hand {
         bestValue > 21
     }
 
+    /// true only if there is an alternate total 10 points lower (i.e. a usable Ace)
+    var isSoft: Bool {
+        let total = bestValue
+        guard total <= 21 else { return false }
+        return values.contains(total - 10)
+    }
+
     var canSplit: Bool {
         cards.count == 2 && cards[0].rank == cards[1].rank
     }
@@ -233,38 +157,25 @@ enum PlayerAction {
     case hit, stand, double, split, surrender
 }
 
-// MARK: - Pending settlements + play result
-
-struct PendingSettlement {
-    var hand: Hand
-    var wager: Double
-}
-
-struct PlayResult {
-    var immediateProfit: Double
-    var settlements: [PendingSettlement]
-
-    static func + (lhs: PlayResult, rhs: PlayResult) -> PlayResult {
-        PlayResult(
-            immediateProfit: lhs.immediateProfit + rhs.immediateProfit,
-            settlements: lhs.settlements + rhs.settlements
-        )
-    }
-}
-
 // MARK: - Simulator
 
 class BlackjackSimulator {
     private var shoe: [Card] = []
     private var runningCount: Int = 0
+
     private let rules: GameRules
     private let betting: BettingModel
     private let useDeviations: Bool
+    private let debugEnabled: Bool
 
-    init(input: SimulationInput) {
+    // Exposed debug log
+    var debugLog: [DebugRecord] = []
+
+    init(input: SimulationInput, debugEnabled: Bool = false) {
         self.rules = input.rules
         self.betting = input.betting
         self.useDeviations = input.useBasicDeviations
+        self.debugEnabled = debugEnabled
         reshuffle()
     }
 
@@ -300,454 +211,530 @@ class BlackjackSimulator {
     }
 
     private func dealerPlay(_ hand: Hand) -> Hand {
-        var dealerHand = hand
+        var hand = hand
         while true {
-            let value = dealerHand.bestValue
-            let isSoft = dealerHand.values.contains(where: { $0 <= 21 && $0 + 10 == value }) && value <= 21
+            let value = hand.bestValue
+            let isSoft = hand.values.contains(where: { $0 <= 21 && $0 + 10 == value }) && value <= 21
             if value < 17 || (value == 17 && rules.dealerHitsSoft17 && isSoft) {
-                dealerHand.cards.append(drawCard())
+                hand.cards.append(drawCard())
             } else {
                 break
             }
         }
-        return dealerHand
-    }
-
-    private func basicHardStrategy(total: Int, dealerUp: Card) -> PlayerAction {
-        switch total {
-        case ..<9: return .hit
-        case 9: return (3...6).contains(dealerUp.value) ? .double : .hit
-        case 10: return (2...9).contains(dealerUp.value) ? .double : .hit
-        case 11: return dealerUp.rank == 1 ? .hit : .double
-        case 12: return (4...6).contains(dealerUp.value) ? .stand : .hit
-        case 13...16: return (2...6).contains(dealerUp.value) ? .stand : .hit
-        default: return .stand
-        }
-    }
-
-    private func basicSoftStrategy(total: Int, dealerUp: Card) -> PlayerAction {
-        switch total {
-        case 13, 14: return (5...6).contains(dealerUp.value) ? .double : .hit
-        case 15, 16: return (4...6).contains(dealerUp.value) ? .double : .hit
-        case 17: return (3...6).contains(dealerUp.value) ? .double : .hit
-        case 18:
-            if (3...6).contains(dealerUp.value) { return .double }
-            if (2...8).contains(dealerUp.value) { return .stand }
-            return .hit
-        case 19:
-            return dealerUp.value == 6 ? .double : .stand
-        default:
-            return .stand
-        }
+        return hand
     }
 
     private func basicStrategy(for hand: Hand, dealerUp: Card) -> PlayerAction {
+        // Surrender (late)
         if rules.surrenderAllowed && hand.cards.count == 2 {
-            if hand.bestValue == 16 && [9, 10, 1].contains(dealerUp.value) { return .surrender }
-            if hand.bestValue == 15 && dealerUp.value == 10 { return .surrender }
+            let dealerVal = dealerUp.value
+            let dealerIsAce = (dealerUp.rank == 1)
+
+            if hand.bestValue == 16 && (dealerVal == 9 || dealerVal == 10 || dealerIsAce) {
+                return .surrender
+            }
+            if hand.bestValue == 15 && dealerVal == 10 {
+                return .surrender
+            }
         }
 
+        // Pairs
         if hand.canSplit {
             let rank = hand.cards[0].rank
             switch rank {
-            case 1: return .split
-            case 10: return .stand
-            case 9: return [2, 3, 4, 5, 6, 8, 9].contains(dealerUp.value) ? .split : .stand
-            case 8: return .split
-            case 7: return dealerUp.value <= 7 ? .split : .hit
-            case 6: return dealerUp.value <= 6 ? .split : .hit
-            case 5: return basicHardStrategy(total: 10, dealerUp: dealerUp)
-            case 4: return (5...6).contains(dealerUp.value) ? .split : .hit
-            case 3, 2: return dealerUp.value <= 7 ? .split : .hit
-            default: break
+            case 1:
+                return .split
+            case 10:
+                return .stand
+            case 9:
+                return [2, 3, 4, 5, 6, 8, 9].contains(dealerUp.value) ? .split : .stand
+            case 8:
+                return .split
+            case 7:
+                return dealerUp.value <= 7 ? .split : .hit
+            case 6:
+                return dealerUp.value <= 6 ? .split : .hit
+            case 5:
+                return basicHardStrategy(total: 10, dealerUp: dealerUp)
+            case 4:
+                return (5...6).contains(dealerUp.value) ? .split : .hit
+            case 3, 2:
+                return dealerUp.value <= 7 ? .split : .hit
+            default:
+                break
             }
         }
 
         let total = hand.bestValue
         let containsAce = hand.values.contains(total - 10) && total <= 21
-        var action: PlayerAction = containsAce
-            ? basicSoftStrategy(total: total, dealerUp: dealerUp)
-            : basicHardStrategy(total: total, dealerUp: dealerUp)
 
+        var action: PlayerAction
+        if containsAce && total <= 21 {
+            action = basicSoftStrategy(total: total, dealerUp: dealerUp)
+        } else {
+            action = basicHardStrategy(total: total, dealerUp: dealerUp)
+        }
+
+        // No double after split when DAS is off
         if action == .double && hand.fromSplit && !rules.doubleAfterSplit {
             action = .hit
         }
+
         return action
     }
 
+    private func basicHardStrategy(total: Int, dealerUp: Card) -> PlayerAction {
+        switch total {
+        case ..<9:
+            return .hit
+        case 9:
+            return (3...6).contains(dealerUp.value) ? .double : .hit
+        case 10:
+            return (2...9).contains(dealerUp.value) ? .double : .hit
+        case 11:
+            return dealerUp.rank == 1 ? .hit : .double
+        case 12:
+            return (4...6).contains(dealerUp.value) ? .stand : .hit
+        case 13...16:
+            return (2...6).contains(dealerUp.value) ? .stand : .hit
+        default:
+            return .stand
+        }
+    }
+
+    private func basicSoftStrategy(total: Int, dealerUp: Card) -> PlayerAction {
+        switch total {
+        case 13, 14:
+            return (5...6).contains(dealerUp.value) ? .double : .hit
+        case 15, 16:
+            return (4...6).contains(dealerUp.value) ? .double : .hit
+        case 17:
+            return (3...6).contains(dealerUp.value) ? .double : .hit
+        case 18:
+            let up = dealerUp.value
+            if (2...6).contains(up) { return .double }
+            if (7...8).contains(up) { return .stand }
+            return .hit
+        case 19:
+            if dealerUp.value == 6 { return .double }
+            return .stand
+        default:
+            return .stand
+        }
+    }
+
+    private func actionName(_ action: PlayerAction) -> String {
+        switch action {
+        case .hit: return "H"
+        case .stand: return "S"
+        case .double: return "D"
+        case .split: return "P"
+        case .surrender: return "R"
+        }
+    }
+
+    // Insurance helper: Hi-Lo, take insurance at TC >= +3 vs Ace
+    private func insuranceBetAmount(for bet: Double, dealerUp: Card, splitDepth: Int) -> Double {
+        // Only on original hand and only vs Ace
+        guard splitDepth == 0, dealerUp.rank == 1 else { return 0 }
+        let tc = trueCount
+        return tc >= 3 ? bet / 2.0 : 0.0
+    }
+
+    // Deviations: Fab 4 + Illustrious hard + soft H17/S17
     private func applyDeviations(base: PlayerAction, hand: Hand, dealerUp: Card) -> PlayerAction {
         guard useDeviations else { return base }
+
         let tc = Int(floor(trueCount))
         let total = hand.bestValue
+        let dealerVal = dealerUp.value
+        let isSoft = hand.isSoft
 
+        // --- Surrender deviations (Fab 4) ---
         if rules.surrenderAllowed && hand.cards.count == 2 {
-            if total == 15 && dealerUp.value == 10 && tc >= 0 { return .surrender }
-            if total == 15 && dealerUp.value == 9 && tc >= 2 { return .surrender }
+            if total == 15 && dealerVal == 10 && tc >= 0 { return .surrender }
+            if total == 15 && dealerVal == 9 && tc >= 2 { return .surrender }
             if total == 15 && dealerUp.rank == 1 && tc >= 1 { return .surrender }
-            if total == 14 && dealerUp.value == 10 && tc >= 3 { return .surrender }
+            if total == 14 && dealerVal == 10 && tc >= 3 { return .surrender }
         }
 
-        switch (total, dealerUp.value) {
-        case (16, 10): return tc >= 0 ? .stand : base
-        case (15, 10): return tc >= 4 ? .stand : base
-        case (10, 10): return tc >= 4 ? .double : base
-        case (12, 3): return tc >= 2 ? .stand : base
-        case (12, 2): return tc >= 3 ? .stand : base
-        case (11, 11): return tc >= 1 ? .double : base
-        case (9, 2): return tc >= 1 ? .double : base
-        case (9, 7): return tc >= 3 ? .double : base
-        case (16, 9): return tc >= 5 ? .stand : base
-        case (13, 2): return tc >= -1 ? .stand : base
-        case (12, 4): return tc >= 0 ? .stand : base
-        case (12, 5): return tc >= -2 ? .stand : base
-        case (12, 6): return tc >= -1 ? .stand : base
-        case (13, 3): return tc >= -2 ? .stand : base
-        default: return base
+        // --- Soft deviations (2-card soft hands only) ---
+        if hand.cards.count == 2 && isSoft {
+            // Soft 17 (A,6): both H17 & S17 -> double vs 2 at TC >= +1
+            if total == 17 && dealerVal == 2 && tc >= 1 { return .double }
+
+            // Soft 19 (A,8) deviations
+            if total == 19 {
+                if rules.dealerHitsSoft17 {
+                    // H17: A,8 vs 4: 3+, vs 5: 1+, vs 6: 0-
+                    switch dealerVal {
+                    case 4:
+                        if tc >= 3 { return .double }
+                    case 5:
+                        if tc >= 1 { return .double }
+                    case 6:
+                        if tc < 0 { return .stand } // base is double; stand for negative counts
+                    default:
+                        break
+                    }
+                } else {
+                    // S17: A,8 vs 4: 3+, vs 5: 1+, vs 6: 1+
+                    switch dealerVal {
+                    case 4:
+                        return tc >= 3 ? .double : .stand
+                    case 5, 6:
+                        return tc >= 1 ? .double : .stand
+                    default:
+                        break
+                    }
+                }
+            }
         }
+
+        // --- Hard deviations: H17 vs S17 ---
+        if rules.dealerHitsSoft17 {
+            // ===== H17 deviations =====
+            switch (total, dealerVal) {
+            case (16, 10): return tc >= 0 ? .stand : base
+            case (16, 9):  return tc >= 4 ? .stand : base
+            case (16, 11): return tc >= 3 ? .stand : base
+            case (15, 10): return tc >= 4 ? .stand : base
+            case (15, 11): return tc >= 5 ? .stand : base
+            case (10, 10): return tc >= 4 ? .double : base
+            case (10, 11): return tc >= 3 ? .double : base
+            case (12, 3):  return tc >= 2 ? .stand : base
+            case (12, 2):  return tc >= 3 ? .stand : base
+            case (11, 11): return tc >= 1 ? .double : base
+            case (9, 2):   return tc >= 1 ? .double : base
+            case (9, 7):   return tc >= 3 ? .double : base
+            case (13, 2):  return tc >= -1 ? .stand : base
+            case (12, 4):  return tc >= 0 ? .stand : base
+            case (12, 5):  return tc >= -2 ? .stand : base
+            case (12, 6):  return tc >= -1 ? .stand : base
+            case (13, 3):  return tc >= -2 ? .stand : base
+            case (8, 6):   return tc >= 2 ? .double : base
+            default: break
+            }
+        } else {
+            // ===== S17 deviations =====
+            switch (total, dealerVal) {
+            case (16, 10): return tc >= 0 ? .stand : base
+            case (16, 9):  return tc >= 4 ? .stand : base
+            case (15, 10): return tc >= 4 ? .stand : base
+            case (10, 10): return tc >= 4 ? .double : base
+            case (10, 11): return tc >= 4 ? .double : base
+            case (12, 3):  return tc >= 2 ? .stand : base
+            case (12, 2):  return tc >= 3 ? .stand : base
+            case (11, 11): return tc >= 1 ? .double : base
+            case (9, 2):   return tc >= 1 ? .double : base
+            case (9, 7):   return tc >= 3 ? .double : base
+            case (13, 2):  return tc >= -1 ? .stand : base
+            case (12, 4):  return tc >= 0 ? .stand : base
+            case (12, 5):  return tc >= -2 ? .stand : base
+            case (12, 6):  return tc >= -1 ? .stand : base
+            case (13, 3):  return tc >= -2 ? .stand : base
+            case (8, 6):   return tc >= 2 ? .double : base
+            default: break
+            }
+        }
+
+        return base
     }
 
-    private func settle(hand: Hand, resolvedDealer: Hand, bet: Double) -> Double {
-        if hand.isBusted { return -bet }
-        if resolvedDealer.isBlackjack {
-            if hand.isBlackjack && !hand.fromSplit { return 0 }
-            return -bet
-        }
-        if hand.isBlackjack && !hand.fromSplit {
-            return bet * rules.blackjackPayout
-        }
-
-        let dealerValue = resolvedDealer.bestValue
-        let playerValue = hand.bestValue
-
-        if dealerValue > 21 { return bet }
-        if playerValue > dealerValue { return bet }
-        if playerValue < dealerValue { return -bet }
-        return 0
-    }
-
-    // playHand handles player decisions and returns immediate profit + pending settlements
-    private func playHand(
-        initialHand: Hand,
-        dealerHand: Hand,
-        bet: Double,
-        availableBankroll: Double,
-        splitDepth: Int = 0
-    ) -> PlayResult {
+    private func playHand(initialHand: Hand, dealerHand: Hand, bet: Double, splitDepth: Int = 0) -> Double {
         var hand = initialHand
-        var wager = min(bet, availableBankroll)
+        var wager = bet
         let dealerUp = dealerHand.cards.first ?? Card(rank: 10)
-        var action = applyDeviations(
-            base: basicStrategy(for: hand, dealerUp: dealerUp),
-            hand: hand,
-            dealerUp: dealerUp
-        )
 
-        if action == .double && hand.cards.count != 2 {
-            action = .hit
+        // --- Insurance logic (original hand only, vs Ace up) ---
+        let insuranceBet = insuranceBetAmount(for: wager, dealerUp: dealerUp, splitDepth: splitDepth)
+
+        // Dealer peek for blackjack
+        if dealerHand.isBlackjack {
+            let insurancePayout = insuranceBet > 0 ? insuranceBet * 2.0 : 0.0
+
+            if hand.isBlackjack && !hand.fromSplit {
+                // Push main bet; you just keep your stake and win insurance if any
+                return insurancePayout
+            } else {
+                // Lose main bet
+                return insurancePayout - wager
+            }
         }
 
-        switch action {
-        case .surrender:
-            return PlayResult(immediateProfit: -wager / 2.0, settlements: [])
+        // No dealer blackjack; insurance (if taken) is lost
+        let insuranceLoss = -insuranceBet
 
-        case .split where splitDepth < 3 && hand.canSplit:
+        let baseAction = basicStrategy(for: hand, dealerUp: dealerUp)
+        let firstAction = applyDeviations(base: baseAction, hand: hand, dealerUp: dealerUp)
+
+        // Debug record of initial decision
+        if debugEnabled && debugLog.count < 5000 {
+            let record = DebugRecord(
+                trueCount: trueCount,
+                playerCards: hand.cards.map { $0.rank },
+                dealerUp: dealerUp.rank,
+                dealerHole: dealerHand.cards.dropFirst().first?.rank ?? 0,
+                isSoft: hand.isSoft,
+                total: hand.bestValue,
+                baseAction: actionName(baseAction),
+                finalAction: actionName(firstAction)
+            )
+            debugLog.append(record)
+        }
+
+        switch firstAction {
+        case .surrender:
+            // Late surrender: dealer has already been checked for BJ, so just lose half plus any insurance loss.
+            return insuranceLoss - wager / 2.0
+
+        case .split where splitDepth < 3 && hand.canSplit && (!hand.isSplitAce):
             let firstCard = hand.cards[0]
             let secondCard = hand.cards[1]
+
             var firstHand = Hand(cards: [firstCard], isSplitAce: firstCard.rank == 1, fromSplit: true)
             var secondHand = Hand(cards: [secondCard], isSplitAce: secondCard.rank == 1, fromSplit: true)
+
             firstHand.cards.append(drawCard())
             secondHand.cards.append(drawCard())
-            let splitBankroll = availableBankroll / 2
-            let childBet = min(wager, splitBankroll)
 
             if firstHand.isSplitAce {
-                // Many rules: split Aces get only one card each and are resolved immediately
-                let profit1 = settle(hand: firstHand, dealerHand: dealerHand, bet: childBet, stood: true)
-                let profit2 = settle(hand: secondHand, dealerHand: dealerHand, bet: childBet, stood: true)
-                return PlayResult(immediateProfit: profit1 + profit2, settlements: [])
+                // One card to each Ace, no further hitting, settled independently.
+                let win1 = settle(hand: firstHand, dealerHand: dealerHand, bet: wager, stood: true)
+                let win2 = settle(hand: secondHand, dealerHand: dealerHand, bet: wager, stood: true)
+                return insuranceLoss + win1 + win2
             }
 
-            let win1 = playHand(
-                initialHand: firstHand,
-                dealerHand: dealerHand,
-                bet: childBet,
-                availableBankroll: splitBankroll,
-                splitDepth: splitDepth + 1
-            )
-            let win2 = playHand(
-                initialHand: secondHand,
-                dealerHand: dealerHand,
-                bet: childBet,
-                availableBankroll: splitBankroll,
-                splitDepth: splitDepth + 1
-            )
-            return win1 + win2
+            let win1 = playHand(initialHand: firstHand, dealerHand: dealerHand, bet: wager, splitDepth: splitDepth + 1)
+            let win2 = playHand(initialHand: secondHand, dealerHand: dealerHand, bet: wager, splitDepth: splitDepth + 1)
+            return insuranceLoss + win1 + win2
 
         case .double:
             if hand.cards.count == 2 {
-                let maxDouble = min(wager * 2, availableBankroll)
-                wager = maxDouble
+                wager *= 2
                 hand.cards.append(drawCard())
-                let profit = settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: true)
-                return PlayResult(immediateProfit: profit, settlements: [])
+                let res = settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: true)
+                return insuranceLoss + res
             } else {
-                let profit = settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: false)
-                return PlayResult(immediateProfit: profit, settlements: [])
+                let res = settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: false)
+                return insuranceLoss + res
             }
 
         default:
-            var currentAction = action
-            while true {
+            var stood = false
+            var currentAction = firstAction
+
+            handLoop: while true {
                 switch currentAction {
                 case .hit:
                     hand.cards.append(drawCard())
-                    if hand.isBusted { break }
-                    currentAction = applyDeviations(
-                        base: basicStrategy(for: hand, dealerUp: dealerUp),
-                        hand: hand,
-                        dealerUp: dealerUp
-                    )
-                    if currentAction == .double && hand.cards.count != 2 {
-                        currentAction = .hit
+                    if hand.isBusted {
+                        stood = true
+                        break handLoop
                     }
+                    let nextBase = basicStrategy(for: hand, dealerUp: dealerUp)
+                    currentAction = applyDeviations(base: nextBase, hand: hand, dealerUp: dealerUp)
+
                 case .stand:
-                    break
+                    stood = true
+                    break handLoop
+
                 default:
-                    break
+                    stood = true
+                    break handLoop
                 }
-                if currentAction != .hit { break }
             }
-            return PlayResult(
-                immediateProfit: 0,
-                settlements: [PendingSettlement(hand: hand, wager: wager)]
-            )
+
+            let res = settle(hand: hand, dealerHand: dealerHand, bet: wager, stood: stood)
+            return insuranceLoss + res
         }
     }
 
     private func settle(hand: Hand, dealerHand: Hand, bet: Double, stood: Bool) -> Double {
-        if hand.isBusted { return -bet }
-        if hand.cards.count == 2 && hand.isBlackjack {
-            // No blackjack after split aces in many rules; handle via fromSplit flag
-        }
-        var dealerHand = dealerHand
-        if dealerHand.isBlackjack {
-            if hand.isBlackjack && !hand.fromSplit { return 0 }
+        if hand.isBusted {
             return -bet
         }
 
-        // blackjackPayout is the net profit multiple, e.g. 1.5 for 3:2
+        if hand.cards.count == 2 && hand.isBlackjack {
+            // no extra handling here; fromSplit prevents BJ bonus
+        }
+
+        var dealerHand = dealerHand
+
+        if dealerHand.isBlackjack {
+            if hand.isBlackjack && !hand.fromSplit {
+                return 0
+            }
+            return -bet
+        }
+
+        // blackjackPayout is net profit multiple (1.5 for 3:2)
         if hand.isBlackjack && !hand.fromSplit {
             return bet * rules.blackjackPayout
         }
 
         dealerHand = dealerPlay(dealerHand)
-        if dealerHand.isBusted { return bet }
+
+        if dealerHand.isBusted {
+            return bet
+        }
 
         let playerTotal = hand.bestValue
         let dealerTotal = dealerHand.bestValue
+
         if playerTotal > dealerTotal { return bet }
         if playerTotal < dealerTotal { return -bet }
         return 0
     }
 
-    private func simulateSingleReality(
-        hands: Int,
-        handsPerHour: Double,
-        bankroll: Double,
-        progress: @escaping (Int) -> Void,
+    /// Multi-reality simulation using hours & hands/hour
+    /// Stops once bankroll hits 0 and never goes negative.
+    func simulate(
+        input: SimulationInput,
+        progress: @escaping (Int) -> Void,    // simulations completed
         shouldCancel: @escaping () -> Bool
-    ) async -> SingleRealityResult? {
-        guard hands > 0 else { return nil }
-        reshuffle()
-        var profits: [Double] = []
-        var bets: [Double] = []
-        var currentBankroll = bankroll
-        var bustedAtHand: Int?
-        var handsPlayed = 0
+    ) async -> SimulationResult? {
+        let realities = max(input.numRealities, 1)
+        let handsPerReality = max(Int(input.hoursToSimulate * input.handsPerHour), 1)
+        let handsPerHour = input.handsPerHour
+        let startingBankroll = input.bankroll
 
-        for handIndex in 0..<hands {
+        var allProfits: [Double] = []
+        var allBets: [Double] = []
+        var finalProfits: [Double] = []
+        var ruinedFlags: [Bool] = []
+        var endingBankrolls: [Double] = []
+        var bustHandIndex: [Int?] = Array(repeating: nil, count: realities)
+
+        for reality in 0..<realities {
             if shouldCancel() { return nil }
-            if handIndex % 500 == 0 { await Task.yield() }
-            if currentBankroll <= 0 {
-                bustedAtHand = handIndex
-                break
+
+            var cumProfit: Double = 0
+            var ruined = false
+
+            for handIndex in 0..<handsPerReality {
+                if shouldCancel() { return nil }
+
+                if handIndex % 500 == 0 {
+                    await Task.yield()
+                }
+
+                let bankrollNow = startingBankroll + cumProfit
+
+                // If there's no money left, stop this reality.
+                if bankrollNow <= 0 {
+                    ruined = true
+                    if bustHandIndex[reality] == nil {
+                        bustHandIndex[reality] = handIndex
+                    }
+                    break
+                }
+
+                // Never bet more than you have left.
+                let baseBet = betting.bet(for: trueCount)
+                let wager = min(baseBet, bankrollNow)
+
+                // Safety: if for some reason the wager is 0 or less, treat as bust and stop.
+                if wager <= 0 {
+                    ruined = true
+                    if bustHandIndex[reality] == nil {
+                        bustHandIndex[reality] = handIndex
+                    }
+                    break
+                }
+
+                allBets.append(wager)
+
+                let playerHand = Hand(cards: [drawCard(), drawCard()])
+                let dealerUp = drawCard()
+                let dealerHole = drawCard()
+                let dealerHand = Hand(cards: [dealerUp, dealerHole])
+
+                let profit = playHand(initialHand: playerHand, dealerHand: dealerHand, bet: wager)
+                cumProfit += profit
+                allProfits.append(profit)
+
+                let bankrollAfter = startingBankroll + cumProfit
+                if bankrollAfter <= 0 {
+                    ruined = true
+                    if bustHandIndex[reality] == nil {
+                        bustHandIndex[reality] = handIndex + 1
+                    }
+                    break
+                }
             }
 
-            let wager = min(betting.bet(for: trueCount), currentBankroll)
-            if wager <= 0 {
-                break
+            finalProfits.append(cumProfit)
+            ruinedFlags.append(ruined)
+
+            // Clamp to 0 so worst case is never negative
+            endingBankrolls.append(max(startingBankroll + cumProfit, 0))
+
+            // progress in simulations, not hands
+            await MainActor.run {
+                progress(reality + 1)
             }
-            bets.append(wager)
-
-            var playerHand = Hand(cards: [drawCard(), drawCard()])
-            var dealerHand = Hand(cards: [drawCard(), drawCard()])
-
-            // Dealer blackjack peek
-            if dealerHand.isBlackjack {
-                let profit = settle(hand: playerHand, resolvedDealer: dealerHand, bet: wager)
-                profits.append(profit)
-                currentBankroll += profit
-                handsPlayed += 1
-                progress(handIndex + 1)
-                continue
-            }
-
-            // Player play
-            let playResult = playHand(
-                initialHand: playerHand,
-                dealerHand: dealerHand,
-                bet: wager,
-                availableBankroll: currentBankroll
-            )
-
-            // Resolve pending settlements after dealer plays out
-            let resolvedDealer = dealerPlay(dealerHand)
-            let profit = playResult.settlements.reduce(playResult.immediateProfit) { partial, settlement in
-                partial + settle(hand: settlement.hand, resolvedDealer: resolvedDealer, bet: settlement.wager)
-            }
-
-            profits.append(profit)
-            currentBankroll += profit
-            handsPlayed += 1
-
-            if currentBankroll <= 0 {
-                bustedAtHand = handIndex + 1
-                break
-            }
-
-            progress(handIndex + 1)
         }
 
-        let avgProfitPerHand = profits.reduce(0, +) / Double(max(profits.count, 1))
-        let variance = profits.reduce(0) { $0 + pow($1 - avgProfitPerHand, 2) } / Double(max(profits.count, 1))
-        let sdPerHand = sqrt(variance)
+        let totalHands = max(allProfits.count, 1)
+        let avgProfitPerHand = allProfits.reduce(0, +) / Double(totalHands)
+
+        let variancePerHand = allProfits.reduce(0.0) {
+            $0 + pow($1 - avgProfitPerHand, 2)
+        } / Double(max(totalHands - 1, 1))
+
+        let sdPerHand = sqrt(variancePerHand)
+
         let hourlyEv = avgProfitPerHand * handsPerHour
         let hourlySd = sdPerHand * sqrt(handsPerHour)
 
-        let sortedBets = bets.sorted()
+        let sortedBets = allBets.sorted()
         let medianBet: Double
         if sortedBets.isEmpty {
             medianBet = 0
         } else if sortedBets.count % 2 == 0 {
-            medianBet = (sortedBets[sortedBets.count / 2] + sortedBets[sortedBets.count / 2 - 1]) / 2
+            let mid = sortedBets.count / 2
+            medianBet = (sortedBets[mid] + sortedBets[mid - 1]) / 2
         } else {
             medianBet = sortedBets[sortedBets.count / 2]
         }
 
-        let riskOfRuin: Double
-        if hourlyEv <= 0 {
-            riskOfRuin = 1.0
-        } else {
-            let variancePerHand = variance
-            let riskExponent = -2 * bankroll * avgProfitPerHand / max(variancePerHand, 1)
-            riskOfRuin = exp(riskExponent)
-        }
+        let avgBet = allBets.reduce(0, +) / Double(max(allBets.count, 1))
 
-        return SingleRealityResult(
-            expectedValuePerHour: hourlyEv,
-            standardDeviationPerHour: hourlySd,
-            riskOfRuin: riskOfRuin,
-            averageBet: bets.reduce(0, +) / Double(max(bets.count, 1)),
-            medianBet: medianBet,
-            totalEv: avgProfitPerHand,
-            totalSd: sdPerHand,
-            finalBankroll: currentBankroll,
-            bustedHands: bustedAtHand,
-            handsPlayed: handsPlayed
-        )
-    }
+        let ruinedCount = ruinedFlags.filter { $0 }.count
+        let riskOfRuin = Double(ruinedCount) / Double(realities)
 
-    func simulate(
-        simulations: Int,
-        hours: Double,
-        handsPerHour: Double,
-        bankroll: Double,
-        progress: @escaping (Int) -> Void,
-        shouldCancel: @escaping () -> Bool
-    ) async -> SimulationResult? {
-        guard simulations > 0 else { return nil }
-        let hands = Int(hours * handsPerHour)
-        guard hands > 0 else { return nil }
-        var evPerHourSum: Double = 0
-        var sdPerHourSum: Double = 0
-        var riskSum: Double = 0
-        var avgBetSum: Double = 0
-        var medianBets: [Double] = []
-        var evPerHandSum: Double = 0
-        var sdPerHandSum: Double = 0
-        var positiveOutcomes = 0
-        var bestEndingBankroll: Double = -.infinity
-        var worstEndingBankroll: Double = .infinity
-        var worstBustHours: Double?
+        // Positive outcomes = ending bankroll > starting bankroll
+        let positiveCount = endingBankrolls.filter { $0 > startingBankroll }.count
+        let percentPositive = Double(positiveCount) / Double(realities)
 
-        for simulationIndex in 0..<simulations {
-            if shouldCancel() { return nil }
-            let realityProgress: (Int) -> Void = { _ in }
-            if let result = await simulateSingleReality(
-                hands: hands,
-                handsPerHour: handsPerHour,
-                bankroll: bankroll,
-                progress: realityProgress,
-                shouldCancel: shouldCancel
-            ) {
-                evPerHourSum += result.expectedValuePerHour
-                sdPerHourSum += result.standardDeviationPerHour
-                riskSum += result.riskOfRuin
-                avgBetSum += result.averageBet
-                medianBets.append(result.medianBet)
-                evPerHandSum += result.totalEv
-                sdPerHandSum += result.totalSd
-                if result.finalBankroll > bankroll {
-                    positiveOutcomes += 1
-                }
-                if result.finalBankroll > bestEndingBankroll {
-                    bestEndingBankroll = result.finalBankroll
-                }
-                if result.finalBankroll < worstEndingBankroll {
-                    worstEndingBankroll = result.finalBankroll
-                    if let bustedHands = result.bustedHands {
-                        worstBustHours = Double(bustedHands) / handsPerHour
-                    } else {
-                        worstBustHours = nil
-                    }
-                }
-                await MainActor.run {
-                    progress(simulationIndex + 1)
-                }
-            } else {
-                return nil
-            }
-        }
+        let bestEnding = endingBankrolls.max() ?? startingBankroll
+        let worstEnding = endingBankrolls.min() ?? startingBankroll
 
-        let count = Double(simulations)
-        let medianBet: Double
-        let sortedMedianBets = medianBets.sorted()
-        if sortedMedianBets.isEmpty {
-            medianBet = 0
-        } else if sortedMedianBets.count % 2 == 0 {
-            medianBet = (sortedMedianBets[sortedMedianBets.count / 2]
-                         + sortedMedianBets[sortedMedianBets.count / 2 - 1]) / 2
-        } else {
-            medianBet = sortedMedianBets[sortedMedianBets.count / 2]
+        // Hours to bust for the worst outcome (if that reality actually busted)
+        var hoursToBustWorst: Double? = nil
+        if let worstIndex = endingBankrolls.enumerated().min(by: { $0.element < $1.element })?.offset,
+           let bustIndex = bustHandIndex[worstIndex] {
+            hoursToBustWorst = Double(bustIndex) / handsPerHour
         }
 
         return SimulationResult(
-            expectedValuePerHour: evPerHourSum / count,
-            standardDeviationPerHour: sdPerHourSum / count,
-            riskOfRuin: riskSum / count,
-            averageBet: avgBetSum / count,
+            expectedValuePerHour: hourlyEv,
+            standardDeviationPerHour: hourlySd,
+            riskOfRuin: riskOfRuin,
+            averageBet: avgBet,
             medianBet: medianBet,
-            positiveOutcomePercentage: (Double(positiveOutcomes) / Double(count)) * 100,
-            bestEndingBankroll: bestEndingBankroll,
-            worstEndingBankroll: worstEndingBankroll,
-            worstBustHours: worstBustHours,
-            totalEv: evPerHandSum / count,
-            totalSd: sdPerHandSum / count
+            percentPositiveOutcomes: percentPositive,
+            bestEndingBankroll: bestEnding,
+            worstEndingBankroll: worstEnding,
+            hoursToBustWorst: hoursToBustWorst,
+            totalEv: avgProfitPerHand,
+            totalSd: sdPerHand
         )
     }
 }
 
-// MARK: - Persistence + UI
+// MARK: - Persistence
 
 struct SavedRun: Identifiable, Codable {
     var id: UUID = .init()
@@ -756,6 +743,8 @@ struct SavedRun: Identifiable, Codable {
     var result: SimulationResult
 }
 
+// MARK: - UI
+
 struct ContentView: View {
     @State private var decks: Int = 6
     @State private var dealerHitsSoft17: Bool = true
@@ -763,6 +752,7 @@ struct ContentView: View {
     @State private var surrenderAllowed: Bool = true
     @State private var blackjackPayout: Double = 1.5
     @State private var penetration: Double = 0.75
+
     @State private var minBet: Double = 10
     @State private var spreads: [BetRampEntry] = [
         BetRampEntry(trueCount: 1, bet: 20),
@@ -770,19 +760,26 @@ struct ContentView: View {
         BetRampEntry(trueCount: 3, bet: 80),
         BetRampEntry(trueCount: 4, bet: 100)
     ]
-    @State private var hoursToSimulate: Double = 100
+
+    @State private var hoursToSimulate: Double = 5
     @State private var handsPerHour: Double = 100
+    @State private var numRealities: Int = 500
     @State private var bankroll: Double = 10000
     @State private var useDeviations: Bool = true
-    @State private var simulations: Int = 1000
+    @State private var debugEnabled: Bool = false
+
     @State private var result: SimulationResult?
     @State private var isSimulating: Bool = false
     @State private var completedSimulations: Int = 0
     @State private var startTime: Date?
     @State private var simulationTask: Task<Void, Never>?
     @State private var userCancelled: Bool = false
+
     @AppStorage("savedRuns") private var savedRunsData: Data = Data()
     @State private var savedRuns: [SavedRun] = []
+
+    @State private var debugRecords: [DebugRecord] = []
+    @State private var debugCSV: String = ""
 
     var body: some View {
         NavigationView {
@@ -794,6 +791,7 @@ struct ContentView: View {
                     progressSection
                     resultSection
                     savedRunsSection
+                    debugSection
                 }
                 .padding()
             }
@@ -801,6 +799,8 @@ struct ContentView: View {
             .onAppear(perform: loadSavedRuns)
         }
     }
+
+    // MARK: - Sections
 
     private var rulesSection: some View {
         Section(header: Text("Rules").font(.headline)) {
@@ -830,11 +830,14 @@ struct ContentView: View {
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
             }
+
             ForEach(spreads.indices, id: \.self) { index in
                 let binding = $spreads[index]
                 VStack(alignment: .leading) {
                     HStack {
-                        Stepper("True count: \(binding.trueCount.wrappedValue)", value: binding.trueCount, in: 1...12)
+                        Stepper("True count: \(binding.trueCount.wrappedValue)",
+                                value: binding.trueCount,
+                                in: 1...12)
                         Spacer()
                         TextField("Bet", value: binding.bet, format: .number)
                             .keyboardType(.decimalPad)
@@ -852,10 +855,12 @@ struct ContentView: View {
                         .foregroundColor(.secondary)
                 }
             }
+
             Button(action: addSpread) {
                 Label("Add spread level", systemImage: "plus")
             }
             .disabled(spreads.count >= 12)
+
             Text("Define wager amounts up to a TC of 12; the highest matching level will be used.")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -865,9 +870,9 @@ struct ContentView: View {
     private var simSection: some View {
         Section(header: Text("Simulation").font(.headline)) {
             HStack {
-                Text("Hours to simulate")
-                TextField("100", value: $hoursToSimulate, format: .number)
-                    .keyboardType(.numberPad)
+                Text("Hours per simulation")
+                TextField("5", value: $hoursToSimulate, format: .number)
+                    .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
             }
             HStack {
@@ -877,8 +882,8 @@ struct ContentView: View {
                     .textFieldStyle(.roundedBorder)
             }
             HStack {
-                Text("Simulations")
-                TextField("1000", value: $simulations, format: .number)
+                Text("Number of simulations")
+                TextField("500", value: $numRealities, format: .number)
                     .keyboardType(.numberPad)
                     .textFieldStyle(.roundedBorder)
             }
@@ -889,14 +894,19 @@ struct ContentView: View {
                     .textFieldStyle(.roundedBorder)
             }
             Toggle("Use basic deviations", isOn: $useDeviations)
+            Toggle("Enable debug logging", isOn: $debugEnabled)
+
             HStack {
                 Button(action: runSimulation) {
                     HStack {
-                        if isSimulating { ProgressView() }
+                        if isSimulating {
+                            ProgressView()
+                        }
                         Text("Run simulation")
                     }
                 }
                 .disabled(isSimulating)
+
                 if isSimulating {
                     Button("Cancel", role: .destructive, action: cancelSimulation)
                 }
@@ -908,19 +918,26 @@ struct ContentView: View {
         Group {
             if isSimulating {
                 Section(header: Text("Progress").font(.headline)) {
-                    ProgressView(value: Double(completedSimulations), total: Double(max(simulations, 1)))
+                    ProgressView(
+                        value: Double(completedSimulations),
+                        total: Double(max(numRealities, 1))
+                    )
                     Text(
                         String(
                             format: "Simulations: %d / %d (%.1f%%)",
                             completedSimulations,
-                            simulations,
-                            (Double(completedSimulations) / Double(max(simulations, 1))) * 100
+                            numRealities,
+                            (Double(completedSimulations) / Double(max(numRealities, 1))) * 100
                         )
                     )
                     if let startTime {
                         let elapsed = Date().timeIntervalSince(startTime)
                         Text(String(format: "Elapsed: %.1f seconds", elapsed))
                     }
+                    let handsPerSim = max(Int(hoursToSimulate * handsPerHour), 1)
+                    Text("Hands per simulation: \(handsPerSim)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
         }
@@ -932,21 +949,16 @@ struct ContentView: View {
                 Section(header: Text("Results").font(.headline)) {
                     Text(String(format: "EV/hour: $%.2f", result.expectedValuePerHour))
                     Text(String(format: "SD/hour: $%.2f", result.standardDeviationPerHour))
-                    Text(String(format: "Risk of ruin: %.4f", result.riskOfRuin))
+                    Text(String(format: "Risk of ruin: %.2f%%", result.riskOfRuin * 100))
                     Text(String(format: "Average bet: $%.2f", result.averageBet))
                     Text(String(format: "Median bet: $%.2f", result.medianBet))
-                    Text(String(format: "Positive outcomes: %.2f%%", result.positiveOutcomePercentage))
+                    Text(String(format: "Positive outcomes: %.1f%%", result.percentPositiveOutcomes * 100))
                     Text(String(format: "Best ending bankroll: $%.2f", result.bestEndingBankroll))
-                    if let bustHours = result.worstBustHours {
-                        Text(
-                            String(
-                                format: "Worst ending bankroll: $%.2f (bust at %.2f hours)",
-                                result.worstEndingBankroll,
-                                bustHours
-                            )
-                        )
+                    Text(String(format: "Worst ending bankroll: $%.2f", result.worstEndingBankroll))
+                    if let h = result.hoursToBustWorst {
+                        Text(String(format: "Hours to bust (worst): %.2f", h))
                     } else {
-                        Text(String(format: "Worst ending bankroll: $%.2f", result.worstEndingBankroll))
+                        Text("Hours to bust (worst): N/A")
                     }
                     Text(String(format: "EV/hand: $%.4f", result.totalEv))
                     Text(String(format: "SD/hand: $%.4f", result.totalSd))
@@ -958,20 +970,22 @@ struct ContentView: View {
     private var savedRunsSection: some View {
         Section(header: Text("Saved runs").font(.headline)) {
             if savedRuns.isEmpty {
-                Text("No saved runs yet")
+                Text("No saved runs yet. Completed simulations are stored here for reuse.")
                     .foregroundColor(.secondary)
             } else {
-                ForEach(savedRuns) { run in
+                ForEach(savedRuns.indices, id: \.self) { index in
+                    let run = savedRuns[index]
                     VStack(alignment: .leading) {
                         Text(run.timestamp, style: .date)
                             .font(.subheadline)
                         Text(
                             String(
-                                format: "EV/hr $%.2f | Hours %.0f | Sims %d | Min bet $%.0f",
+                                format: "EV/hr $%.2f | Sims %d | Hours/sim %.1f | Min bet $%.0f | RoR %.1f%%",
                                 run.result.expectedValuePerHour,
+                                run.input.numRealities,
                                 run.input.hoursToSimulate,
-                                run.input.simulations,
-                                run.input.betting.minBet
+                                run.input.betting.minBet,
+                                run.result.riskOfRuin * 100
                             )
                         )
                         .font(.caption)
@@ -979,9 +993,7 @@ struct ContentView: View {
                             Button("Load", action: { load(run: run) })
                             Spacer()
                             Button(role: .destructive) {
-                                if let index = savedRuns.firstIndex(where: { $0.id == run.id }) {
-                                    removeSavedRun(at: IndexSet(integer: index))
-                                }
+                                removeSavedRun(at: IndexSet(integer: index))
                             } label: {
                                 Image(systemName: "trash")
                             }
@@ -989,14 +1001,47 @@ struct ContentView: View {
                         .padding(.top, 4)
                     }
                 }
-                .onDelete(perform: removeSavedRun)
             }
         }
     }
 
+    private var debugSection: some View {
+        Section(header: Text("Debug").font(.headline)) {
+            if debugEnabled {
+                Text("Debug logging is ON. Run a simulation to capture decisions (up to 5000 hands).")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Enable debug logging above to record per-hand decisions.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            if !debugRecords.isEmpty {
+                Text("Logged \(debugRecords.count) decisions.")
+                    .font(.subheadline)
+
+                ScrollView(.horizontal) {
+                    ScrollView {
+                        Text(debugCSV)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                }
+
+                Text("Select and copy the text above to paste into a CSV file or spreadsheet.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Saved runs
+
     private func loadSavedRuns() {
         guard !savedRunsData.isEmpty,
-              let decoded = try? JSONDecoder().decode([SavedRun].self, from: savedRunsData) else {
+              let decoded = try? JSONDecoder().decode([SavedRun].self, from: savedRunsData)
+        else {
             savedRuns = []
             return
         }
@@ -1016,20 +1061,28 @@ struct ContentView: View {
         surrenderAllowed = run.input.rules.surrenderAllowed
         blackjackPayout = run.input.rules.blackjackPayout
         penetration = run.input.rules.penetration
+
         minBet = run.input.betting.minBet
         spreads = run.input.betting.spreads
+
         hoursToSimulate = run.input.hoursToSimulate
         handsPerHour = run.input.handsPerHour
+        numRealities = run.input.numRealities
         bankroll = run.input.bankroll
         useDeviations = run.input.useBasicDeviations
-        simulations = run.input.simulations
+
         result = run.result
     }
 
     private func addSpread() {
         guard spreads.count < 12 else { return }
         let nextTC = min((spreads.map { $0.trueCount }.max() ?? 0) + 1, 12)
-        spreads.append(BetRampEntry(trueCount: nextTC, bet: max(minBet, spreads.last?.bet ?? minBet)))
+        spreads.append(
+            BetRampEntry(
+                trueCount: nextTC,
+                bet: max(minBet, spreads.last?.bet ?? minBet)
+            )
+        )
     }
 
     private func removeSpread(at offsets: IndexSet) {
@@ -1041,19 +1094,44 @@ struct ContentView: View {
         persistSavedRuns()
     }
 
+    // MARK: - Simulation controls
+
     private func cancelSimulation() {
         userCancelled = true
         simulationTask?.cancel()
         isSimulating = false
     }
 
+    private func makeCSV(from records: [DebugRecord]) -> String {
+        var lines: [String] = ["trueCount,playerCards,dealerUp,dealerHole,total,isSoft,baseAction,finalAction"]
+        for r in records {
+            let cards = r.playerCards.map(String.init).joined(separator: "-")
+            let line = String(
+                format: "%.2f,%@,%d,%d,%d,%@,%@,%@",
+                r.trueCount,
+                cards,
+                r.dealerUp,
+                r.dealerHole,
+                r.total,
+                r.isSoft ? "1" : "0",
+                r.baseAction,
+                r.finalAction
+            )
+            lines.append(line)
+        }
+        return lines.joined(separator: "\n")
+    }
+
     private func runSimulation() {
         guard !isSimulating else { return }
+
         isSimulating = true
         userCancelled = false
         completedSimulations = 0
         startTime = Date()
         result = nil
+        debugRecords = []
+        debugCSV = ""
 
         let input = SimulationInput(
             rules: GameRules(
@@ -1068,24 +1146,24 @@ struct ContentView: View {
                 minBet: minBet,
                 spreads: spreads
             ),
-            hoursToSimulate: hoursToSimulate,
-            handsPerHour: handsPerHour,
+            hoursToSimulate: max(hoursToSimulate, 0.01),
+            handsPerHour: max(handsPerHour, 1),
+            numRealities: max(numRealities, 1),
             bankroll: bankroll,
-            useBasicDeviations: useDeviations,
-            simulations: simulations
+            useBasicDeviations: useDeviations
         )
 
         simulationTask = Task(priority: .userInitiated) {
-            let simulator = BlackjackSimulator(input: input)
+            let simulator = BlackjackSimulator(input: input, debugEnabled: debugEnabled)
+
             let outcome = await simulator.simulate(
-                simulations: input.simulations,
-                hours: input.hoursToSimulate,
-                handsPerHour: input.handsPerHour,
-                bankroll: input.bankroll,
-                progress: { count in
-                    self.completedSimulations = count
+                input: input,
+                progress: { simsDone in
+                    self.completedSimulations = simsDone
                 },
-                shouldCancel: { Task.isCancelled || self.userCancelled }
+                shouldCancel: {
+                    Task.isCancelled || self.userCancelled
+                }
             )
 
             await MainActor.run {
@@ -1096,6 +1174,11 @@ struct ContentView: View {
                         let saved = SavedRun(timestamp: Date(), input: input, result: outcome)
                         self.savedRuns.append(saved)
                         self.persistSavedRuns()
+
+                        if self.debugEnabled {
+                            self.debugRecords = simulator.debugLog
+                            self.debugCSV = makeCSV(from: simulator.debugLog)
+                        }
                     }
                 }
             }
