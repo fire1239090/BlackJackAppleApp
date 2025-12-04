@@ -162,6 +162,7 @@ enum PlayerAction {
 class BlackjackSimulator {
     private var shoe: [Card] = []
     private var runningCount: Int = 0
+    private var cutCardReached: Bool = false
 
     private let rules: GameRules
     private let betting: BettingModel
@@ -196,11 +197,20 @@ class BlackjackSimulator {
         }
         shoe.shuffle()
         runningCount = 0
+        cutCardReached = false
+    }
+
+    private func prepareShoeForNewHand() {
+        let remainingFraction = Double(shoe.count) / Double(rules.decks * 52)
+        if cutCardReached || remainingFraction < (1 - rules.penetration) {
+            reshuffle()
+        }
     }
 
     private func drawCard() -> Card {
-        if Double(shoe.count) / Double(rules.decks * 52) < (1 - rules.penetration) {
-            reshuffle()
+        let remainingFraction = Double(shoe.count) / Double(rules.decks * 52)
+        if !cutCardReached && remainingFraction < (1 - rules.penetration) {
+            cutCardReached = true
         }
         if shoe.isEmpty {
             reshuffle()
@@ -629,6 +639,8 @@ class BlackjackSimulator {
                     }
                     break
                 }
+
+                prepareShoeForNewHand()
 
                 // Never bet more than you have left.
                 let baseBet = betting.bet(for: trueCount)
