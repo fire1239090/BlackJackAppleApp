@@ -584,9 +584,16 @@ class BlackjackSimulator {
 
         default:
             var stood = false
-            var currentAction = firstAction
 
             handLoop: while true {
+                let baseAction = basicStrategy(for: hand, dealerUp: dealerUp)
+                var currentAction = applyDeviations(base: baseAction, hand: hand, dealerUp: dealerUp)
+
+                // Once an extra card has been taken, doubling is no longer available.
+                if hand.cards.count > 2 && currentAction == .double {
+                    currentAction = .hit
+                }
+
                 switch currentAction {
                 case .hit:
                     hand.cards.append(drawCard())
@@ -595,13 +602,6 @@ class BlackjackSimulator {
                         stood = true
                         break handLoop
                     }
-                    let nextBase = basicStrategy(for: hand, dealerUp: dealerUp)
-                    var nextAction = applyDeviations(base: nextBase, hand: hand, dealerUp: dealerUp)
-                    // Double is not allowed after taking an extra card; treat as a hit
-                    if hand.cards.count > 2 && nextAction == .double {
-                        nextAction = .hit
-                    }
-                    currentAction = nextAction
 
                 case .stand:
                     stood = true
@@ -609,6 +609,7 @@ class BlackjackSimulator {
                     break handLoop
 
                 default:
+                    // Should not normally reach here (split/surrender handled earlier), but treat as standing.
                     stood = true
                     actions.append(currentAction)
                     break handLoop
