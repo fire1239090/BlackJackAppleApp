@@ -13,8 +13,7 @@ struct DebugRecord: Identifiable, Codable {
     var dealerHole: Int
     var isSoft: Bool
     var total: Int
-    var baseAction: String
-    var finalAction: String
+    var action: String
     var wager: Double
     var insuranceBet: Double
     var bankrollStart: Double
@@ -501,13 +500,13 @@ class BlackjackSimulator {
         // No dealer blackjack; insurance (if taken) is lost
         let insuranceLoss = -insuranceBet
 
-        let baseAction = basicStrategy(for: hand, dealerUp: dealerUp)
-        let firstAction = applyDeviations(base: baseAction, hand: hand, dealerUp: dealerUp)
+        let firstAction = applyDeviations(base: basicStrategy(for: hand, dealerUp: dealerUp), hand: hand, dealerUp: dealerUp)
 
         var finalProfit: Double = 0
         var outcome: HandResult = .push
         var dealerFinalTotal: Int = dealerHand.bestValue
         var playerFinalTotal: Int = hand.bestValue
+        var actions: [PlayerAction] = []
 
         switch firstAction {
         case .surrender:
@@ -516,6 +515,7 @@ class BlackjackSimulator {
             outcome = .surrender
             dealerFinalTotal = dealerHand.bestValue
             playerFinalTotal = hand.bestValue
+            actions.append(.surrender)
 
         case .split where splitDepth < 3 && hand.canSplit && (!hand.isSplitAce):
             let firstCard = hand.cards[0]
@@ -561,6 +561,8 @@ class BlackjackSimulator {
                 outcome = .push
             }
 
+            actions.append(.split)
+
         case .double:
             if hand.cards.count == 2 {
                 wager *= 2
@@ -570,12 +572,14 @@ class BlackjackSimulator {
                 dealerFinalTotal = res.dealerTotal
                 playerFinalTotal = res.playerTotal
                 outcome = res.result
+                actions.append(.double)
             } else {
                 let res = settle(hand: hand, dealerHand: dealerHand, bet: wager, false)
                 finalProfit = insuranceLoss + res.profit
                 dealerFinalTotal = res.dealerTotal
                 playerFinalTotal = res.playerTotal
                 outcome = res.result
+                actions.append(.double)
             }
 
         default:
@@ -586,19 +590,27 @@ class BlackjackSimulator {
                 switch currentAction {
                 case .hit:
                     hand.cards.append(drawCard())
+                    actions.append(.hit)
                     if hand.isBusted {
                         stood = true
                         break handLoop
                     }
                     let nextBase = basicStrategy(for: hand, dealerUp: dealerUp)
-                    currentAction = applyDeviations(base: nextBase, hand: hand, dealerUp: dealerUp)
+                    var nextAction = applyDeviations(base: nextBase, hand: hand, dealerUp: dealerUp)
+                    // Double is not allowed after taking an extra card; treat as a hit
+                    if hand.cards.count > 2 && nextAction == .double {
+                        nextAction = .hit
+                    }
+                    currentAction = nextAction
 
                 case .stand:
                     stood = true
+                    actions.append(.stand)
                     break handLoop
 
                 default:
                     stood = true
+                    actions.append(currentAction)
                     break handLoop
                 }
             }
@@ -623,8 +635,7 @@ class BlackjackSimulator {
                 dealerHole: dealerHand.cards.dropFirst().first?.rank ?? 0,
                 isSoft: hand.isSoft,
                 total: hand.bestValue,
-                baseAction: actionName(baseAction),
-                finalAction: actionName(firstAction),
+                action: actions.map(actionName).joined(separator: "-"),
                 wager: wager,
                 insuranceBet: insuranceBet,
                 bankrollStart: bankrollStart,
@@ -1252,12 +1263,12 @@ struct ContentView: View {
 
     private func makeCSV(from records: [DebugRecord]) -> String {
         var lines: [String] = [
-            "reality,handIndex,splitDepth,trueCount,playerCards,dealerUp,dealerHole,total,isSoft,baseAction,finalAction,wager,insuranceBet,bankrollStart,payout,bankrollEnd,result,playerFinal,dealerFinal"
+            "reality,handIndex,splitDepth,trueCount,playerCards,dealerUp,dealerHole,total,isSoft,action,wager,insuranceBet,bankrollStart,payout,bankrollEnd,result,playerFinal,dealerFinal"
         ]
         for r in records {
             let cards = r.playerCards.map(String.init).joined(separator: "-")
             let line = String(
-                format: "%d,%d,%d,%.2f,%@,%d,%d,%d,%@,%@,%@,%.2f,%.2f,%.2f,%.2f,%.2f,%@,%d,%d",
+                format: "%d,%d,%d,%.2f,%@,%d,%d,%d,%@,%@,%.2f,%.2f,%.2f,%.2f,%.2f,%@,%d,%d",
                 r.realityIndex,
                 r.handIndex,
                 r.splitDepth,
@@ -1267,8 +1278,7 @@ struct ContentView: View {
                 r.dealerHole,
                 r.total,
                 r.isSoft ? "1" : "0",
-                r.baseAction,
-                r.finalAction,
+                r.action,
                 r.wager,
                 r.insuranceBet,
                 r.bankrollStart,
