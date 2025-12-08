@@ -52,6 +52,9 @@ struct DebugRecord: Identifiable, Codable {
     var action: String
     var wager: Double
     var insuranceBet: Double
+    var insuranceDecision: String
+    var insuranceResult: String?
+    var insuranceNet: Double?
     var bankrollStart: Double
     var payout: Double
     var bankrollEnd: Double
@@ -861,8 +864,56 @@ struct SimulationInput: Codable {
     /// Number of independent simulations (realities)
     var numRealities: Int
     var bankroll: Double
+    var takeInsurance: Bool = true
     var useBasicDeviations: Bool = true
     var deviations: [DeviationRule] = DeviationRule.defaultRules
+
+    enum CodingKeys: String, CodingKey {
+        case rules
+        case betting
+        case hoursToSimulate
+        case handsPerHour
+        case numRealities
+        case bankroll
+        case takeInsurance
+        case useBasicDeviations
+        case deviations
+    }
+
+    init(
+        rules: GameRules,
+        betting: BettingModel,
+        hoursToSimulate: Double,
+        handsPerHour: Double,
+        numRealities: Int,
+        bankroll: Double,
+        takeInsurance: Bool = true,
+        useBasicDeviations: Bool = true,
+        deviations: [DeviationRule] = DeviationRule.defaultRules
+    ) {
+        self.rules = rules
+        self.betting = betting
+        self.hoursToSimulate = hoursToSimulate
+        self.handsPerHour = handsPerHour
+        self.numRealities = numRealities
+        self.bankroll = bankroll
+        self.takeInsurance = takeInsurance
+        self.useBasicDeviations = useBasicDeviations
+        self.deviations = deviations
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rules = try container.decode(GameRules.self, forKey: .rules)
+        betting = try container.decode(BettingModel.self, forKey: .betting)
+        hoursToSimulate = try container.decode(Double.self, forKey: .hoursToSimulate)
+        handsPerHour = try container.decode(Double.self, forKey: .handsPerHour)
+        numRealities = try container.decode(Int.self, forKey: .numRealities)
+        bankroll = try container.decode(Double.self, forKey: .bankroll)
+        takeInsurance = try container.decodeIfPresent(Bool.self, forKey: .takeInsurance) ?? true
+        useBasicDeviations = try container.decodeIfPresent(Bool.self, forKey: .useBasicDeviations) ?? true
+        deviations = try container.decodeIfPresent([DeviationRule].self, forKey: .deviations) ?? DeviationRule.defaultRules
+    }
 }
 
 struct SimulationResult: Codable {
@@ -1254,6 +1305,7 @@ class BlackjackSimulator {
     private let rules: GameRules
     private let betting: BettingModel
     private let activeDeviations: [DeviationRule]
+    private let takeInsurance: Bool
     private let debugEnabled: Bool
 
     // Exposed debug log
@@ -1263,6 +1315,7 @@ class BlackjackSimulator {
         self.rules = input.rules
         self.betting = input.betting
         self.activeDeviations = input.deviations.filter { $0.isEnabled }
+        self.takeInsurance = input.takeInsurance
         self.debugEnabled = debugEnabled
         reshuffle()
     }
@@ -1337,6 +1390,7 @@ class BlackjackSimulator {
 
     // Insurance helper: Hi-Lo, take insurance at TC >= +3 vs Ace
     private func insuranceBetAmount(for bet: Double, dealerUp: Card, splitDepth: Int) -> Double {
+        guard takeInsurance else { return 0 }
         // Only on original hand and only vs Ace
         guard splitDepth == 0, dealerUp.rank == 1 else { return 0 }
         let tc = trueCount
@@ -1418,23 +1472,101 @@ class BlackjackSimulator {
         let dealerUp = dealerHand.cards.first ?? Card(rank: 10)
 
         // --- Insurance logic (original hand only, vs Ace up) ---
+        let insuranceEligible = splitDepth == 0 && dealerUp.rank == 1
+        let meetsInsuranceCount = trueCount >= 3
         let insuranceBet = insuranceBetAmount(for: wager, dealerUp: dealerUp, splitDepth: splitDepth)
+        let insuranceTaken = insuranceBet > 0
+        let insuranceDecision: String
+        if insuranceEligible {
+            if takeInsurance {
+                insuranceDecision = insuranceTaken ? "taken" : (meetsInsuranceCount ? "skipped" : "below-threshold")
+            } else {
+                insuranceDecision = "disabled"
+            }
+        } else {
+            insuranceDecision = "not-eligible"
+        }
+
+        var insuranceResult: String?
+        var insuranceNet: Double?
 
         // Dealer peek for blackjack
         if dealerHand.isBlackjack {
-            let insurancePayout = insuranceBet > 0 ? insuranceBet * 2.0 : 0.0
+            if insuranceTaken {
+                let insurancePayout = insuranceBet * 2.0
+                insuranceResult = "win"
+                insuranceNet = insurancePayout
+            }
 
             if hand.isBlackjack && !hand.fromSplit {
                 // Push main bet; you just keep your stake and win insurance if any
-                return insurancePayout
+                let finalProfit = insuranceNet ?? 0
+                if debugEnabled && debugLog.count < 5000 {
+                    let record = DebugRecord(
+                        trueCount: trueCount,
+                        playerCards: hand.cards.map { $0.rank },
+                        dealerUp: dealerUp.rank,
+                        dealerHole: dealerHand.cards.dropFirst().first?.rank ?? 0,
+                        isSoft: hand.isSoft,
+                        total: hand.bestValue,
+                        action: "dealerBJ",
+                        wager: wager,
+                        insuranceBet: insuranceBet,
+                        insuranceDecision: insuranceDecision,
+                        insuranceResult: insuranceResult,
+                        insuranceNet: insuranceNet,
+                        bankrollStart: bankrollStart,
+                        payout: finalProfit,
+                        bankrollEnd: bankrollStart + finalProfit,
+                        splitDepth: splitDepth,
+                        result: HandResult.push.rawValue,
+                        realityIndex: realityIndex,
+                        handIndex: handIndex,
+                        playerFinal: hand.bestValue,
+                        dealerFinal: dealerHand.bestValue
+                    )
+                    debugLog.append(record)
+                }
+                return finalProfit
             } else {
                 // Lose main bet
-                return insurancePayout - wager
+                let finalProfit = (insuranceNet ?? 0) - wager
+                if debugEnabled && debugLog.count < 5000 {
+                    let record = DebugRecord(
+                        trueCount: trueCount,
+                        playerCards: hand.cards.map { $0.rank },
+                        dealerUp: dealerUp.rank,
+                        dealerHole: dealerHand.cards.dropFirst().first?.rank ?? 0,
+                        isSoft: hand.isSoft,
+                        total: hand.bestValue,
+                        action: "dealerBJ",
+                        wager: wager,
+                        insuranceBet: insuranceBet,
+                        insuranceDecision: insuranceDecision,
+                        insuranceResult: insuranceResult,
+                        insuranceNet: insuranceNet,
+                        bankrollStart: bankrollStart,
+                        payout: finalProfit,
+                        bankrollEnd: bankrollStart + finalProfit,
+                        splitDepth: splitDepth,
+                        result: HandResult.loss.rawValue,
+                        realityIndex: realityIndex,
+                        handIndex: handIndex,
+                        playerFinal: hand.bestValue,
+                        dealerFinal: dealerHand.bestValue
+                    )
+                    debugLog.append(record)
+                }
+                return finalProfit
             }
         }
 
         // No dealer blackjack; insurance (if taken) is lost
         let insuranceLoss = -insuranceBet
+        if insuranceTaken {
+            insuranceResult = "loss"
+            insuranceNet = insuranceLoss
+        }
 
         let firstAction = applyDeviations(base: basicStrategy(for: hand, dealerUp: dealerUp), hand: hand, dealerUp: dealerUp)
 
@@ -1575,6 +1707,9 @@ class BlackjackSimulator {
                 action: actions.map(actionName).joined(separator: "-"),
                 wager: wager,
                 insuranceBet: insuranceBet,
+                insuranceDecision: insuranceDecision,
+                insuranceResult: insuranceResult,
+                insuranceNet: insuranceNet,
                 bankrollStart: bankrollStart,
                 payout: finalProfit,
                 bankrollEnd: bankrollStart + finalProfit,
@@ -1863,6 +1998,7 @@ struct SavedRunDetailView: View {
                     Text(String(format: "Hands per hour: %.0f", run.input.handsPerHour))
                     Text("Simulations: \(run.input.numRealities)")
                     Text(String(format: "Bankroll: $%.0f", run.input.bankroll))
+                    Text(run.input.takeInsurance ? "Insurance bets enabled (TC ≥ +3)" : "Insurance bets disabled")
                 }
 
                 Section(header: Text("Deviations Used")) {
@@ -1913,6 +2049,7 @@ struct ContentView: View {
     @State private var surrenderAllowed: Bool = true
     @State private var blackjackPayout: Double = 1.5
     @State private var penetration: Double = 0.75
+    @State private var takeInsurance: Bool = true
 
     @State private var minBet: Double = 10
     @State private var spreads: [BetRampEntry] = [
@@ -2057,6 +2194,11 @@ struct ContentView: View {
                         .foregroundColor(.secondary)
                 }
             }
+
+            Toggle("Take insurance bets", isOn: $takeInsurance)
+            Text("Insurance is taken when the true count is +3 or higher against an Ace upcard.")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
     }
 
@@ -2308,32 +2450,37 @@ struct ContentView: View {
 
     private func makeCSV(from records: [DebugRecord]) -> String {
         var lines: [String] = [
-            "reality,handIndex,splitDepth,trueCount,playerCards,dealerUp,dealerHole,total,isSoft,action,wager,insuranceBet,bankrollStart,payout,bankrollEnd,result,playerFinal,dealerFinal"
+            "reality,handIndex,splitDepth,trueCount,playerCards,dealerUp,dealerHole,total,isSoft,action,wager,insuranceBet,insuranceDecision,insuranceResult,insuranceNet,bankrollStart,payout,bankrollEnd,result,playerFinal,dealerFinal"
         ]
         for r in records {
             let cards = r.playerCards.map(String.init).joined(separator: "-")
-            let line = String(
-                format: "%d,%d,%d,%.2f,%@,%d,%d,%d,%@,%@,%.2f,%.2f,%.2f,%.2f,%.2f,%@,%d,%d",
-                r.realityIndex,
-                r.handIndex,
-                r.splitDepth,
-                r.trueCount,
+            let insuranceResult = r.insuranceResult ?? "null"
+            let insuranceNet = r.insuranceNet.map { String(format: "%.2f", $0) } ?? "null"
+            let entries: [String] = [
+                "\(r.realityIndex)",
+                "\(r.handIndex)",
+                "\(r.splitDepth)",
+                String(format: "%.2f", r.trueCount),
                 cards,
-                r.dealerUp,
-                r.dealerHole,
-                r.total,
+                "\(r.dealerUp)",
+                "\(r.dealerHole)",
+                "\(r.total)",
                 r.isSoft ? "1" : "0",
                 r.action,
-                r.wager,
-                r.insuranceBet,
-                r.bankrollStart,
-                r.payout,
-                r.bankrollEnd,
+                String(format: "%.2f", r.wager),
+                String(format: "%.2f", r.insuranceBet),
+                r.insuranceDecision,
+                insuranceResult,
+                insuranceNet,
+                String(format: "%.2f", r.bankrollStart),
+                String(format: "%.2f", r.payout),
+                String(format: "%.2f", r.bankrollEnd),
                 r.result,
-                r.playerFinal,
-                r.dealerFinal
-            )
-            lines.append(line)
+                "\(r.playerFinal)",
+                "\(r.dealerFinal)"
+            ]
+
+            lines.append(entries.joined(separator: ","))
         }
         return lines.joined(separator: "\n")
     }
@@ -2360,6 +2507,7 @@ struct ContentView: View {
             handsPerHour: max(handsPerHour, 1),
             numRealities: max(numRealities, 1),
             bankroll: bankroll,
+            takeInsurance: takeInsurance,
             useBasicDeviations: true,
             deviations: deviations
         )
