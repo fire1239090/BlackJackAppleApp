@@ -108,6 +108,10 @@ struct DeviationManagerView: View {
     @State private var showingEditor: Bool = false
     @State private var showingChart: Bool = false
     @State private var duplicateAlert: Bool = false
+    @State private var blockedByAllAlert: Bool = false
+    @State private var moveToAllAlert: Bool = false
+    @State private var pendingPromotionRule: DeviationRule?
+    @State private var conflictingRule: DeviationRule?
 
     private var filteredDeviations: [DeviationRule] {
         deviations.filter { $0.category == selectedCategory }
@@ -157,6 +161,16 @@ struct DeviationManagerView: View {
         } message: {
             Text("That deviation already exists in this category.")
         }
+        .alert("Already in All", isPresented: $blockedByAllAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("This deviation already exists in the All category. Please enable it there instead of creating a duplicate.")
+        }
+        .alert("Moved to All", isPresented: $moveToAllAlert) {
+            Button("OK") { promotePendingRule() }
+        } message: {
+            Text("This deviation also exists in the other dealer rule set. It has been moved to the All category so it applies to both.")
+        }
         .sheet(isPresented: $showingEditor) {
             DeviationEditorView(
                 category: selectedCategory,
@@ -200,11 +214,50 @@ struct DeviationManagerView: View {
             return
         }
 
+        if let crossCategory = deviations.first(where: { candidate in
+            candidate.hasSameCoreSignature(as: newRule) && candidate.category != newRule.category && candidate.id != existing?.id
+        }) {
+            if crossCategory.category == .all {
+                blockedByAllAlert = true
+                return
+            }
+
+            let isOppositeDealerRule = (newRule.category == .hit17 && crossCategory.category == .stand17) ||
+                (newRule.category == .stand17 && crossCategory.category == .hit17)
+
+            if isOppositeDealerRule {
+                var promotedRule = newRule
+                promotedRule.category = .all
+                pendingPromotionRule = promotedRule
+                conflictingRule = crossCategory
+                moveToAllAlert = true
+                return
+            }
+        }
+
         if let existing, let index = deviations.firstIndex(where: { $0.id == existing.id }) {
             deviations[index] = newRule
         } else {
             deviations.append(newRule)
         }
+    }
+
+    private func promotePendingRule() {
+        guard let pendingPromotionRule else { return }
+
+        if let conflictingRule {
+            deviations.removeAll { $0.id == conflictingRule.id }
+        }
+
+        if let existing = editorContext, let index = deviations.firstIndex(where: { $0.id == existing.id }) {
+            deviations[index] = pendingPromotionRule
+        } else {
+            deviations.append(pendingPromotionRule)
+        }
+
+        self.pendingPromotionRule = nil
+        self.conflictingRule = nil
+        self.moveToAllAlert = false
     }
 
     private func deviationRow(for deviation: DeviationRule) -> some View {
@@ -1008,6 +1061,15 @@ struct DeviationRule: Identifiable, Codable, Equatable {
 
     func hasSameSignature(as other: DeviationRule) -> Bool {
         category == other.category &&
+        playerTotal == other.playerTotal &&
+        isSoft == other.isSoft &&
+        pairRank == other.pairRank &&
+        dealerValue == other.dealerValue &&
+        action == other.action &&
+        countCondition == other.countCondition
+    }
+
+    func hasSameCoreSignature(as other: DeviationRule) -> Bool {
         playerTotal == other.playerTotal &&
         isSoft == other.isSoft &&
         pairRank == other.pairRank &&
