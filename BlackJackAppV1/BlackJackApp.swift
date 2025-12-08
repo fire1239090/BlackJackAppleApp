@@ -505,6 +505,12 @@ struct DeviationChartView: View {
 
     private let dealerValues = Array(2...11)
 
+    private var rulesWithoutSurrender: GameRules {
+        var copy = rules
+        copy.surrenderAllowed = false
+        return copy
+    }
+
     private var standardDeviations: [DeviationRule] {
         deviations.filter { $0.action != .surrender }
     }
@@ -569,33 +575,34 @@ struct DeviationChartView: View {
 
     private var hardRows: [ChartRowData] {
         (5...21).map { total in
-            ChartRowData(label: "Hard \(total)", cells: cells(for: total, isSoft: false, pairRank: nil, deviations: standardDeviations))
+            ChartRowData(label: "Hard \(total)", cells: cells(for: total, isSoft: false, pairRank: nil, deviations: standardDeviations, allowSurrenderBase: false))
         }
     }
 
     private var softRows: [ChartRowData] {
         (13...21).map { total in
-            ChartRowData(label: "Soft \(total)", cells: cells(for: total, isSoft: true, pairRank: nil, deviations: standardDeviations))
+            ChartRowData(label: "Soft \(total)", cells: cells(for: total, isSoft: true, pairRank: nil, deviations: standardDeviations, allowSurrenderBase: false))
         }
     }
 
     private var pairRows: [ChartRowData] {
         (1...10).map { rank in
             let label = rank == 1 ? "A,A" : "\(rank),\(rank)"
-            return ChartRowData(label: "Pair \(label)", cells: cells(for: rank * 2, isSoft: false, pairRank: rank, deviations: standardDeviations))
+            return ChartRowData(label: "Pair \(label)", cells: cells(for: rank * 2, isSoft: false, pairRank: rank, deviations: standardDeviations, allowSurrenderBase: false))
         }
     }
 
     private var surrenderRows: [ChartRowData] {
         (14...16).map { total in
-            ChartRowData(label: "Hard \(total)", cells: cells(for: total, isSoft: false, pairRank: nil, deviations: surrenderDeviations))
+            ChartRowData(label: "Hard \(total)", cells: cells(for: total, isSoft: false, pairRank: nil, deviations: surrenderDeviations, allowSurrenderBase: true))
         }
     }
 
-    private func cells(for total: Int, isSoft: Bool, pairRank: Int?, deviations: [DeviationRule]) -> [ChartCellData] {
+    private func cells(for total: Int, isSoft: Bool, pairRank: Int?, deviations: [DeviationRule], allowSurrenderBase: Bool) -> [ChartCellData] {
         dealerValues.map { dealer in
             let hand = handFor(total: total, isSoft: isSoft, pairRank: pairRank)
-            let base = StrategyAdvisor.baseAction(for: hand, dealerUp: Card(rank: dealerCardRank(dealer)), rules: rules)
+            let appliedRules = allowSurrenderBase ? rules : rulesWithoutSurrender
+            let base = StrategyAdvisor.baseAction(for: hand, dealerUp: Card(rank: dealerCardRank(dealer)), rules: appliedRules)
             let deviationsHere = deviations.filter { rule in
                 rule.playerTotal == total &&
                 rule.isSoft == isSoft &&
@@ -1061,55 +1068,12 @@ struct DeviationRule: Identifiable, Codable, Equatable {
     }
 
     static var defaultRules: [DeviationRule] {
-        var rules: [DeviationRule] = [
-            // Fab 4 surrender deviations (all games)
-            .init(category: .all, playerTotal: 15, isSoft: false, pairRank: nil, dealerValue: 10, action: .surrender, countCondition: .trueCountAtLeast(0)),
-            .init(category: .all, playerTotal: 15, isSoft: false, pairRank: nil, dealerValue: 9, action: .surrender, countCondition: .trueCountAtLeast(2)),
-            .init(category: .all, playerTotal: 15, isSoft: false, pairRank: nil, dealerValue: 11, action: .surrender, countCondition: .trueCountAtLeast(1)),
-            .init(category: .all, playerTotal: 14, isSoft: false, pairRank: nil, dealerValue: 10, action: .surrender, countCondition: .trueCountAtLeast(3)),
-
-            // Soft deviations shared by H17/S17
-            .init(category: .all, playerTotal: 17, isSoft: true, pairRank: nil, dealerValue: 2, action: .double, countCondition: .trueCountAtLeast(1)),
-
-            // Totals identical across H17/S17
+        [
+            // Minimal starting set
+            .init(category: .all, playerTotal: 20, isSoft: false, pairRank: 10, dealerValue: 6, action: .split, countCondition: .trueCountAtLeast(4)),
             .init(category: .all, playerTotal: 16, isSoft: false, pairRank: nil, dealerValue: 10, action: .stand, countCondition: .trueCountAtLeast(0)),
-            .init(category: .all, playerTotal: 16, isSoft: false, pairRank: nil, dealerValue: 9, action: .stand, countCondition: .trueCountAtLeast(4)),
-            .init(category: .all, playerTotal: 15, isSoft: false, pairRank: nil, dealerValue: 10, action: .stand, countCondition: .trueCountAtLeast(4)),
-            .init(category: .all, playerTotal: 10, isSoft: false, pairRank: nil, dealerValue: 10, action: .double, countCondition: .trueCountAtLeast(4)),
-            .init(category: .all, playerTotal: 12, isSoft: false, pairRank: nil, dealerValue: 3, action: .stand, countCondition: .trueCountAtLeast(2)),
-            .init(category: .all, playerTotal: 12, isSoft: false, pairRank: nil, dealerValue: 2, action: .stand, countCondition: .trueCountAtLeast(3)),
-            .init(category: .all, playerTotal: 11, isSoft: false, pairRank: nil, dealerValue: 11, action: .double, countCondition: .trueCountAtLeast(1)),
-            .init(category: .all, playerTotal: 9, isSoft: false, pairRank: nil, dealerValue: 2, action: .double, countCondition: .trueCountAtLeast(1)),
-            .init(category: .all, playerTotal: 9, isSoft: false, pairRank: nil, dealerValue: 7, action: .double, countCondition: .trueCountAtLeast(3)),
-            .init(category: .all, playerTotal: 13, isSoft: false, pairRank: nil, dealerValue: 2, action: .stand, countCondition: .trueCountAtLeast(-1)),
-            .init(category: .all, playerTotal: 12, isSoft: false, pairRank: nil, dealerValue: 4, action: .stand, countCondition: .trueCountAtLeast(0)),
-            .init(category: .all, playerTotal: 12, isSoft: false, pairRank: nil, dealerValue: 5, action: .stand, countCondition: .trueCountAtLeast(-2)),
-            .init(category: .all, playerTotal: 12, isSoft: false, pairRank: nil, dealerValue: 6, action: .stand, countCondition: .trueCountAtLeast(-1)),
-            .init(category: .all, playerTotal: 13, isSoft: false, pairRank: nil, dealerValue: 3, action: .stand, countCondition: .trueCountAtLeast(-2)),
-            .init(category: .all, playerTotal: 8, isSoft: false, pairRank: nil, dealerValue: 6, action: .double, countCondition: .trueCountAtLeast(2))
+            .init(category: .all, playerTotal: 15, isSoft: false, pairRank: nil, dealerValue: 10, action: .stand, countCondition: .trueCountAtLeast(4))
         ]
-
-        // H17-only deviations
-        rules.append(contentsOf: [
-            .init(category: .hit17, playerTotal: 16, isSoft: false, pairRank: nil, dealerValue: 11, action: .stand, countCondition: .trueCountAtLeast(3)),
-            .init(category: .hit17, playerTotal: 15, isSoft: false, pairRank: nil, dealerValue: 11, action: .stand, countCondition: .trueCountAtLeast(5)),
-            .init(category: .hit17, playerTotal: 10, isSoft: false, pairRank: nil, dealerValue: 11, action: .double, countCondition: .trueCountAtLeast(3)),
-            // Soft 19 nuances for H17
-            .init(category: .hit17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 4, action: .double, countCondition: .trueCountAtLeast(3)),
-            .init(category: .hit17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 5, action: .double, countCondition: .trueCountAtLeast(1)),
-            .init(category: .hit17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 6, action: .stand, countCondition: .trueCountAtMost(-1))
-        ])
-
-        // S17-only deviations
-        rules.append(contentsOf: [
-            .init(category: .stand17, playerTotal: 10, isSoft: false, pairRank: nil, dealerValue: 11, action: .double, countCondition: .trueCountAtLeast(4)),
-            // Soft 19 nuances for S17
-            .init(category: .stand17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 4, action: .double, countCondition: .trueCountAtLeast(3)),
-            .init(category: .stand17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 5, action: .double, countCondition: .trueCountAtLeast(1)),
-            .init(category: .stand17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 6, action: .double, countCondition: .trueCountAtLeast(1))
-        ])
-
-        return rules
     }
 }
 
