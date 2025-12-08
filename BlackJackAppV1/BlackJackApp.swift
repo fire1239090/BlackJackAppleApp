@@ -2,6 +2,14 @@ import SwiftUI
 #if canImport(UIKit)
 import UIKit
 
+final class OrientationAppDelegate: NSObject, UIApplicationDelegate {
+    static var orientationLock: UIInterfaceOrientationMask = .portrait
+
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        OrientationAppDelegate.orientationLock
+    }
+}
+
 enum OrientationManager {
     static func forceLandscape() {
         setOrientation(.landscapeRight)
@@ -12,8 +20,9 @@ enum OrientationManager {
     }
 
     private static func setOrientation(_ orientation: UIInterfaceOrientation) {
+        OrientationAppDelegate.orientationLock = orientation.isLandscape ? .landscape : .portrait
         UIDevice.current.setValue(orientation.rawValue, forKey: "orientation")
-        UINavigationController.attemptRotationToDeviceOrientation()
+        UIViewController.attemptRotationToDeviceOrientation()
 
         if #available(iOS 16.0, *), let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             let mask: UIInterfaceOrientationMask = orientation.isLandscape ? .landscape : .portrait
@@ -500,9 +509,11 @@ struct DeviationChartView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Visualizing deviations for \(selectedCategory.displayName). Red text marks count-based overrides.")
+                    Text("Visualizing deviations for \(selectedCategory.displayName). Color-coded halves show base strategy on the left and deviations on the right.")
                         .font(.callout)
                         .foregroundColor(.secondary)
+
+                    legendView
 
                     ChartSectionView(title: "Hard Totals", dealerValues: dealerValues, rows: hardRows)
                     ChartSectionView(title: "Soft Totals", dealerValues: dealerValues, rows: softRows)
@@ -519,6 +530,32 @@ struct DeviationChartView: View {
         }
         .onAppear { OrientationManager.forceLandscape() }
         .onDisappear { OrientationManager.restorePortrait() }
+    }
+
+    private var legendView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Legend")
+                .font(.subheadline.weight(.semibold))
+
+            VStack(alignment: .leading, spacing: 6) {
+                legendRow(color: chartActionColor(.hit), label: "H = Hit")
+                legendRow(color: chartActionColor(.stand), label: "S = Stand")
+                legendRow(color: chartActionColor(.double), label: "D = Double")
+                legendRow(color: chartActionColor(.split), label: "P = Split")
+                legendRow(color: chartActionColor(.surrender), label: "R = Surrender")
+            }
+        }
+    }
+
+    private func legendRow(color: Color, label: String) -> some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(color.opacity(0.6))
+                .frame(width: 20, height: 14)
+
+            Text(label)
+                .font(.caption)
+        }
     }
 
     private var hardRows: [ChartRowData] {
@@ -639,6 +676,21 @@ struct ChartCellData: Identifiable {
     let deviations: [DeviationCellEntry]
 }
 
+private func chartActionColor(_ action: PlayerAction) -> Color {
+    switch action {
+    case .hit:
+        return .green
+    case .double:
+        return .red
+    case .stand:
+        return .yellow
+    case .split:
+        return .gray
+    case .surrender:
+        return .white
+    }
+}
+
 struct DeviationCellEntry: Identifiable {
     var id = UUID()
     let action: PlayerAction
@@ -684,67 +736,38 @@ struct ChartSectionView: View {
 
     @ViewBuilder
     private func chartCell(for cell: ChartCellData) -> some View {
-        if cell.deviations.isEmpty {
-            VStack {
+        let deviationAction = cell.deviations.first?.action
+
+        ZStack {
+            HStack(spacing: 0) {
+                chartActionColor(cell.baseAction).opacity(0.35)
+                    .frame(maxWidth: .infinity)
+
+                (deviationAction.map { chartActionColor($0).opacity(0.55) } ?? Color.clear)
+                    .frame(maxWidth: .infinity)
+            }
+
+            VStack(spacing: 4) {
                 Text(cell.baseLabel)
                     .font(.subheadline.weight(.semibold))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(6)
-            .background(actionColor(cell.baseAction).opacity(0.3))
-            .foregroundColor(.primary)
-            .cornerRadius(6)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-            )
-        } else {
-            HStack(spacing: 0) {
-                VStack {
-                    Text(cell.baseLabel)
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                }
-                .padding(6)
-                .frame(maxWidth: .infinity)
-                .background(actionColor(cell.baseAction).opacity(0.35))
-                .foregroundColor(.primary)
 
-                VStack(spacing: 2) {
+                if !cell.deviations.isEmpty {
                     ForEach(cell.deviations) { deviation in
                         Text(deviation.label)
                             .font(.caption2)
                             .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
                     }
                 }
-                .padding(6)
-                .frame(maxWidth: .infinity)
-                .background(actionColor(cell.deviations.first?.action ?? cell.baseAction).opacity(0.55))
-                .foregroundColor(.primary)
             }
+            .padding(6)
             .frame(maxWidth: .infinity)
-            .cornerRadius(6)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-            )
         }
-    }
-
-    private func actionColor(_ action: PlayerAction) -> Color {
-        switch action {
-        case .hit:
-            return .green
-        case .double:
-            return .red
-        case .stand:
-            return .yellow
-        case .split:
-            return .gray
-        case .surrender:
-            return .white
-        }
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+        )
     }
 }
 
@@ -2248,6 +2271,10 @@ struct ContentView: View {
 
 @main
 struct BlackJackAppV1App: App {
+#if canImport(UIKit)
+    @UIApplicationDelegateAdaptor(OrientationAppDelegate.self) var appDelegate
+#endif
+
     var body: some Scene {
         WindowGroup {
             ContentView()
