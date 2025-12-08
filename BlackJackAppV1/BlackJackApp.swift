@@ -1,6 +1,33 @@
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
+
+enum OrientationManager {
+    static func forceLandscape() {
+        setOrientation(.landscapeRight)
+    }
+
+    static func restorePortrait() {
+        setOrientation(.portrait)
+    }
+
+    private static func setOrientation(_ orientation: UIInterfaceOrientation) {
+        UIDevice.current.setValue(orientation.rawValue, forKey: "orientation")
+        UINavigationController.attemptRotationToDeviceOrientation()
+
+        if #available(iOS 16.0, *), let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            let mask: UIInterfaceOrientationMask = orientation.isLandscape ? .landscape : .portrait
+            try? windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+        }
+    }
+}
+#endif
+
+#if !canImport(UIKit)
+enum OrientationManager {
+    static func forceLandscape() {}
+    static func restorePortrait() {}
+}
 #endif
 
 // MARK: - Debug logging
@@ -122,9 +149,16 @@ struct DeviationManagerView: View {
             Text("That deviation already exists in this category.")
         }
         .sheet(isPresented: $showingEditor) {
-            DeviationEditorView(category: selectedCategory, existingRule: editorContext) { newRule in
-                addOrUpdateDeviation(newRule, editing: editorContext)
-            }
+            DeviationEditorView(
+                category: selectedCategory,
+                existingRule: editorContext,
+                onSave: { newRule in
+                    addOrUpdateDeviation(newRule, editing: editorContext)
+                },
+                onDelete: { rule in
+                    delete(rule)
+                }
+            )
         }
         .sheet(isPresented: $showingChart) {
             DeviationChartView(
@@ -234,6 +268,7 @@ struct DeviationEditorView: View {
     var category: DeviationCategory
     var existingRule: DeviationRule?
     var onSave: (DeviationRule) -> Void
+    var onDelete: ((DeviationRule) -> Void)? = nil
 
     @State private var playerCard1: Int = 10
     @State private var playerCard2: Int = 6
@@ -319,7 +354,7 @@ struct DeviationEditorView: View {
                 }
 
             }
-            .navigationTitle("New Deviation")
+            .navigationTitle(existingRule == nil ? "New Deviation" : "Change Deviation")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: { dismiss() })
@@ -327,6 +362,14 @@ struct DeviationEditorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", action: save)
                         .disabled(availableActions.isEmpty)
+                }
+                if existingRule != nil {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button(role: .destructive, action: deleteRule) {
+                            Image(systemName: "trash")
+                        }
+                        .accessibilityLabel("Delete deviation")
+                    }
                 }
             }
             .onChange(of: availableActions) { options in
@@ -381,6 +424,12 @@ struct DeviationEditorView: View {
             isEnabled: true
         )
         onSave(rule)
+        dismiss()
+    }
+
+    private func deleteRule() {
+        guard let existingRule, let onDelete else { return }
+        onDelete(existingRule)
         dismiss()
     }
 
@@ -468,6 +517,8 @@ struct DeviationChartView: View {
                 }
             }
         }
+        .onAppear { OrientationManager.forceLandscape() }
+        .onDisappear { OrientationManager.restorePortrait() }
     }
 
     private var hardRows: [ChartRowData] {
@@ -499,8 +550,14 @@ struct DeviationChartView: View {
                 rule.dealerValue == dealer &&
                 rule.pairRank == pairRank
             }
-            let deviationText = deviationsHere.sorted(by: DeviationRule.sorter).map { deviationDescription($0) }.joined(separator: "\n")
-            return ChartCellData(baseAction: shortLabel(for: base), deviationText: deviationText.isEmpty ? nil : deviationText)
+            let deviationEntries = deviationsHere
+                .sorted(by: DeviationRule.sorter)
+                .map { deviationEntry($0) }
+            return ChartCellData(
+                baseAction: base,
+                baseLabel: shortLabel(for: base),
+                deviations: deviationEntries
+            )
         }
     }
 
@@ -528,8 +585,11 @@ struct DeviationChartView: View {
         value == 11 ? 1 : value
     }
 
-    private func deviationDescription(_ deviation: DeviationRule) -> String {
-        "\(label(for: deviation.action)) (\(countLabel(deviation.countCondition)))"
+    private func deviationEntry(_ deviation: DeviationRule) -> DeviationCellEntry {
+        .init(
+            action: deviation.action,
+            label: "\(label(for: deviation.action)) (\(countLabel(deviation.countCondition)))"
+        )
     }
 
     private func countLabel(_ condition: CountCondition) -> String {
@@ -574,8 +634,15 @@ struct ChartRowData: Identifiable {
 
 struct ChartCellData: Identifiable {
     var id = UUID()
-    let baseAction: String
-    let deviationText: String?
+    let baseAction: PlayerAction
+    let baseLabel: String
+    let deviations: [DeviationCellEntry]
+}
+
+struct DeviationCellEntry: Identifiable {
+    var id = UUID()
+    let action: PlayerAction
+    let label: String
 }
 
 struct ChartSectionView: View {
@@ -605,20 +672,7 @@ struct ChartSectionView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 2)
                     ForEach(row.cells) { cell in
-                        VStack(spacing: 2) {
-                            Text(cell.baseAction)
-                                .font(.subheadline.weight(.semibold))
-                            if let deviation = cell.deviationText {
-                                Text(deviation)
-                                    .font(.caption2)
-                                    .foregroundColor(.red)
-                                    .multilineTextAlignment(.center)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(6)
-                        .background(Color.gray.opacity(0.08))
-                        .cornerRadius(6)
+                        chartCell(for: cell)
                     }
                 }
             }
@@ -626,6 +680,71 @@ struct ChartSectionView: View {
         .padding()
         .background(Color.secondary.opacity(0.06))
         .cornerRadius(12)
+    }
+
+    @ViewBuilder
+    private func chartCell(for cell: ChartCellData) -> some View {
+        if cell.deviations.isEmpty {
+            VStack {
+                Text(cell.baseLabel)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(6)
+            .background(actionColor(cell.baseAction).opacity(0.3))
+            .foregroundColor(.primary)
+            .cornerRadius(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+            )
+        } else {
+            HStack(spacing: 0) {
+                VStack {
+                    Text(cell.baseLabel)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .padding(6)
+                .frame(maxWidth: .infinity)
+                .background(actionColor(cell.baseAction).opacity(0.35))
+                .foregroundColor(.primary)
+
+                VStack(spacing: 2) {
+                    ForEach(cell.deviations) { deviation in
+                        Text(deviation.label)
+                            .font(.caption2)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(6)
+                .frame(maxWidth: .infinity)
+                .background(actionColor(cell.deviations.first?.action ?? cell.baseAction).opacity(0.55))
+                .foregroundColor(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .cornerRadius(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+            )
+        }
+    }
+
+    private func actionColor(_ action: PlayerAction) -> Color {
+        switch action {
+        case .hit:
+            return .green
+        case .double:
+            return .red
+        case .stand:
+            return .yellow
+        case .split:
+            return .gray
+        case .surrender:
+            return .white
+        }
     }
 }
 
