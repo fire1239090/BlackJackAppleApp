@@ -1810,6 +1810,100 @@ struct SavedRun: Identifiable, Codable {
     var result: SimulationResult
 }
 
+struct SavedRunDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    let run: SavedRun
+
+    @State private var showingChart: Bool = false
+
+    private var deviationsUsed: [DeviationRule] {
+        let deviations = run.input.deviations
+        return deviations.isEmpty ? DeviationRule.defaultRules : deviations
+    }
+
+    private var defaultCategory: DeviationCategory {
+        run.input.rules.dealerHitsSoft17 ? .hit17 : .stand17
+    }
+
+    private var sortedSpreads: [BetRampEntry] {
+        run.input.betting.spreads.sorted { $0.trueCount < $1.trueCount }
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section(header: Text("Results")) {
+                    Text(String(format: "EV/hour: $%.2f", run.result.expectedValuePerHour))
+                    Text(String(format: "SD/hour: $%.2f", run.result.standardDeviationPerHour))
+                    Text(String(format: "Risk of ruin: %.2f%%", run.result.riskOfRuin * 100))
+                }
+
+                Section(header: Text("Rules")) {
+                    Text("Decks: \(run.input.rules.decks)")
+                    Text(run.input.rules.dealerHitsSoft17 ? "Dealer hits soft 17" : "Dealer stands on soft 17")
+                    Text(run.input.rules.doubleAfterSplit ? "Double after split allowed" : "No double after split")
+                    Text(run.input.rules.surrenderAllowed ? "Surrender allowed" : "Surrender not allowed")
+                    Text(String(format: "Blackjack payout: %.1fx", run.input.rules.blackjackPayout))
+                    Text(String(format: "Penetration: %.0f%%", run.input.rules.penetration * 100))
+                }
+
+                Section(header: Text("Bet Spread")) {
+                    Text(String(format: "Min bet: $%.0f", run.input.betting.minBet))
+                    ForEach(sortedSpreads) { spread in
+                        HStack {
+                            Text("TC \(spread.trueCount) →")
+                            Spacer()
+                            Text(String(format: "$%.0f", spread.bet))
+                        }
+                    }
+                }
+
+                Section(header: Text("Simulation Settings")) {
+                    Text(String(format: "Hours per simulation: %.1f", run.input.hoursToSimulate))
+                    Text(String(format: "Hands per hour: %.0f", run.input.handsPerHour))
+                    Text("Simulations: \(run.input.numRealities)")
+                    Text(String(format: "Bankroll: $%.0f", run.input.bankroll))
+                }
+
+                Section(header: Text("Deviations Used")) {
+                    if deviationsUsed.isEmpty {
+                        Text("No deviations were used in this run.")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(deviationsUsed.sorted(by: DeviationRule.sorter)) { deviation in
+                            HStack {
+                                Image(systemName: deviation.isEnabled ? "checkmark.circle" : "slash.circle")
+                                    .foregroundColor(deviation.isEnabled ? .green : .secondary)
+                                Text(deviation.description)
+                            }
+                        }
+                    }
+
+                    Button(action: { showingChart = true }) {
+                        Text("Visualize Deviations Used This Run")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .disabled(deviationsUsed.isEmpty)
+                }
+            }
+            .navigationTitle("Saved Run Details")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: { dismiss() })
+                }
+            }
+            .sheet(isPresented: $showingChart) {
+                DeviationChartView(
+                    deviations: deviationsUsed,
+                    rules: run.input.rules,
+                    selectedCategory: defaultCategory
+                )
+            }
+        }
+    }
+}
+
 // MARK: - UI
 
 struct ContentView: View {
@@ -1844,6 +1938,7 @@ struct ContentView: View {
 
     @AppStorage("savedRuns") private var savedRunsData: Data = Data()
     @State private var savedRuns: [SavedRun] = []
+    @State private var selectedSavedRun: SavedRun?
 
     @State private var debugRecords: [DebugRecord] = []
     @State private var debugCSV: String = ""
@@ -1877,6 +1972,9 @@ struct ContentView: View {
             }
             .navigationTitle("Blackjack EV Lab")
             .onAppear(perform: loadSavedRuns)
+            .sheet(item: $selectedSavedRun) { run in
+                SavedRunDetailView(run: run)
+            }
         }
     }
 
@@ -2162,23 +2260,7 @@ struct ContentView: View {
     }
 
     private func load(run: SavedRun) {
-        decks = run.input.rules.decks
-        dealerHitsSoft17 = run.input.rules.dealerHitsSoft17
-        dasAllowed = run.input.rules.doubleAfterSplit
-        surrenderAllowed = run.input.rules.surrenderAllowed
-        blackjackPayout = run.input.rules.blackjackPayout
-        penetration = run.input.rules.penetration
-
-        minBet = run.input.betting.minBet
-        spreads = run.input.betting.spreads
-
-        hoursToSimulate = run.input.hoursToSimulate
-        handsPerHour = run.input.handsPerHour
-        numRealities = run.input.numRealities
-        bankroll = run.input.bankroll
-        deviations = run.input.deviations.isEmpty ? DeviationRule.defaultRules : run.input.deviations
-
-        result = run.result
+        selectedSavedRun = run
     }
 
     private func addSpread() {
