@@ -505,6 +505,14 @@ struct DeviationChartView: View {
 
     private let dealerValues = Array(2...11)
 
+    private var standardDeviations: [DeviationRule] {
+        deviations.filter { $0.action != .surrender }
+    }
+
+    private var surrenderDeviations: [DeviationRule] {
+        deviations.filter { $0.action == .surrender }
+    }
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -518,6 +526,7 @@ struct DeviationChartView: View {
                     ChartSectionView(title: "Hard Totals", dealerValues: dealerValues, rows: hardRows)
                     ChartSectionView(title: "Soft Totals", dealerValues: dealerValues, rows: softRows)
                     ChartSectionView(title: "Pair Splitting", dealerValues: dealerValues, rows: pairRows)
+                    ChartSectionView(title: "Surrender (Hard 14–16)", dealerValues: dealerValues, rows: surrenderRows)
                 }
                 .padding()
             }
@@ -560,24 +569,30 @@ struct DeviationChartView: View {
 
     private var hardRows: [ChartRowData] {
         (5...21).map { total in
-            ChartRowData(label: "Hard \(total)", cells: cells(for: total, isSoft: false, pairRank: nil))
+            ChartRowData(label: "Hard \(total)", cells: cells(for: total, isSoft: false, pairRank: nil, deviations: standardDeviations))
         }
     }
 
     private var softRows: [ChartRowData] {
         (13...21).map { total in
-            ChartRowData(label: "Soft \(total)", cells: cells(for: total, isSoft: true, pairRank: nil))
+            ChartRowData(label: "Soft \(total)", cells: cells(for: total, isSoft: true, pairRank: nil, deviations: standardDeviations))
         }
     }
 
     private var pairRows: [ChartRowData] {
         (1...10).map { rank in
             let label = rank == 1 ? "A,A" : "\(rank),\(rank)"
-            return ChartRowData(label: "Pair \(label)", cells: cells(for: rank * 2, isSoft: false, pairRank: rank))
+            return ChartRowData(label: "Pair \(label)", cells: cells(for: rank * 2, isSoft: false, pairRank: rank, deviations: standardDeviations))
         }
     }
 
-    private func cells(for total: Int, isSoft: Bool, pairRank: Int?) -> [ChartCellData] {
+    private var surrenderRows: [ChartRowData] {
+        (14...16).map { total in
+            ChartRowData(label: "Hard \(total)", cells: cells(for: total, isSoft: false, pairRank: nil, deviations: surrenderDeviations))
+        }
+    }
+
+    private func cells(for total: Int, isSoft: Bool, pairRank: Int?, deviations: [DeviationRule]) -> [ChartCellData] {
         dealerValues.map { dealer in
             let hand = handFor(total: total, isSoft: isSoft, pairRank: pairRank)
             let base = StrategyAdvisor.baseAction(for: hand, dealerUp: Card(rank: dealerCardRank(dealer)), rules: rules)
@@ -739,12 +754,17 @@ struct ChartSectionView: View {
         let deviationAction = cell.deviations.first?.action
 
         ZStack {
-            HStack(spacing: 0) {
-                chartActionColor(cell.baseAction).opacity(0.35)
-                    .frame(maxWidth: .infinity)
+            if let deviationAction {
+                HStack(spacing: 0) {
+                    chartActionColor(cell.baseAction).opacity(0.35)
+                        .frame(maxWidth: .infinity)
 
-                (deviationAction.map { chartActionColor($0).opacity(0.55) } ?? Color.clear)
-                    .frame(maxWidth: .infinity)
+                    chartActionColor(deviationAction).opacity(0.55)
+                        .frame(maxWidth: .infinity)
+                }
+            } else {
+                chartActionColor(cell.baseAction).opacity(0.35)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             VStack(spacing: 4) {
