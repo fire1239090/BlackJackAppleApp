@@ -63,6 +63,268 @@ struct BettingModel: Codable {
     }
 }
 
+struct DeviationManagerView: View {
+    @Binding var deviations: [DeviationRule]
+    @State private var selectedCategory: DeviationCategory = .all
+    @State private var showingEditor: Bool = false
+    @State private var duplicateAlert: Bool = false
+
+    private var filteredDeviations: [DeviationRule] {
+        deviations.filter { $0.category == selectedCategory }
+    }
+
+    var body: some View {
+        VStack {
+            Picker("Category", selection: $selectedCategory) {
+                ForEach(DeviationCategory.allCases) { category in
+                    Text(category.displayName).tag(category)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+
+            List {
+                Section(header: categoryHeader) {
+                    if filteredDeviations.isEmpty {
+                        Text("No deviations in this category yet. Tap + to add one.")
+                            .foregroundColor(.secondary)
+                    }
+                    ForEach(filteredDeviations) { deviation in
+                        deviationRow(for: deviation)
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+        }
+        .navigationTitle("Deviations")
+        .alert("Duplicate deviation", isPresented: $duplicateAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("That deviation already exists in this category.")
+        }
+        .sheet(isPresented: $showingEditor) {
+            DeviationEditorView(category: selectedCategory) { newRule in
+                addDeviation(newRule)
+            }
+        }
+    }
+
+    private var categoryHeader: some View {
+        HStack {
+            Text(selectedCategory.displayName)
+            Spacer()
+            Button(action: { showingEditor = true }) {
+                Image(systemName: "plus.circle.fill")
+                    .imageScale(.large)
+            }
+            .accessibilityLabel("Add deviation")
+        }
+    }
+
+    private func addDeviation(_ newRule: DeviationRule) {
+        guard !deviations.contains(where: { $0.hasSameSignature(as: newRule) }) else {
+            duplicateAlert = true
+            return
+        }
+        deviations.append(newRule)
+    }
+
+    private func deviationRow(for deviation: DeviationRule) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(deviation.description)
+                    .font(.body)
+                Text(deviation.category.displayName)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            if let binding = binding(for: deviation) {
+                Toggle("Enabled", isOn: binding)
+                    .labelsHidden()
+            }
+        }
+    }
+
+    private func binding(for deviation: DeviationRule) -> Binding<Bool>? {
+        guard let index = deviations.firstIndex(where: { $0.id == deviation.id }) else { return nil }
+        return $deviations[index].isEnabled
+    }
+}
+
+struct DeviationEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    var category: DeviationCategory
+    var onSave: (DeviationRule) -> Void
+
+    @State private var playerCard1: Int = 10
+    @State private var playerCard2: Int = 6
+    @State private var dealerCard: Int = 10
+    @State private var countMode: CountMode = .trueCount
+    @State private var trueCount: Int = 0
+    @State private var action: PlayerAction = .stand
+
+    private var availableActions: [PlayerAction] {
+        var options: [PlayerAction] = [.hit, .stand]
+        let preview = handPreview
+        options.append(.double)
+        if preview.canSplit {
+            options.append(.split)
+        }
+        return options
+    }
+
+    private var selectedCards: [Card] {
+        [Card(rank: playerCard1), Card(rank: playerCard2)]
+    }
+
+    private var handPreview: Hand {
+        Hand(cards: selectedCards)
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Category")) {
+                    Text(category.displayName)
+                }
+
+                Section(header: Text("Player hand")) {
+                    Picker("First card", selection: $playerCard1) {
+                        cardOptions
+                    }
+                    Picker("Second card", selection: $playerCard2) {
+                        cardOptions
+                    }
+                    Text(handDescription())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Section(header: Text("Dealer upcard")) {
+                    Picker("Dealer card", selection: $dealerCard) {
+                        cardOptions
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                Section(header: Text("Count trigger")) {
+                    Picker("Condition", selection: $countMode) {
+                        ForEach(CountMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if countMode == .trueCount {
+                        Stepper("True count threshold: \(trueCount)", value: $trueCount, in: -20...20)
+                    } else {
+                        Text(countMode == .runningPositive ? "Trigger on any positive running count" : "Trigger on any negative running count")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Section(header: Text("Action")) {
+                    Picker("Action", selection: $action) {
+                        ForEach(availableActions, id: \.self) { option in
+                            Text(label(for: option)).tag(option)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Text("Only viable actions for the selected hand are shown.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Section {
+                    Button("Save deviation", action: save)
+                        .disabled(availableActions.isEmpty)
+                }
+            }
+            .navigationTitle("New Deviation")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: { dismiss() })
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save", action: save)
+                        .disabled(availableActions.isEmpty)
+                }
+            }
+            .onChange(of: availableActions) { options in
+                if !options.contains(action) {
+                    action = options.first ?? .stand
+                }
+            }
+        }
+    }
+
+    private func handDescription() -> String {
+        let descriptor = handPreview.isSoft ? "Soft" : "Hard"
+        let dealerLabel = Card(rank: dealerCard).value == 11 ? "A" : "\(Card(rank: dealerCard).value)"
+        return "\(descriptor) \(handPreview.bestValue) vs \(dealerLabel)"
+    }
+
+    private func label(for action: PlayerAction) -> String {
+        switch action {
+        case .hit: return "Hit"
+        case .stand: return "Stand"
+        case .double: return "Double"
+        case .split: return "Split"
+        case .surrender: return "Surrender"
+        }
+    }
+
+    private func countCondition() -> CountCondition {
+        switch countMode {
+        case .trueCount:
+            return .trueCountAtLeast(trueCount)
+        case .runningPositive:
+            return .runningPositive
+        case .runningNegative:
+            return .runningNegative
+        }
+    }
+
+    private func save() {
+        let hand = handPreview
+        let rule = DeviationRule(
+            category: category,
+            playerTotal: hand.bestValue,
+            isSoft: hand.isSoft,
+            pairRank: action == .split ? hand.cards.first?.rank : nil,
+            dealerValue: Card(rank: dealerCard).value,
+            action: action,
+            countCondition: countCondition(),
+            isEnabled: true
+        )
+        onSave(rule)
+        dismiss()
+    }
+
+    private var cardOptions: some View {
+        ForEach(1...10, id: \.self) { value in
+            let label = value == 1 ? "A" : "\(value)"
+            Text(label).tag(value)
+        }
+    }
+
+    enum CountMode: String, CaseIterable, Identifiable {
+        case trueCount, runningPositive, runningNegative
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .trueCount: return "True Count"
+            case .runningPositive: return "+ Running"
+            case .runningNegative: return "- Running"
+            }
+        }
+    }
+}
+
 struct SimulationInput: Codable {
     var rules: GameRules
     var betting: BettingModel
@@ -73,7 +335,8 @@ struct SimulationInput: Codable {
     /// Number of independent simulations (realities)
     var numRealities: Int
     var bankroll: Double
-    var useBasicDeviations: Bool
+    var useBasicDeviations: Bool = true
+    var deviations: [DeviationRule] = DeviationRule.defaultRules
 }
 
 struct SimulationResult: Codable {
@@ -166,8 +429,191 @@ struct Hand {
     }
 }
 
-enum PlayerAction {
+enum PlayerAction: String, Codable, CaseIterable, Hashable {
     case hit, stand, double, split, surrender
+}
+
+enum DeviationCategory: String, Codable, CaseIterable, Identifiable {
+    case hit17, stand17, all
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .hit17: return "Hit 17"
+        case .stand17: return "Stand 17"
+        case .all: return "All"
+        }
+    }
+}
+
+enum CountCondition: Codable, Equatable {
+    case trueCountAtLeast(Int)
+    case trueCountAtMost(Int)
+    case runningPositive
+    case runningNegative
+
+    private enum CodingKeys: String, CodingKey {
+        case type, value
+    }
+
+    enum ConditionType: String, Codable {
+        case trueCountAtLeast
+        case trueCountAtMost
+        case runningPositive
+        case runningNegative
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(ConditionType.self, forKey: .type)
+        switch type {
+        case .trueCountAtLeast:
+            let value = try container.decode(Int.self, forKey: .value)
+            self = .trueCountAtLeast(value)
+        case .trueCountAtMost:
+            let value = try container.decode(Int.self, forKey: .value)
+            self = .trueCountAtMost(value)
+        case .runningPositive:
+            self = .runningPositive
+        case .runningNegative:
+            self = .runningNegative
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .trueCountAtLeast(let value):
+            try container.encode(ConditionType.trueCountAtLeast, forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .trueCountAtMost(let value):
+            try container.encode(ConditionType.trueCountAtMost, forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .runningPositive:
+            try container.encode(ConditionType.runningPositive, forKey: .type)
+        case .runningNegative:
+            try container.encode(ConditionType.runningNegative, forKey: .type)
+        }
+    }
+}
+
+struct DeviationRule: Identifiable, Codable, Equatable {
+    var id: UUID = .init()
+    var category: DeviationCategory
+    var playerTotal: Int
+    var isSoft: Bool
+    var pairRank: Int?
+    var dealerValue: Int
+    var action: PlayerAction
+    var countCondition: CountCondition
+    var isEnabled: Bool = true
+
+    var description: String {
+        let handDescription: String
+        if let pairRank {
+            handDescription = "Pair of \(rankLabel(pairRank))"
+        } else {
+            handDescription = isSoft ? "Soft \(playerTotal)" : "Hard \(playerTotal)"
+        }
+
+        let dealerLabel = dealerValue == 11 ? "A" : "\(dealerValue)"
+        let countText: String
+        switch countCondition {
+        case .trueCountAtLeast(let value):
+            countText = "TC ≥ \(value)"
+        case .trueCountAtMost(let value):
+            countText = "TC ≤ \(value)"
+        case .runningPositive:
+            countText = "Any positive running count"
+        case .runningNegative:
+            countText = "Any negative running count"
+        }
+
+        return "\(handDescription) vs \(dealerLabel): \(actionLabel(action)) when \(countText)"
+    }
+
+    func hasSameSignature(as other: DeviationRule) -> Bool {
+        category == other.category &&
+        playerTotal == other.playerTotal &&
+        isSoft == other.isSoft &&
+        pairRank == other.pairRank &&
+        dealerValue == other.dealerValue &&
+        action == other.action &&
+        countCondition == other.countCondition
+    }
+
+    private func rankLabel(_ rank: Int) -> String {
+        switch rank {
+        case 1: return "A"
+        case 11: return "J"
+        case 12: return "Q"
+        case 13: return "K"
+        default: return "\(rank)"
+        }
+    }
+
+    private func actionLabel(_ action: PlayerAction) -> String {
+        switch action {
+        case .hit: return "Hit"
+        case .stand: return "Stand"
+        case .double: return "Double"
+        case .split: return "Split"
+        case .surrender: return "Surrender"
+        }
+    }
+
+    static var defaultRules: [DeviationRule] {
+        var rules: [DeviationRule] = [
+            // Fab 4 surrender deviations (all games)
+            .init(category: .all, playerTotal: 15, isSoft: false, pairRank: nil, dealerValue: 10, action: .surrender, countCondition: .trueCountAtLeast(0)),
+            .init(category: .all, playerTotal: 15, isSoft: false, pairRank: nil, dealerValue: 9, action: .surrender, countCondition: .trueCountAtLeast(2)),
+            .init(category: .all, playerTotal: 15, isSoft: false, pairRank: nil, dealerValue: 11, action: .surrender, countCondition: .trueCountAtLeast(1)),
+            .init(category: .all, playerTotal: 14, isSoft: false, pairRank: nil, dealerValue: 10, action: .surrender, countCondition: .trueCountAtLeast(3)),
+
+            // Soft deviations shared by H17/S17
+            .init(category: .all, playerTotal: 17, isSoft: true, pairRank: nil, dealerValue: 2, action: .double, countCondition: .trueCountAtLeast(1)),
+
+            // Totals identical across H17/S17
+            .init(category: .all, playerTotal: 16, isSoft: false, pairRank: nil, dealerValue: 10, action: .stand, countCondition: .trueCountAtLeast(0)),
+            .init(category: .all, playerTotal: 16, isSoft: false, pairRank: nil, dealerValue: 9, action: .stand, countCondition: .trueCountAtLeast(4)),
+            .init(category: .all, playerTotal: 15, isSoft: false, pairRank: nil, dealerValue: 10, action: .stand, countCondition: .trueCountAtLeast(4)),
+            .init(category: .all, playerTotal: 10, isSoft: false, pairRank: nil, dealerValue: 10, action: .double, countCondition: .trueCountAtLeast(4)),
+            .init(category: .all, playerTotal: 12, isSoft: false, pairRank: nil, dealerValue: 3, action: .stand, countCondition: .trueCountAtLeast(2)),
+            .init(category: .all, playerTotal: 12, isSoft: false, pairRank: nil, dealerValue: 2, action: .stand, countCondition: .trueCountAtLeast(3)),
+            .init(category: .all, playerTotal: 11, isSoft: false, pairRank: nil, dealerValue: 11, action: .double, countCondition: .trueCountAtLeast(1)),
+            .init(category: .all, playerTotal: 9, isSoft: false, pairRank: nil, dealerValue: 2, action: .double, countCondition: .trueCountAtLeast(1)),
+            .init(category: .all, playerTotal: 9, isSoft: false, pairRank: nil, dealerValue: 7, action: .double, countCondition: .trueCountAtLeast(3)),
+            .init(category: .all, playerTotal: 13, isSoft: false, pairRank: nil, dealerValue: 2, action: .stand, countCondition: .trueCountAtLeast(-1)),
+            .init(category: .all, playerTotal: 12, isSoft: false, pairRank: nil, dealerValue: 4, action: .stand, countCondition: .trueCountAtLeast(0)),
+            .init(category: .all, playerTotal: 12, isSoft: false, pairRank: nil, dealerValue: 5, action: .stand, countCondition: .trueCountAtLeast(-2)),
+            .init(category: .all, playerTotal: 12, isSoft: false, pairRank: nil, dealerValue: 6, action: .stand, countCondition: .trueCountAtLeast(-1)),
+            .init(category: .all, playerTotal: 13, isSoft: false, pairRank: nil, dealerValue: 3, action: .stand, countCondition: .trueCountAtLeast(-2)),
+            .init(category: .all, playerTotal: 8, isSoft: false, pairRank: nil, dealerValue: 6, action: .double, countCondition: .trueCountAtLeast(2))
+        ]
+
+        // H17-only deviations
+        rules.append(contentsOf: [
+            .init(category: .hit17, playerTotal: 16, isSoft: false, pairRank: nil, dealerValue: 11, action: .stand, countCondition: .trueCountAtLeast(3)),
+            .init(category: .hit17, playerTotal: 15, isSoft: false, pairRank: nil, dealerValue: 11, action: .stand, countCondition: .trueCountAtLeast(5)),
+            .init(category: .hit17, playerTotal: 10, isSoft: false, pairRank: nil, dealerValue: 11, action: .double, countCondition: .trueCountAtLeast(3)),
+            // Soft 19 nuances for H17
+            .init(category: .hit17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 4, action: .double, countCondition: .trueCountAtLeast(3)),
+            .init(category: .hit17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 5, action: .double, countCondition: .trueCountAtLeast(1)),
+            .init(category: .hit17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 6, action: .stand, countCondition: .trueCountAtMost(-1))
+        ])
+
+        // S17-only deviations
+        rules.append(contentsOf: [
+            .init(category: .stand17, playerTotal: 10, isSoft: false, pairRank: nil, dealerValue: 11, action: .double, countCondition: .trueCountAtLeast(4)),
+            // Soft 19 nuances for S17
+            .init(category: .stand17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 4, action: .double, countCondition: .trueCountAtLeast(3)),
+            .init(category: .stand17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 5, action: .double, countCondition: .trueCountAtLeast(1)),
+            .init(category: .stand17, playerTotal: 19, isSoft: true, pairRank: nil, dealerValue: 6, action: .double, countCondition: .trueCountAtLeast(1))
+        ])
+
+        return rules
+    }
 }
 
 enum HandResult: String {
@@ -183,7 +629,7 @@ class BlackjackSimulator {
 
     private let rules: GameRules
     private let betting: BettingModel
-    private let useDeviations: Bool
+    private let activeDeviations: [DeviationRule]
     private let debugEnabled: Bool
 
     // Exposed debug log
@@ -192,7 +638,7 @@ class BlackjackSimulator {
     init(input: SimulationInput, debugEnabled: Bool = false) {
         self.rules = input.rules
         self.betting = input.betting
-        self.useDeviations = input.useBasicDeviations
+        self.activeDeviations = input.deviations.filter { $0.isEnabled }
         self.debugEnabled = debugEnabled
         reshuffle()
     }
@@ -368,104 +814,65 @@ class BlackjackSimulator {
         return tc >= 3 ? bet / 2.0 : 0.0
     }
 
-    // Deviations: Fab 4 + Illustrious hard + soft H17/S17
+    // Deviations: configurable per category
     private func applyDeviations(base: PlayerAction, hand: Hand, dealerUp: Card) -> PlayerAction {
-        guard useDeviations else { return base }
+        var current = base
+        for deviation in activeDeviations where deviationMatches(deviation, hand: hand, dealerUp: dealerUp) {
+            current = deviation.action
+        }
+        return current
+    }
+
+    private func deviationMatches(_ deviation: DeviationRule, hand: Hand, dealerUp: Card) -> Bool {
+        switch deviation.category {
+        case .all:
+            break
+        case .hit17:
+            guard rules.dealerHitsSoft17 else { return false }
+        case .stand17:
+            guard !rules.dealerHitsSoft17 else { return false }
+        }
+
+        let total = hand.bestValue
+        guard total == deviation.playerTotal else { return false }
+        guard hand.isSoft == deviation.isSoft else { return false }
+
+        if let pairRank = deviation.pairRank {
+            guard hand.canSplit, hand.cards.first?.rank == pairRank else { return false }
+        }
+
+        if deviation.action == .split && !hand.canSplit {
+            return false
+        }
+
+        if deviation.action == .surrender && !rules.surrenderAllowed {
+            return false
+        }
+
+        if deviation.action == .double && hand.cards.count > 2 {
+            return false
+        }
+
+        if deviation.action == .surrender && hand.cards.count > 2 {
+            return false
+        }
+
+        let dealerValue = dealerUp.value
+        guard dealerValue == deviation.dealerValue else { return false }
 
         let tc = Int(floor(trueCount))
-        let total = hand.bestValue
-        let dealerVal = dealerUp.value
-        let isSoft = hand.isSoft
-
-        // --- Surrender deviations (Fab 4) ---
-        if rules.surrenderAllowed && hand.cards.count == 2 {
-            if total == 15 && dealerVal == 10 && tc >= 0 { return .surrender }
-            if total == 15 && dealerVal == 9 && tc >= 2 { return .surrender }
-            if total == 15 && dealerUp.rank == 1 && tc >= 1 { return .surrender }
-            if total == 14 && dealerVal == 10 && tc >= 3 { return .surrender }
+        switch deviation.countCondition {
+        case .trueCountAtLeast(let threshold):
+            guard tc >= threshold else { return false }
+        case .trueCountAtMost(let threshold):
+            guard tc <= threshold else { return false }
+        case .runningPositive:
+            guard runningCount > 0 else { return false }
+        case .runningNegative:
+            guard runningCount < 0 else { return false }
         }
 
-        // --- Soft deviations (2-card soft hands only) ---
-        if hand.cards.count == 2 && isSoft {
-            // Soft 17 (A,6): both H17 & S17 -> double vs 2 at TC >= +1
-            if total == 17 && dealerVal == 2 && tc >= 1 { return .double }
-
-            // Soft 19 (A,8) deviations
-            if total == 19 {
-                if rules.dealerHitsSoft17 {
-                    // H17: A,8 vs 4: 3+, vs 5: 1+, vs 6: 0-
-                    switch dealerVal {
-                    case 4:
-                        if tc >= 3 { return .double }
-                    case 5:
-                        if tc >= 1 { return .double }
-                    case 6:
-                        if tc < 0 { return .stand } // base is double; stand for negative counts
-                    default:
-                        break
-                    }
-                } else {
-                    // S17: A,8 vs 4: 3+, vs 5: 1+, vs 6: 1+
-                    switch dealerVal {
-                    case 4:
-                        return tc >= 3 ? .double : .stand
-                    case 5, 6:
-                        return tc >= 1 ? .double : .stand
-                    default:
-                        break
-                    }
-                }
-            }
-        }
-
-        // --- Hard deviations: H17 vs S17 ---
-        if rules.dealerHitsSoft17 {
-            // ===== H17 deviations =====
-            switch (total, dealerVal) {
-            case (16, 10): return tc >= 0 ? .stand : base
-            case (16, 9):  return tc >= 4 ? .stand : base
-            case (16, 11): return tc >= 3 ? .stand : base
-            case (15, 10): return tc >= 4 ? .stand : base
-            case (15, 11): return tc >= 5 ? .stand : base
-            case (10, 10): return tc >= 4 ? .double : base
-            case (10, 11): return tc >= 3 ? .double : base
-            case (12, 3):  return tc >= 2 ? .stand : base
-            case (12, 2):  return tc >= 3 ? .stand : base
-            case (11, 11): return tc >= 1 ? .double : base
-            case (9, 2):   return tc >= 1 ? .double : base
-            case (9, 7):   return tc >= 3 ? .double : base
-            case (13, 2):  return tc >= -1 ? .stand : base
-            case (12, 4):  return tc >= 0 ? .stand : base
-            case (12, 5):  return tc >= -2 ? .stand : base
-            case (12, 6):  return tc >= -1 ? .stand : base
-            case (13, 3):  return tc >= -2 ? .stand : base
-            case (8, 6):   return tc >= 2 ? .double : base
-            default: break
-            }
-        } else {
-            // ===== S17 deviations =====
-            switch (total, dealerVal) {
-            case (16, 10): return tc >= 0 ? .stand : base
-            case (16, 9):  return tc >= 4 ? .stand : base
-            case (15, 10): return tc >= 4 ? .stand : base
-            case (10, 10): return tc >= 4 ? .double : base
-            case (10, 11): return tc >= 4 ? .double : base
-            case (12, 3):  return tc >= 2 ? .stand : base
-            case (12, 2):  return tc >= 3 ? .stand : base
-            case (11, 11): return tc >= 1 ? .double : base
-            case (9, 2):   return tc >= 1 ? .double : base
-            case (9, 7):   return tc >= 3 ? .double : base
-            case (13, 2):  return tc >= -1 ? .stand : base
-            case (12, 4):  return tc >= 0 ? .stand : base
-            case (12, 5):  return tc >= -2 ? .stand : base
-            case (12, 6):  return tc >= -1 ? .stand : base
-            case (13, 3):  return tc >= -2 ? .stand : base
-            case (8, 6):   return tc >= 2 ? .double : base
-            default: break
-            }
-        }
-
-        return base
+        return true
     }
 
     private func playHand(
@@ -896,7 +1303,7 @@ struct ContentView: View {
     @State private var handsPerHour: Double = 100
     @State private var numRealities: Int = 500
     @State private var bankroll: Double = 10000
-    @State private var useDeviations: Bool = true
+    @State private var deviations: [DeviationRule] = DeviationRule.defaultRules
     @State private var debugEnabled: Bool = false
 
     @State private var result: SimulationResult?
@@ -919,6 +1326,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     rulesSection
                     bettingSection
+                    deviationSection
                     simSection
                     progressSection
                     resultSection
@@ -999,6 +1407,21 @@ struct ContentView: View {
         }
     }
 
+    private var deviationSection: some View {
+        Section(header: Text("Deviations").font(.headline)) {
+            NavigationLink {
+                DeviationManagerView(deviations: $deviations)
+            } label: {
+                VStack(alignment: .leading) {
+                    Text("Manage deviations")
+                    Text("Tap to add, enable, or disable deviations for Hit 17, Stand 17, or all games.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
     private var simSection: some View {
         Section(header: Text("Simulation").font(.headline)) {
             HStack {
@@ -1025,7 +1448,6 @@ struct ContentView: View {
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
             }
-            Toggle("Use basic deviations", isOn: $useDeviations)
             Toggle("Enable debug logging", isOn: $debugEnabled)
 
             HStack {
@@ -1214,7 +1636,7 @@ struct ContentView: View {
         handsPerHour = run.input.handsPerHour
         numRealities = run.input.numRealities
         bankroll = run.input.bankroll
-        useDeviations = run.input.useBasicDeviations
+        deviations = run.input.deviations.isEmpty ? DeviationRule.defaultRules : run.input.deviations
 
         result = run.result
     }
@@ -1323,7 +1745,8 @@ struct ContentView: View {
             handsPerHour: max(handsPerHour, 1),
             numRealities: max(numRealities, 1),
             bankroll: bankroll,
-            useBasicDeviations: useDeviations
+            useBasicDeviations: true,
+            deviations: deviations
         )
 
         simulationTask = Task(priority: .userInitiated) {
