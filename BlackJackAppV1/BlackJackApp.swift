@@ -238,12 +238,12 @@ struct DeviationEditorView: View {
     @State private var playerCard1: Int = 10
     @State private var playerCard2: Int = 6
     @State private var dealerCard: Int = 10
-    @State private var countMode: CountMode = .trueCount
+    @State private var countMode: CountMode = .trueCountAtLeast
     @State private var trueCount: Int = 0
     @State private var action: PlayerAction = .stand
 
     private var availableActions: [PlayerAction] {
-        var options: [PlayerAction] = [.hit, .stand]
+        var options: [PlayerAction] = [.hit, .stand, .surrender]
         let preview = handPreview
         options.append(.double)
         if preview.canSplit {
@@ -294,9 +294,12 @@ struct DeviationEditorView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    if countMode == .trueCount {
-                        Stepper("True count threshold: \(trueCount)", value: $trueCount, in: -20...20)
-                    } else {
+                    switch countMode {
+                    case .trueCountAtLeast:
+                        Stepper("TC ≥ \(trueCount)", value: $trueCount, in: -20...20)
+                    case .trueCountAtMost:
+                        Stepper("TC ≤ \(trueCount)", value: $trueCount, in: -20...20)
+                    case .runningPositive, .runningNegative:
                         Text(countMode == .runningPositive ? "Trigger on any positive running count" : "Trigger on any negative running count")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -353,8 +356,10 @@ struct DeviationEditorView: View {
 
     private func countCondition() -> CountCondition {
         switch countMode {
-        case .trueCount:
+        case .trueCountAtLeast:
             return .trueCountAtLeast(trueCount)
+        case .trueCountAtMost:
+            return .trueCountAtMost(trueCount)
         case .runningPositive:
             return .runningPositive
         case .runningNegative:
@@ -399,10 +404,10 @@ struct DeviationEditorView: View {
 
         switch existingRule.countCondition {
         case .trueCountAtLeast(let value):
-            countMode = .trueCount
+            countMode = .trueCountAtLeast
             trueCount = value
         case .trueCountAtMost(let value):
-            countMode = .trueCount
+            countMode = .trueCountAtMost
             trueCount = value
         case .runningPositive:
             countMode = .runningPositive
@@ -419,13 +424,14 @@ struct DeviationEditorView: View {
     }
 
     enum CountMode: String, CaseIterable, Identifiable {
-        case trueCount, runningPositive, runningNegative
+        case trueCountAtLeast, trueCountAtMost, runningPositive, runningNegative
 
         var id: String { rawValue }
 
         var label: String {
             switch self {
-            case .trueCount: return "True Count"
+            case .trueCountAtLeast: return "TC ≥"
+            case .trueCountAtMost: return "TC ≤"
             case .runningPositive: return "+ Running"
             case .runningNegative: return "- Running"
             }
