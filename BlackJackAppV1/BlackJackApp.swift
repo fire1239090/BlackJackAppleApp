@@ -1943,13 +1943,33 @@ struct SavedRun: Identifiable, Codable {
     var timestamp: Date
     var input: SimulationInput
     var result: SimulationResult
+    var name: String?
+
+    var maxBet: Double {
+        max(input.betting.spreads.map { $0.bet }.max() ?? input.betting.minBet, input.betting.minBet)
+    }
+
+    var displayTitle: String {
+        String(
+            format: "Min $%.0f | Max $%.0f | EV/hr $%.2f | RoR %.1f%%",
+            input.betting.minBet,
+            maxBet,
+            result.expectedValuePerHour,
+            result.riskOfRuin * 100
+        )
+    }
 }
 
 struct SavedRunDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let run: SavedRun
+    var existingSavedNames: [String] = []
+    var onSaveRun: ((SavedRun, String) -> Void)?
 
     @State private var showingChart: Bool = false
+    @State private var showingSaveSheet: Bool = false
+    @State private var saveName: String = ""
+    @State private var duplicateNameAlert: Bool = false
 
     private var deviationsUsed: [DeviationRule] {
         let deviations = run.input.deviations
@@ -2023,10 +2043,20 @@ struct SavedRunDetailView: View {
                     .disabled(deviationsUsed.isEmpty)
                 }
             }
-            .navigationTitle("Saved Run Details")
+            .navigationTitle(run.displayTitle)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", action: { dismiss() })
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save This Run") {
+                        saveName = run.name ?? run.displayTitle
+                        showingSaveSheet = true
+                    }
+                    .disabled(onSaveRun == nil)
                 }
             }
             .sheet(isPresented: $showingChart) {
@@ -2036,7 +2066,47 @@ struct SavedRunDetailView: View {
                     selectedCategory: defaultCategory
                 )
             }
+            .sheet(isPresented: $showingSaveSheet) {
+                NavigationView {
+                    Form {
+                        Section(header: Text("Name")) {
+                            TextField("Run name", text: $saveName)
+                        }
+                    }
+                    .navigationTitle("Save Run")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { showingSaveSheet = false }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") {
+                                attemptSaveRun()
+                            }
+                            .disabled(saveName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+            }
+            .alert("Duplicate Name", isPresented: $duplicateNameAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("Another saved run already uses that name. Please choose a unique name.")
+            }
         }
+    }
+
+    private func attemptSaveRun() {
+        let trimmed = saveName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if existingSavedNames.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            duplicateNameAlert = true
+            return
+        }
+
+        onSaveRun?(run, trimmed)
+        showingSaveSheet = false
     }
 }
 
@@ -2073,9 +2143,14 @@ struct ContentView: View {
     @State private var simulationTask: Task<Void, Never>?
     @State private var userCancelled: Bool = false
 
-    @AppStorage("savedRuns") private var savedRunsData: Data = Data()
-    @State private var savedRuns: [SavedRun] = []
+    @AppStorage("savedRuns") private var recentRunsData: Data = Data()
+    @AppStorage("userSavedRuns") private var savedNamedRunsData: Data = Data()
+    @State private var recentRuns: [SavedRun] = []
+    @State private var savedNamedRuns: [SavedRun] = []
     @State private var selectedSavedRun: SavedRun?
+    @State private var runBeingRenamed: SavedRun?
+    @State private var renameText: String = ""
+    @State private var duplicateRenameAlert: Bool = false
 
     @State private var debugRecords: [DebugRecord] = []
     @State private var debugCSV: String = ""
@@ -2102,6 +2177,7 @@ struct ContentView: View {
                     simSection
                     progressSection
                     resultSection
+                    recentRunsSection
                     savedRunsSection
                     debugSection
                 }
@@ -2110,7 +2186,38 @@ struct ContentView: View {
             .navigationTitle("Blackjack EV Lab")
             .onAppear(perform: loadSavedRuns)
             .sheet(item: $selectedSavedRun) { run in
-                SavedRunDetailView(run: run)
+                SavedRunDetailView(
+                    run: run,
+                    existingSavedNames: savedNamedRuns.compactMap { $0.name },
+                    onSaveRun: { run, name in
+                        saveNamedRun(run, with: name)
+                    }
+                )
+            }
+            .sheet(item: $runBeingRenamed) { _ in
+                NavigationView {
+                    Form {
+                        Section(header: Text("Name")) {
+                            TextField("Run name", text: $renameText)
+                        }
+                    }
+                    .navigationTitle("Rename Run")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { runBeingRenamed = nil }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") { applyRename() }
+                                .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+            }
+            .alert("Duplicate Name", isPresented: $duplicateRenameAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("Another saved run already uses that name. Please choose a unique name.")
             }
         }
     }
@@ -2301,28 +2408,62 @@ struct ContentView: View {
         }
     }
 
-    private var savedRunsSection: some View {
-        Section(header: Text("Saved runs").font(.headline)) {
-            if savedRuns.isEmpty {
-                Text("No saved runs yet. Completed simulations are stored here for reuse.")
+    private var recentRunsSection: some View {
+        Section(header: Text("Recent Runs").font(.headline)) {
+            if recentRuns.isEmpty {
+                Text("No recent runs yet. Completed simulations are stored here for reuse.")
                     .foregroundColor(.secondary)
             } else {
-                ForEach(savedRuns.indices, id: \.self) { index in
-                    let run = savedRuns[index]
-                    VStack(alignment: .leading) {
-                        Text(run.timestamp, style: .date)
+                ForEach(recentRuns.indices, id: \.self) { index in
+                    let run = recentRuns[index]
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(run.displayTitle)
                             .font(.subheadline)
                         Text(
                             String(
-                                format: "EV/hr $%.2f | Sims %d | Hours/sim %.1f | Min bet $%.0f | RoR %.1f%%",
-                                run.result.expectedValuePerHour,
+                                format: "Sims %d | Hours/sim %.1f | Bankroll $%.0f | Insurance %@",
                                 run.input.numRealities,
                                 run.input.hoursToSimulate,
-                                run.input.betting.minBet,
-                                run.result.riskOfRuin * 100
+                                run.input.bankroll,
+                                run.input.takeInsurance ? "On" : "Off"
                             )
                         )
                         .font(.caption)
+                        HStack {
+                            Button("Load", action: { load(run: run) })
+                            Spacer()
+                            Button(role: .destructive) {
+                                removeRecentRun(at: IndexSet(integer: index))
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+            }
+        }
+    }
+
+    private var savedRunsSection: some View {
+        Section(header: Text("Saved Runs").font(.headline)) {
+            if savedNamedRuns.isEmpty {
+                Text("No saved runs yet. Load a recent run and tap Save This Run to keep it here.")
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(savedNamedRuns.indices, id: \.self) { index in
+                    let run = savedNamedRuns[index]
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(run.name ?? "Saved Run")
+                                .font(.subheadline)
+                            Spacer()
+                            Button(action: { beginRenaming(run) }) {
+                                Image(systemName: "pencil")
+                            }
+                        }
+                        Text(run.displayTitle)
+                            .font(.caption)
                         HStack {
                             Button("Load", action: { load(run: run) })
                             Spacer()
@@ -2386,23 +2527,102 @@ struct ContentView: View {
     // MARK: - Saved runs
 
     private func loadSavedRuns() {
-        guard !savedRunsData.isEmpty,
-              let decoded = try? JSONDecoder().decode([SavedRun].self, from: savedRunsData)
-        else {
-            savedRuns = []
-            return
-        }
-        savedRuns = decoded
+        recentRuns = decodeRuns(from: recentRunsData)
+        savedNamedRuns = decodeRuns(from: savedNamedRunsData)
+        trimRecentRuns()
+        persistRecentRuns()
     }
 
-    private func persistSavedRuns() {
-        if let data = try? JSONEncoder().encode(savedRuns) {
-            savedRunsData = data
+    private func decodeRuns(from data: Data) -> [SavedRun] {
+        guard !data.isEmpty,
+              let decoded = try? JSONDecoder().decode([SavedRun].self, from: data) else {
+            return []
+        }
+        return decoded
+    }
+
+    private func persistRecentRuns() {
+        if let data = try? JSONEncoder().encode(recentRuns) {
+            recentRunsData = data
+        }
+    }
+
+    private func persistSavedNamedRuns() {
+        if let data = try? JSONEncoder().encode(savedNamedRuns) {
+            savedNamedRunsData = data
         }
     }
 
     private func load(run: SavedRun) {
         selectedSavedRun = run
+    }
+
+    private func removeRecentRun(at offsets: IndexSet) {
+        recentRuns.remove(atOffsets: offsets)
+        persistRecentRuns()
+    }
+
+    private func removeSavedRun(at offsets: IndexSet) {
+        savedNamedRuns.remove(atOffsets: offsets)
+        persistSavedNamedRuns()
+    }
+
+    private func trimRecentRuns() {
+        recentRuns.sort { $0.timestamp > $1.timestamp }
+        if recentRuns.count > 5 {
+            recentRuns = Array(recentRuns.prefix(5))
+        }
+    }
+
+    private func nameIsDuplicate(_ name: String, excluding runID: UUID? = nil) -> Bool {
+        savedNamedRuns.contains { saved in
+            guard saved.id != runID else { return false }
+            return (saved.name ?? "").caseInsensitiveCompare(name) == .orderedSame
+        }
+    }
+
+    private func saveNamedRun(_ run: SavedRun, with name: String) {
+        guard !nameIsDuplicate(name) else {
+            duplicateRenameAlert = true
+            return
+        }
+
+        var namedRun = run
+        namedRun.name = name
+
+        if let existingIndex = savedNamedRuns.firstIndex(where: { $0.id == run.id }) {
+            savedNamedRuns[existingIndex] = namedRun
+        } else {
+            savedNamedRuns.append(namedRun)
+        }
+
+        persistSavedNamedRuns()
+    }
+
+    private func beginRenaming(_ run: SavedRun) {
+        runBeingRenamed = run
+        renameText = run.name ?? run.displayTitle
+    }
+
+    private func applyRename() {
+        guard let runToRename = runBeingRenamed else { return }
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            runBeingRenamed = nil
+            return
+        }
+
+        if nameIsDuplicate(trimmed, excluding: runToRename.id) {
+            duplicateRenameAlert = true
+            return
+        }
+
+        if let index = savedNamedRuns.firstIndex(where: { $0.id == runToRename.id }) {
+            savedNamedRuns[index].name = trimmed
+            persistSavedNamedRuns()
+        }
+
+        runBeingRenamed = nil
     }
 
     private func addSpread() {
@@ -2418,11 +2638,6 @@ struct ContentView: View {
 
     private func removeSpread(at offsets: IndexSet) {
         spreads.remove(atOffsets: offsets)
-    }
-
-    private func removeSavedRun(at offsets: IndexSet) {
-        savedRuns.remove(atOffsets: offsets)
-        persistSavedRuns()
     }
 
     private func copyDebugCSV() {
@@ -2531,8 +2746,9 @@ struct ContentView: View {
                     if let outcome {
                         self.result = outcome
                         let saved = SavedRun(timestamp: Date(), input: input, result: outcome)
-                        self.savedRuns.append(saved)
-                        self.persistSavedRuns()
+                        self.recentRuns.append(saved)
+                        self.trimRecentRuns()
+                        self.persistRecentRuns()
 
                         if self.debugEnabled {
                             self.debugRecords = simulator.debugLog
