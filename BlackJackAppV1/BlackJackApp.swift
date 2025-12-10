@@ -741,6 +741,137 @@ struct DeviationChartView: View {
     }
 }
 
+struct BasicStrategyChartView: View {
+    let rules: GameRules
+
+    private let dealerValues = Array(2...11)
+
+    private var rulesWithoutSurrender: GameRules {
+        var copy = rules
+        copy.surrenderAllowed = false
+        return copy
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Standard basic strategy chart. Color coding matches the deviation visualizer for quick reference.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+
+                legendView
+
+                ChartSectionView(title: "Hard Totals", dealerValues: dealerValues, rows: hardRows)
+                ChartSectionView(title: "Soft Totals", dealerValues: dealerValues, rows: softRows)
+                ChartSectionView(title: "Pair Splitting", dealerValues: dealerValues, rows: pairRows)
+                ChartSectionView(title: "Surrender (Hard 14–16)", dealerValues: dealerValues, rows: surrenderRows)
+            }
+            .padding()
+        }
+        .navigationTitle("Basic Strategy Chart")
+        .onAppear { OrientationManager.forceLandscape() }
+        .onDisappear { OrientationManager.restorePortrait() }
+    }
+
+    private var legendView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Legend")
+                .font(.subheadline.weight(.semibold))
+
+            VStack(alignment: .leading, spacing: 6) {
+                legendRow(color: chartActionColor(.hit), label: "H = Hit")
+                legendRow(color: chartActionColor(.stand), label: "S = Stand")
+                legendRow(color: chartActionColor(.double), label: "D = Double")
+                legendRow(color: chartActionColor(.split), label: "P = Split")
+                legendRow(color: chartActionColor(.surrender), label: "R = Surrender")
+            }
+        }
+    }
+
+    private func legendRow(color: Color, label: String) -> some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(color.opacity(0.6))
+                .frame(width: 20, height: 14)
+
+            Text(label)
+                .font(.caption)
+        }
+    }
+
+    private var hardRows: [ChartRowData] {
+        (5...21).map { total in
+            ChartRowData(label: "Hard \(total)", cells: cells(for: total, isSoft: false, pairRank: nil, allowSurrenderBase: false))
+        }
+    }
+
+    private var softRows: [ChartRowData] {
+        (13...21).map { total in
+            ChartRowData(label: "Soft \(total)", cells: cells(for: total, isSoft: true, pairRank: nil, allowSurrenderBase: false))
+        }
+    }
+
+    private var pairRows: [ChartRowData] {
+        (2...10).map { rank in
+            let label = rank == 1 ? "A" : "\(rank)"
+            return ChartRowData(label: "Pair \(label)", cells: cells(for: rank * 2, isSoft: false, pairRank: rank, allowSurrenderBase: false))
+        }
+    }
+
+    private var surrenderRows: [ChartRowData] {
+        (14...16).map { total in
+            ChartRowData(label: "Hard \(total)", cells: cells(for: total, isSoft: false, pairRank: nil, allowSurrenderBase: true))
+        }
+    }
+
+    private func cells(for total: Int, isSoft: Bool, pairRank: Int?, allowSurrenderBase: Bool) -> [ChartCellData] {
+        dealerValues.map { dealer in
+            let hand = handFor(total: total, isSoft: isSoft, pairRank: pairRank)
+            let appliedRules = allowSurrenderBase ? rules : rulesWithoutSurrender
+            let base = StrategyAdvisor.baseAction(for: hand, dealerUp: Card(rank: dealerCardRank(dealer)), rules: appliedRules)
+            return ChartCellData(
+                baseAction: base,
+                baseLabel: shortLabel(for: base),
+                deviations: []
+            )
+        }
+    }
+
+    private func handFor(total: Int, isSoft: Bool, pairRank: Int?) -> Hand {
+        if let pairRank {
+            return Hand(cards: [Card(rank: pairRank), Card(rank: pairRank)])
+        }
+
+        if isSoft {
+            let kicker = max(2, min(10, total - 11))
+            return Hand(cards: [Card(rank: 1), Card(rank: kicker)])
+        }
+
+        for first in stride(from: min(total - 2, 10), through: 2, by: -1) {
+            let second = total - first
+            guard (2...10).contains(second) else { continue }
+            let candidate = Hand(cards: [Card(rank: first), Card(rank: second)])
+            if !candidate.isSoft { return candidate }
+        }
+
+        return Hand(cards: [Card(rank: 10), Card(rank: max(2, total - 10))])
+    }
+
+    private func dealerCardRank(_ value: Int) -> Int {
+        value == 11 ? 1 : value
+    }
+
+    private func shortLabel(for action: PlayerAction) -> String {
+        switch action {
+        case .hit: return "H"
+        case .stand: return "S"
+        case .double: return "D"
+        case .split: return "P"
+        case .surrender: return "R"
+        }
+    }
+}
+
 struct ChartRowData: Identifiable {
     var id = UUID()
     let label: String
@@ -2771,6 +2902,109 @@ struct ContentView: View {
     }
 }
 
+struct PlaceholderFeatureView: View {
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text(title)
+                .font(.largeTitle.weight(.semibold))
+                .multilineTextAlignment(.center)
+            Text("Coming soon. Stay tuned!")
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+}
+
+struct HomeView: View {
+    private let defaultRules = GameRules(
+        decks: 6,
+        dealerHitsSoft17: true,
+        doubleAfterSplit: true,
+        surrenderAllowed: true,
+        blackjackPayout: 1.5,
+        penetration: 0.75
+    )
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    Text("Card Counting App")
+                        .font(.largeTitle.weight(.bold))
+                        .padding(.top, 12)
+
+                    HStack(spacing: 12) {
+                        NavigationLink {
+                            PlaceholderFeatureView(title: "How to Card Count")
+                                .navigationTitle("How to Card Count")
+                                .navigationBarTitleDisplayMode(.inline)
+                        } label: {
+                            menuButtonLabel(title: "How to card count")
+                        }
+
+                        NavigationLink {
+                            BasicStrategyChartView(rules: defaultRules)
+                        } label: {
+                            menuButtonLabel(title: "Basic Strategy Chart")
+                        }
+                    }
+
+                    NavigationLink {
+                        PlaceholderFeatureView(title: "Training Suite")
+                            .navigationTitle("Training Suite")
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        menuButtonLabel(title: "Training Suite")
+                    }
+
+                    NavigationLink {
+                        ContentView()
+                    } label: {
+                        menuButtonLabel(title: "Expected Value Simulator")
+                    }
+
+                    NavigationLink {
+                        PlaceholderFeatureView(title: "Trip Logger")
+                            .navigationTitle("Trip Logger")
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        menuButtonLabel(title: "Trip Logger")
+                    }
+
+                    NavigationLink {
+                        PlaceholderFeatureView(title: "Support This Project")
+                            .navigationTitle("Support")
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        Text("If You Want to Support This Project")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(.accentColor)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.accentColor.opacity(0.08))
+                            .cornerRadius(12)
+                    }
+                }
+                .padding()
+            }
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private func menuButtonLabel(title: String) -> some View {
+        Text(title)
+            .font(.headline)
+            .foregroundColor(.primary)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.secondary.opacity(0.12))
+            .cornerRadius(12)
+    }
+}
+
 @main
 struct BlackJackAppV1App: App {
 #if canImport(UIKit)
@@ -2779,7 +3013,7 @@ struct BlackJackAppV1App: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            HomeView()
         }
     }
 }
