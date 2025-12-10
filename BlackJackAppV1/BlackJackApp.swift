@@ -1945,6 +1945,14 @@ struct SavedRun: Identifiable, Codable {
     var result: SimulationResult
     var name: String?
 
+    var betTitle: String {
+        String(
+            format: "Min $%.0f | Max $%.0f",
+            input.betting.minBet,
+            maxBet
+        )
+    }
+
     var maxBet: Double {
         max(input.betting.spreads.map { $0.bet }.max() ?? input.betting.minBet, input.betting.minBet)
     }
@@ -2043,7 +2051,7 @@ struct SavedRunDetailView: View {
                     .disabled(deviationsUsed.isEmpty)
                 }
             }
-            .navigationTitle(run.displayTitle)
+            .navigationTitle(run.name ?? run.betTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
@@ -2053,7 +2061,7 @@ struct SavedRunDetailView: View {
 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save This Run") {
-                        saveName = run.name ?? run.displayTitle
+                        saveName = run.name ?? run.betTitle
                         showingSaveSheet = true
                     }
                     .disabled(onSaveRun == nil)
@@ -2094,6 +2102,19 @@ struct SavedRunDetailView: View {
                 Text("Another saved run already uses that name. Please choose a unique name.")
             }
         }
+    }
+
+    private func attemptSaveRun() {
+        let trimmed = saveName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if existingSavedNames.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            duplicateNameAlert = true
+            return
+        }
+
+        onSaveRun?(run, trimmed)
+        showingSaveSheet = false
     }
 
     private func attemptSaveRun() {
