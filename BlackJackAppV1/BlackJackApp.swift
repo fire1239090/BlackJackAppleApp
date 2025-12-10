@@ -2936,20 +2936,18 @@ struct HomeView: View {
                         .font(.largeTitle.weight(.bold))
                         .padding(.top, 12)
 
-                    HStack(spacing: 12) {
-                        NavigationLink {
-                            PlaceholderFeatureView(title: "How to Card Count")
-                                .navigationTitle("How to Card Count")
-                                .navigationBarTitleDisplayMode(.inline)
-                        } label: {
-                            menuButtonLabel(title: "How to card count")
-                        }
+                    NavigationLink {
+                        PlaceholderFeatureView(title: "How to Count Cards")
+                            .navigationTitle("How to Count Cards")
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        menuButtonLabel(title: "How to Count Cards")
+                    }
 
-                        NavigationLink {
-                            BasicStrategyChartView(rules: defaultRules)
-                        } label: {
-                            menuButtonLabel(title: "Basic Strategy Chart")
-                        }
+                    NavigationLink {
+                        BasicStrategyChartView(rules: defaultRules)
+                    } label: {
+                        menuButtonLabel(title: "Basic Strategy Chart")
                     }
 
                     NavigationLink {
