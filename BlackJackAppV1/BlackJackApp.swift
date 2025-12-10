@@ -2116,6 +2116,19 @@ struct SavedRunDetailView: View {
         onSaveRun?(run, trimmed)
         showingSaveSheet = false
     }
+
+    private func attemptSaveRun() {
+        let trimmed = saveName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if existingSavedNames.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            duplicateNameAlert = true
+            return
+        }
+
+        onSaveRun?(run, trimmed)
+        showingSaveSheet = false
+    }
 }
 
 // MARK: - UI
