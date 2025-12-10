@@ -2104,8 +2104,6 @@ struct SavedRunDetailView: View {
                 Text("Another saved run already uses that name. Please choose a unique name.")
             }
         }
-        onSaveRun?(run, trimmed)
-        showingSaveSheet = false
     }
 
     private func attemptSaveRun() {
