@@ -2059,12 +2059,14 @@ struct SavedRunDetailView: View {
                     }
                 }
 
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save This Run") {
-                        saveName = run.name ?? run.betTitle
-                        showingSaveSheet = true
+                if run.name == nil {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Save This Run") {
+                            saveName = run.name ?? run.betTitle
+                            showingSaveSheet = true
+                        }
+                        .disabled(onSaveRun == nil)
                     }
-                    .disabled(onSaveRun == nil)
                 }
             }
             .sheet(isPresented: $showingChart) {
@@ -2102,9 +2104,11 @@ struct SavedRunDetailView: View {
                 Text("Another saved run already uses that name. Please choose a unique name.")
             }
         }
+        onSaveRun?(run, trimmed)
+        showingSaveSheet = false
     }
 
-     private func attemptSaveRun() {
+    private func attemptSaveRun() {
         let trimmed = saveName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -2112,6 +2116,7 @@ struct SavedRunDetailView: View {
             duplicateNameAlert = true
             return
         }
+
         onSaveRun?(run, trimmed)
         showingSaveSheet = false
     }
