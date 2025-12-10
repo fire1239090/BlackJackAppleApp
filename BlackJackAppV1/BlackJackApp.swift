@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(Charts)
+import Charts
+#endif
 #if canImport(UIKit)
 import UIKit
 
@@ -7,6 +10,687 @@ final class OrientationAppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         OrientationAppDelegate.orientationLock
+    }
+}
+
+// MARK: - Trip Logger
+
+enum EVSourceChoice: String, Identifiable, CaseIterable {
+    case evLab = "EV Lab Run"
+    case manual = "Manual EV/hr"
+
+    var id: String { rawValue }
+}
+
+struct TripLoggerView: View {
+    @AppStorage("tripSessions") private var tripSessionsData: Data = Data()
+    @AppStorage("locationNotes") private var locationNotesData: Data = Data()
+    @AppStorage("savedRuns") private var recentRunsData: Data = Data()
+    @AppStorage("userSavedRuns") private var savedNamedRunsData: Data = Data()
+
+    @State private var sessions: [TripSession] = []
+    @State private var locationNotes: [LocationNote] = []
+    @State private var showChart: Bool = true
+    @State private var showAllSessions: Bool = false
+    @State private var showAddSession: Bool = false
+    @State private var editingSession: TripSession?
+    @State private var selectedLocationNote: LocationNote?
+
+    private var sortedSessions: [TripSession] {
+        sessions.sorted { $0.timestamp > $1.timestamp }
+    }
+
+    private var displayedSessions: [TripSession] {
+        let recent = Array(sortedSessions.prefix(10))
+        return showAllSessions ? sortedSessions : recent
+    }
+
+    private var availableRuns: [SavedRun] {
+        var runsByID: [UUID: SavedRun] = [:]
+        decodeRuns(from: recentRunsData).forEach { runsByID[$0.id] = $0 }
+        decodeRuns(from: savedNamedRunsData).forEach { runsByID[$0.id] = $0 }
+        return runsByID.values.sorted { $0.timestamp > $1.timestamp }
+    }
+
+    private var totalEarnings: Double {
+        sessions.reduce(0) { $0 + $1.earnings }
+    }
+
+    private var totalHours: Double {
+        sessions.reduce(0) { $0 + $1.durationHours }
+    }
+
+    private var actualValuePerHour: Double {
+        guard totalHours > 0 else { return 0 }
+        return totalEarnings / totalHours
+    }
+
+    private var progressPoints: [TripProgressPoint] {
+        var cumulativeHours: Double = 0
+        var cumulativeActual: Double = 0
+        var cumulativeExpected: Double = 0
+        return sortedSessions.reversed().reduce(into: [TripProgressPoint]()) { partial, session in
+            cumulativeHours += session.durationHours
+            cumulativeActual += session.earnings
+            cumulativeExpected += session.expectedValue
+            partial.append(
+                TripProgressPoint(
+                    hourMark: cumulativeHours,
+                    actual: cumulativeActual,
+                    expected: cumulativeExpected
+                )
+            )
+        }
+        .sorted { $0.hourMark < $1.hourMark }
+    }
+
+    private var groupedLocationNotes: [LocationNote] {
+        var notesByKey: [String: LocationNote] = [:]
+
+        for note in locationNotes {
+            notesByKey[note.id] = note
+        }
+
+        for session in sessions {
+            let key = "\(session.location.lowercased())|\(session.city.lowercased())"
+            if notesByKey[key] == nil {
+                let trimmed = session.comments.trimmingCharacters(in: .whitespacesAndNewlines)
+                notesByKey[key] = LocationNote(
+                    location: session.location,
+                    city: session.city,
+                    notes: trimmed
+                )
+            }
+        }
+
+        return notesByKey.values.sorted { lhs, rhs in
+            lhs.location.localizedCaseInsensitiveCompare(rhs.location) == .orderedAscending
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                statsSection
+
+                visualizeSection
+
+                loggedSessionsSection
+
+                locationNotesSection
+            }
+            .padding()
+        }
+        .navigationTitle("Trip Logger")
+        .onAppear(perform: loadData)
+        .sheet(isPresented: $showAddSession) {
+            SessionEditorView(
+                availableRuns: availableRuns,
+                sessionToEdit: nil
+            ) { newSession in
+                addOrUpdate(session: newSession)
+            }
+        }
+        .sheet(item: $editingSession) { session in
+            SessionEditorView(
+                availableRuns: availableRuns,
+                sessionToEdit: session
+            ) { updated in
+                addOrUpdate(session: updated)
+            }
+        }
+        .sheet(item: $selectedLocationNote) { note in
+            LocationNoteDetailView(
+                note: note,
+                sessions: sessions,
+                onSave: { updated in
+                    save(note: updated)
+                }
+            )
+        }
+    }
+
+    private var statsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Trackers")
+                .font(.headline)
+
+            HStack(spacing: 12) {
+                statCard(title: "Total Earnings", value: totalEarnings, suffix: "", isCurrency: true)
+                statCard(title: "AV ($/hr)", value: actualValuePerHour, suffix: " /hr", isCurrency: true)
+                statCard(title: "Hours Played", value: totalHours, suffix: " hrs", isCurrency: false)
+            }
+        }
+    }
+
+    private var visualizeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Visualize Progress")
+                    .font(.headline)
+                Spacer()
+                Button(showChart ? "Hide" : "Show") {
+                    withAnimation { showChart.toggle() }
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if showChart {
+                if progressPoints.isEmpty {
+                    Text("Log sessions to generate your Expected vs Actual progress chart.")
+                        .foregroundColor(.secondary)
+                } else {
+#if canImport(Charts)
+                    Chart {
+                        ForEach(progressPoints) { point in
+                            LineMark(
+                                x: .value("Hours", point.hourMark),
+                                y: .value("Value", point.actual)
+                            )
+                            .foregroundStyle(by: .value("Series", "Actual"))
+                            .interpolationMethod(.catmullRom)
+                        }
+
+                        ForEach(progressPoints) { point in
+                            LineMark(
+                                x: .value("Hours", point.hourMark),
+                                y: .value("Value", point.expected)
+                            )
+                            .foregroundStyle(by: .value("Series", "Expected"))
+                            .interpolationMethod(.catmullRom)
+                        }
+                    }
+                    .frame(height: 220)
+                    .chartForegroundStyleScale([
+                        "Actual": .blue,
+                        "Expected": .green
+                    ])
+                    .chartLegend(.visible)
+#else
+                    Text("Charts are not available on this platform.")
+                        .foregroundColor(.secondary)
+#endif
+                }
+            }
+        }
+    }
+
+    private var loggedSessionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Logged Sessions")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    showAddSession = true
+                } label: {
+                    Label("Add Session", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            DisclosureGroup("Most recent sessions", isExpanded: .constant(true)) {
+                if displayedSessions.isEmpty {
+                    Text("No sessions yet. Tap Add Session to start tracking.")
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 4)
+                } else {
+                    ForEach(displayedSessions) { session in
+                        sessionRow(session)
+                        Divider()
+                    }
+
+                    if sessions.count > 10 {
+                        Button(showAllSessions ? "Show Fewer" : "See More") {
+                            withAnimation { showAllSessions.toggle() }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                    }
+                }
+            }
+            .padding()
+            .background(Color.secondary.opacity(0.08))
+            .cornerRadius(12)
+        }
+    }
+
+    private func sessionRow(_ session: TripSession) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(session.location) — \(session.city)")
+                    .font(.subheadline.weight(.semibold))
+                Text(session.timestamp, style: .date)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(String(format: "Earnings: $%.2f over %.2f hrs", session.earnings, session.durationHours))
+                    .font(.caption)
+                if let evName = session.evSourceName {
+                    Text("EV Source: \(evName)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            Spacer()
+            HStack(spacing: 12) {
+                Button {
+                    editingSession = session
+                } label: {
+                    Image(systemName: "pencil")
+                }
+
+                Button(role: .destructive) {
+                    delete(session: session)
+                } label: {
+                    Image(systemName: "trash")
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var locationNotesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Location Notes")
+                .font(.headline)
+
+            if groupedLocationNotes.isEmpty {
+                Text("Your location notes will appear here after you log sessions.")
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(groupedLocationNotes) { note in
+                    Button {
+                        selectedLocationNote = note
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(note.location) — \(note.city)")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(notePreview(note))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.08))
+                        .cornerRadius(12)
+                    }
+                }
+            }
+        }
+    }
+
+    private func notePreview(_ note: LocationNote) -> String {
+        let trimmed = note.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "No comments yet" }
+        return trimmed.components(separatedBy: .newlines).first ?? "No comments yet"
+    }
+
+    private func statCard(title: String, value: Double, suffix: String, isCurrency: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            let formattedValue = isCurrency ? String(format: "$%.2f", value) : String(format: "%.2f", value)
+            Text(formattedValue)
+                .font(.title3.weight(.semibold))
+            if !suffix.isEmpty {
+                Text(suffix)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(12)
+    }
+
+    private func addOrUpdate(session: TripSession) {
+        if let index = sessions.firstIndex(where: { $0.id == session.id }) {
+            sessions[index] = session
+        } else {
+            sessions.append(session)
+        }
+        persistSessions()
+        updateLocationNotes(with: session)
+    }
+
+    private func delete(session: TripSession) {
+        sessions.removeAll { $0.id == session.id }
+        persistSessions()
+    }
+
+    private func updateLocationNotes(with session: TripSession) {
+        let trimmed = session.comments.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let key = "\(session.location.lowercased())|\(session.city.lowercased())"
+        if let index = locationNotes.firstIndex(where: { $0.id == key }) {
+            let combined = [locationNotes[index].notes, trimmed]
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "\n\n")
+            locationNotes[index].notes = combined
+        } else {
+            locationNotes.append(
+                LocationNote(location: session.location, city: session.city, notes: trimmed)
+            )
+        }
+        persistLocationNotes()
+    }
+
+    private func save(note: LocationNote) {
+        if let index = locationNotes.firstIndex(where: { $0.id == note.id }) {
+            locationNotes[index] = note
+        } else {
+            locationNotes.append(note)
+        }
+        persistLocationNotes()
+    }
+
+    private func persistSessions() {
+        if let data = try? JSONEncoder().encode(sessions) {
+            tripSessionsData = data
+        }
+    }
+
+    private func persistLocationNotes() {
+        if let data = try? JSONEncoder().encode(locationNotes) {
+            locationNotesData = data
+        }
+    }
+
+    private func decodeRuns(from data: Data) -> [SavedRun] {
+        guard !data.isEmpty,
+              let decoded = try? JSONDecoder().decode([SavedRun].self, from: data) else {
+            return []
+        }
+        return decoded
+    }
+
+    private func loadData() {
+        if let decoded = try? JSONDecoder().decode([TripSession].self, from: tripSessionsData) {
+            sessions = decoded
+        }
+        if let decodedNotes = try? JSONDecoder().decode([LocationNote].self, from: locationNotesData) {
+            locationNotes = decodedNotes
+        }
+    }
+}
+
+struct SessionEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let availableRuns: [SavedRun]
+    var sessionToEdit: TripSession?
+    var onSave: (TripSession) -> Void
+
+    @State private var location: String = ""
+    @State private var city: String = ""
+    @State private var earningsText: String = ""
+    @State private var durationText: String = ""
+    @State private var comments: String = ""
+    @State private var evChoice: EVSourceChoice = .evLab
+    @State private var selectedRunID: UUID?
+    @State private var manualEVText: String = ""
+    @State private var validationAlert: String?
+    @State private var showLowHoursAlert: Bool = false
+
+    private var selectedRun: SavedRun? {
+        guard let id = selectedRunID else { return nil }
+        return availableRuns.first(where: { $0.id == id })
+    }
+
+    private var totalHoursSimulated: Double {
+        guard let run = selectedRun else { return 0 }
+        return run.input.hoursToSimulate * Double(run.input.numRealities)
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Session Details")) {
+                    TextField("Location", text: $location)
+                    TextField("City", text: $city)
+                    TextField("Earnings", text: $earningsText)
+                        .keyboardType(.decimalPad)
+                    TextField("Duration (hours)", text: $durationText)
+                        .keyboardType(.decimalPad)
+                    TextField("Comments (optional)", text: $comments, axis: .vertical)
+                        .lineLimit(1...4)
+                }
+
+                Section(header: Text("Expected Value")) {
+                    Picker("Source", selection: $evChoice) {
+                        ForEach(EVSourceChoice.allCases) { option in
+                            Text(option.rawValue).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if evChoice == .evLab {
+                        if availableRuns.isEmpty {
+                            Text("Save a run in the EV Lab to link its EV/hr.")
+                                .foregroundColor(.secondary)
+                        } else {
+                            Picker("Bet spread", selection: $selectedRunID) {
+                                Text("Select a saved run").tag(UUID?.none)
+                                ForEach(availableRuns) { run in
+                                    Text(run.name ?? run.displayTitle).tag(Optional(run.id))
+                                }
+                            }
+                            .onChange(of: selectedRunID) { _ in
+                                if totalHoursSimulated < 1000 && selectedRunID != nil {
+                                    showLowHoursAlert = true
+                                }
+                            }
+
+                            if let run = selectedRun {
+                                Text(String(format: "EV/hour: $%.2f", run.result.expectedValuePerHour))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    } else {
+                        TextField("EV per hour", text: $manualEVText)
+                            .keyboardType(.decimalPad)
+                    }
+                }
+            }
+            .navigationTitle(sessionToEdit == nil ? "Add Session" : "Edit Session")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save this Session") {
+                        attemptSave()
+                    }
+                }
+            }
+            .onAppear(perform: loadExistingSession)
+            .alert("Can't Save", isPresented: Binding(
+                get: { validationAlert != nil },
+                set: { newValue in
+                    if !newValue { validationAlert = nil }
+                }
+            ), actions: {
+                Button("OK", role: .cancel) { validationAlert = nil }
+            }, message: {
+                Text(validationAlert ?? "")
+            })
+            .alert("Consider longer simulations", isPresented: $showLowHoursAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("For more reliable EVs, try using bet spreads with at least 1000 simulated hours.")
+            }
+        }
+    }
+
+    private func loadExistingSession() {
+        guard let sessionToEdit else { return }
+        location = sessionToEdit.location
+        city = sessionToEdit.city
+        earningsText = String(format: "%.2f", sessionToEdit.earnings)
+        durationText = String(format: "%.2f", sessionToEdit.durationHours)
+        comments = sessionToEdit.comments
+        manualEVText = String(format: "%.2f", sessionToEdit.evPerHour)
+        if let runID = sessionToEdit.evRunID, availableRuns.contains(where: { $0.id == runID }) {
+            evChoice = .evLab
+            selectedRunID = runID
+        } else {
+            evChoice = .manual
+        }
+    }
+
+    private func attemptSave() {
+        guard !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            validationAlert = "Location and City are required."
+            return
+        }
+
+        guard let earnings = Double(earningsText) else {
+            validationAlert = "Please enter a valid number for earnings."
+            return
+        }
+
+        guard let duration = Double(durationText), duration > 0 else {
+            validationAlert = "Duration must be greater than zero."
+            return
+        }
+
+        let evValue: Double
+        var evSourceName: String? = nil
+        var evRunID: UUID? = nil
+
+        switch evChoice {
+        case .evLab:
+            guard let run = selectedRun else {
+                validationAlert = "Select an EV Lab run to pull EV/hr from or switch to manual."
+                return
+            }
+            evValue = run.result.expectedValuePerHour
+            evSourceName = run.name ?? run.displayTitle
+            evRunID = run.id
+        case .manual:
+            guard let manual = Double(manualEVText) else {
+                validationAlert = "Enter a valid EV per hour value."
+                return
+            }
+            evValue = manual
+        }
+
+        var newSession = sessionToEdit ?? TripSession(
+            location: location,
+            city: city,
+            earnings: earnings,
+            durationHours: duration,
+            evPerHour: evValue,
+            evRunID: evRunID,
+            evSourceName: evSourceName,
+            comments: comments
+        )
+
+        newSession.location = location
+        newSession.city = city
+        newSession.earnings = earnings
+        newSession.durationHours = duration
+        newSession.evPerHour = evValue
+        newSession.evRunID = evRunID
+        newSession.evSourceName = evSourceName
+        newSession.comments = comments
+        newSession.timestamp = sessionToEdit?.timestamp ?? Date()
+
+        onSave(newSession)
+        dismiss()
+    }
+}
+
+struct LocationNoteDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let note: LocationNote
+    var sessions: [TripSession]
+    var onSave: (LocationNote) -> Void
+
+    @State private var workingNotes: String = ""
+    @State private var isEditing: Bool = false
+
+    private var relatedComments: [String] {
+        sessions
+            .filter { $0.location.caseInsensitiveCompare(note.location) == .orderedSame && $0.city.caseInsensitiveCompare(note.city) == .orderedSame }
+            .compactMap { $0.comments.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack(alignment: .leading, spacing: 16) {
+                if relatedComments.isEmpty && workingNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("No comments yet")
+                        .foregroundColor(.secondary)
+                } else if !isEditing {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            if !workingNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text(workingNotes)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+
+                            ForEach(relatedComments.indices, id: \.self) { index in
+                                Text(relatedComments[index])
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(8)
+                                    .background(Color.secondary.opacity(0.05))
+                                    .cornerRadius(8)
+                            }
+                        }
+                    }
+                }
+
+                if isEditing {
+                    TextEditor(text: $workingNotes)
+                        .frame(minHeight: 200)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.secondary.opacity(0.3))
+                        )
+                }
+
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("\(note.location) — \(note.city)")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isEditing {
+                        Button("Save") {
+                            save()
+                        }
+                    } else {
+                        Button("Edit or Add More Comments") {
+                            isEditing = true
+                        }
+                    }
+                }
+            }
+            .onAppear {
+                workingNotes = note.notes
+            }
+        }
+    }
+
+    private func save() {
+        var updated = note
+        updated.notes = workingNotes
+        onSave(updated)
+        isEditing = false
     }
 }
 
@@ -64,6 +748,37 @@ struct DebugRecord: Identifiable, Codable {
     var handIndex: Int
     var playerFinal: Int
     var dealerFinal: Int
+}
+
+// MARK: - Trip logging
+
+struct TripSession: Identifiable, Codable, Equatable {
+    var id: UUID = .init()
+    var timestamp: Date = .init()
+    var location: String
+    var city: String
+    var earnings: Double
+    var durationHours: Double
+    var evPerHour: Double
+    var evRunID: UUID?
+    var evSourceName: String?
+    var comments: String
+
+    var expectedValue: Double { evPerHour * durationHours }
+}
+
+struct LocationNote: Identifiable, Codable, Equatable {
+    var id: String { "\(location.lowercased())|\(city.lowercased())" }
+    var location: String
+    var city: String
+    var notes: String
+}
+
+struct TripProgressPoint: Identifiable {
+    var id: UUID = .init()
+    var hourMark: Double
+    var actual: Double
+    var expected: Double
 }
 
 // MARK: - Core models
@@ -2965,7 +3680,7 @@ struct HomeView: View {
                     }
 
                     NavigationLink {
-                        PlaceholderFeatureView(title: "Trip Logger")
+                        TripLoggerView()
                             .navigationTitle("Trip Logger")
                             .navigationBarTitleDisplayMode(.inline)
                     } label: {
