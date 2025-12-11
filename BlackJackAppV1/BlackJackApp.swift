@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 #if canImport(Charts)
 import Charts
 #endif
@@ -336,17 +337,17 @@ struct TripLoggerView: View {
             }
 
             DisclosureGroup("Most recent sessions", isExpanded: .constant(true)) {
-                if displayedSessions.isEmpty {
-                    Text("No sessions yet. Tap Add Session to start tracking.")
-                        .foregroundColor(.secondary)
-                        .padding(.vertical, 4)
-                } else {
-                    ForEach(displayedSessions) { session in
-                        sessionRow(session)
-                        Divider()
-                    }
+                    if displayedSessions.isEmpty {
+                        Text("No sessions yet. Tap Add Session to start tracking.")
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 4)
+                    } else {
+                        ForEach(displayedSessions) { session in
+                            sessionRow(session)
+                            Divider()
+                        }
 
-                    if sessions.count > 10 {
+                    if viewModel.sessions.count > 10 {
                         Button(showAllSessions ? "Show Fewer" : "See More") {
                             withAnimation { showAllSessions.toggle() }
                         }
