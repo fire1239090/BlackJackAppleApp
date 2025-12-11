@@ -30,6 +30,12 @@ final class TripLoggerViewModel: ObservableObject {
     private let sessionKey = "tripSessions"
     private let locationNotesKey = "locationNotes"
 
+    init() {
+        sessions = []
+        locationNotes = []
+        loadErrorMessage = nil
+    }
+
     func loadData() {
         loadSessions()
         loadLocationNotes()
