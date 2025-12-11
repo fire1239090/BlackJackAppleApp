@@ -22,22 +22,116 @@ enum EVSourceChoice: String, Identifiable, CaseIterable {
     var id: String { rawValue }
 }
 
+final class TripLoggerViewModel: ObservableObject {
+    @Published var sessions: [TripSession] = []
+    @Published var locationNotes: [LocationNote] = []
+    @Published var loadErrorMessage: String?
+
+    private let sessionKey = "tripSessions"
+    private let locationNotesKey = "locationNotes"
+
+    func loadData() {
+        loadSessions()
+        loadLocationNotes()
+    }
+
+    func addOrUpdate(session: TripSession) {
+        if let index = sessions.firstIndex(where: { $0.id == session.id }) {
+            sessions[index] = session
+        } else {
+            sessions.append(session)
+        }
+        persistSessions()
+        updateLocationNotes(with: session)
+    }
+
+    func delete(session: TripSession) {
+        sessions.removeAll { $0.id == session.id }
+        persistSessions()
+    }
+
+    func save(note: LocationNote) {
+        if let index = locationNotes.firstIndex(where: { $0.id == note.id }) {
+            locationNotes[index] = note
+        } else {
+            locationNotes.append(note)
+        }
+        persistLocationNotes()
+    }
+
+    private func loadSessions() {
+        guard let data = UserDefaults.standard.data(forKey: sessionKey), !data.isEmpty else {
+            sessions = []
+            return
+        }
+
+        do {
+            sessions = try JSONDecoder().decode([TripSession].self, from: data)
+        } catch {
+            loadErrorMessage = "Previous trip log data was corrupted and has been reset."
+            sessions = []
+            UserDefaults.standard.set(Data(), forKey: sessionKey)
+        }
+    }
+
+    private func loadLocationNotes() {
+        guard let data = UserDefaults.standard.data(forKey: locationNotesKey), !data.isEmpty else {
+            locationNotes = []
+            return
+        }
+
+        do {
+            locationNotes = try JSONDecoder().decode([LocationNote].self, from: data)
+        } catch {
+            loadErrorMessage = "Previous location notes were corrupted and have been reset."
+            locationNotes = []
+            UserDefaults.standard.set(Data(), forKey: locationNotesKey)
+        }
+    }
+
+    private func persistSessions() {
+        guard let data = try? JSONEncoder().encode(sessions) else { return }
+        UserDefaults.standard.set(data, forKey: sessionKey)
+    }
+
+    private func persistLocationNotes() {
+        guard let data = try? JSONEncoder().encode(locationNotes) else { return }
+        UserDefaults.standard.set(data, forKey: locationNotesKey)
+    }
+
+    private func updateLocationNotes(with session: TripSession) {
+        let trimmed = session.comments.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let key = "\(session.location.lowercased())|\(session.city.lowercased())"
+        if let index = locationNotes.firstIndex(where: { $0.id == key }) {
+            let combined = [locationNotes[index].notes, trimmed]
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "\n\n")
+            locationNotes[index].notes = combined
+        } else {
+            locationNotes.append(
+                LocationNote(location: session.location, city: session.city, notes: trimmed)
+            )
+        }
+        persistLocationNotes()
+    }
+}
+
 struct TripLoggerView: View {
-    @AppStorage("tripSessions") private var tripSessionsData: Data = Data()
-    @AppStorage("locationNotes") private var locationNotesData: Data = Data()
     @AppStorage("savedRuns") private var recentRunsData: Data = Data()
     @AppStorage("userSavedRuns") private var savedNamedRunsData: Data = Data()
 
-    @State private var sessions: [TripSession] = []
-    @State private var locationNotes: [LocationNote] = []
+    @StateObject private var viewModel = TripLoggerViewModel()
     @State private var showChart: Bool = true
     @State private var showAllSessions: Bool = false
     @State private var showAddSession: Bool = false
     @State private var editingSession: TripSession?
     @State private var selectedLocationNote: LocationNote?
+    @State private var showLoadError: Bool = false
 
     private var sortedSessions: [TripSession] {
-        sessions.sorted { $0.timestamp > $1.timestamp }
+        viewModel.sessions.sorted { $0.timestamp > $1.timestamp }
     }
 
     private var displayedSessions: [TripSession] {
@@ -53,11 +147,11 @@ struct TripLoggerView: View {
     }
 
     private var totalEarnings: Double {
-        sessions.reduce(0) { $0 + $1.earnings }
+        viewModel.sessions.reduce(0) { $0 + $1.earnings }
     }
 
     private var totalHours: Double {
-        sessions.reduce(0) { $0 + $1.durationHours }
+        viewModel.sessions.reduce(0) { $0 + $1.durationHours }
     }
 
     private var actualValuePerHour: Double {
@@ -87,11 +181,11 @@ struct TripLoggerView: View {
     private var groupedLocationNotes: [LocationNote] {
         var notesByKey: [String: LocationNote] = [:]
 
-        for note in locationNotes {
+        for note in viewModel.locationNotes {
             notesByKey[note.id] = note
         }
 
-        for session in sessions {
+        for session in viewModel.sessions {
             let key = "\(session.location.lowercased())|\(session.city.lowercased())"
             if notesByKey[key] == nil {
                 let trimmed = session.comments.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -122,13 +216,16 @@ struct TripLoggerView: View {
             .padding()
         }
         .navigationTitle("Trip Logger")
-        .onAppear(perform: loadData)
+        .onAppear {
+            viewModel.loadData()
+            showLoadError = viewModel.loadErrorMessage != nil
+        }
         .sheet(isPresented: $showAddSession) {
             SessionEditorView(
                 availableRuns: availableRuns,
                 sessionToEdit: nil
             ) { newSession in
-                addOrUpdate(session: newSession)
+                viewModel.addOrUpdate(session: newSession)
             }
         }
         .sheet(item: $editingSession) { session in
@@ -136,17 +233,20 @@ struct TripLoggerView: View {
                 availableRuns: availableRuns,
                 sessionToEdit: session
             ) { updated in
-                addOrUpdate(session: updated)
+                viewModel.addOrUpdate(session: updated)
             }
         }
         .sheet(item: $selectedLocationNote) { note in
             LocationNoteDetailView(
                 note: note,
-                sessions: sessions,
+                sessions: viewModel.sessions,
                 onSave: { updated in
-                    save(note: updated)
+                    viewModel.save(note: updated)
                 }
             )
+        }
+        .alert(isPresented: $showLoadError) {
+            Alert(title: Text("Trip Logger reset"), message: Text(viewModel.loadErrorMessage ?? ""), dismissButton: .default(Text("OK")))
         }
     }
 
@@ -280,7 +380,7 @@ struct TripLoggerView: View {
                 }
 
                 Button(role: .destructive) {
-                    delete(session: session)
+                    viewModel.delete(session: session)
                 } label: {
                     Image(systemName: "trash")
                 }
@@ -348,75 +448,12 @@ struct TripLoggerView: View {
         .cornerRadius(12)
     }
 
-    private func addOrUpdate(session: TripSession) {
-        if let index = sessions.firstIndex(where: { $0.id == session.id }) {
-            sessions[index] = session
-        } else {
-            sessions.append(session)
-        }
-        persistSessions()
-        updateLocationNotes(with: session)
-    }
-
-    private func delete(session: TripSession) {
-        sessions.removeAll { $0.id == session.id }
-        persistSessions()
-    }
-
-    private func updateLocationNotes(with session: TripSession) {
-        let trimmed = session.comments.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let key = "\(session.location.lowercased())|\(session.city.lowercased())"
-        if let index = locationNotes.firstIndex(where: { $0.id == key }) {
-            let combined = [locationNotes[index].notes, trimmed]
-                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                .joined(separator: "\n\n")
-            locationNotes[index].notes = combined
-        } else {
-            locationNotes.append(
-                LocationNote(location: session.location, city: session.city, notes: trimmed)
-            )
-        }
-        persistLocationNotes()
-    }
-
-    private func save(note: LocationNote) {
-        if let index = locationNotes.firstIndex(where: { $0.id == note.id }) {
-            locationNotes[index] = note
-        } else {
-            locationNotes.append(note)
-        }
-        persistLocationNotes()
-    }
-
-    private func persistSessions() {
-        if let data = try? JSONEncoder().encode(sessions) {
-            tripSessionsData = data
-        }
-    }
-
-    private func persistLocationNotes() {
-        if let data = try? JSONEncoder().encode(locationNotes) {
-            locationNotesData = data
-        }
-    }
-
     private func decodeRuns(from data: Data) -> [SavedRun] {
         guard !data.isEmpty,
               let decoded = try? JSONDecoder().decode([SavedRun].self, from: data) else {
             return []
         }
         return decoded
-    }
-
-    private func loadData() {
-        if let decoded = try? JSONDecoder().decode([TripSession].self, from: tripSessionsData) {
-            sessions = decoded
-        }
-        if let decodedNotes = try? JSONDecoder().decode([LocationNote].self, from: locationNotesData) {
-            locationNotes = decodedNotes
-        }
     }
 }
 
