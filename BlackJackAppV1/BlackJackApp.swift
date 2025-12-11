@@ -502,8 +502,17 @@ struct SessionEditorView: View {
                         .keyboardType(.decimalPad)
                     TextField("Duration (hours)", text: $durationText)
                         .keyboardType(.decimalPad)
-                    TextField("Comments (optional)", text: $comments, axis: .vertical)
-                        .lineLimit(1...4)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Comments (optional)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextEditor(text: $comments)
+                            .frame(minHeight: 80)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.secondary.opacity(0.2))
+                            )
+                    }
                 }
 
                 Section(header: Text("Expected Value")) {
