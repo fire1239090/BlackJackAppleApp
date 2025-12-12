@@ -3842,6 +3842,40 @@ struct TrainingCard: Identifiable, Equatable, Hashable {
     }
 }
 
+struct CardIconView: View {
+    let card: TrainingCard
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 4)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(card.rank.label)
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                        Text(card.suit.symbol)
+                            .font(.system(size: 18))
+                    }
+                    Spacer()
+                    Text(card.suit.symbol)
+                        .font(.system(size: 32))
+                }
+                Spacer()
+                Text(card.display)
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .padding(12)
+        }
+        .frame(minWidth: 80, minHeight: 112)
+        .aspectRatio(2/3, contentMode: .fit)
+    }
+}
+
 struct DeckCountThroughSession: Identifiable, Codable {
     let id: UUID
     let date: Date
@@ -3877,26 +3911,12 @@ struct DeckCountThroughView: View {
     @State private var sessions: [DeckCountThroughSession] = []
     @State private var selectedMinutes: Int = 0
     @State private var selectedSeconds: Int = 30
-    @State private var deck: [TrainingCard] = []
-    @State private var currentCard: TrainingCard?
-    @State private var remainingCard: TrainingCard?
-    @State private var isDealing: Bool = false
-    @State private var showGuessPrompt: Bool = false
-    @State private var guessResult: String?
-    @State private var dealingTimer: Timer?
-    @State private var sessionStart: Date?
-    @State private var dealtCount: Int = 0
-    @State private var pendingDuration: TimeInterval?
-
-    private let cardsToDeal = 51
+    @State private var navigateToRun: Bool = false
+    @State private var runConfigID = UUID()
 
     private var totalDuration: TimeInterval {
         let seconds = (selectedMinutes * 60) + selectedSeconds
         return max(Double(seconds), 1)
-    }
-
-    private var dealInterval: TimeInterval {
-        max(totalDuration / Double(cardsToDeal), 0.05)
     }
 
     var body: some View {
@@ -3931,78 +3951,42 @@ struct DeckCountThroughView: View {
                         .foregroundColor(.secondary)
                 }
 
-                VStack(spacing: 12) {
+                Button(action: beginRun) {
                     HStack {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Current Card")
-                                .font(.headline)
-                            Text(currentCard?.display ?? "—")
-                                .font(.largeTitle.weight(.bold))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 6) {
-                            Text("Cards Dealt")
-                                .font(.headline)
-                            Text("\(dealtCount)/\(cardsToDeal)")
-                                .font(.title3.weight(.semibold))
-                        }
+                        Image(systemName: "play.fill")
+                        Text("Start Dealing")
+                            .fontWeight(.semibold)
                     }
-                    .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color.secondary.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                    if let guessResult {
-                        Text(guessResult)
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                    }
-
-                    if showGuessPrompt, let remainingCard {
-                        VStack(spacing: 8) {
-                            Text("What is the remaining card?")
-                                .font(.headline)
-                            Text("(Actual card: \(remainingCard.display))")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            HStack {
-                                guessButton(for: .low)
-                                guessButton(for: .neutral)
-                                guessButton(for: .high)
-                            }
-                        }
-                    }
-
-                    Button(action: startDrill) {
-                        HStack {
-                            Image(systemName: isDealing ? "stop.fill" : "play.fill")
-                            Text(isDealing ? "Reset" : "Start Dealing")
-                                .fontWeight(.semibold)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.accentColor.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                    .disabled(isDealing && !showGuessPrompt)
+                    .padding()
+                    .background(Color.accentColor)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
 
-                if let latest = sessions.first {
-                    DeckCountThroughStatsSummary(
-                        overall: DeckCountThroughStats.make(for: sessions),
-                        weekly: DeckCountThroughStats.make(for: lastWeekSessions)
-                    )
-                    .padding(.top)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Average time and accuracy")
-                    .accessibilityValue("Most recent session took \(formatTime(latest.durationSeconds))")
-                }
+                DeckCountThroughStatsSummary(
+                    overall: DeckCountThroughStats.make(for: sessions),
+                    weekly: DeckCountThroughStats.make(for: lastWeekSessions)
+                )
+                .padding(.top)
             }
             .padding()
+            NavigationLink(isActive: $navigateToRun) {
+                DeckCountThroughRunView(
+                    minutes: selectedMinutes,
+                    seconds: selectedSeconds,
+                    onComplete: { session in
+                        sessions.insert(session, at: 0)
+                        persistSessions()
+                    }
+                )
+                .id(runConfigID)
+            } label: {
+                EmptyView()
+            }
+            .hidden()
         }
         .onAppear(perform: loadSessions)
-        .onDisappear(perform: stopDealing)
     }
 
     private var lastWeekSessions: [DeckCountThroughSession] {
@@ -4010,70 +3994,9 @@ struct DeckCountThroughView: View {
         return sessions.filter { $0.date >= weekAgo }
     }
 
-    private func guessButton(for category: TrainingCard.Category) -> some View {
-        Button(action: { submitGuess(category) }) {
-            Text(category.rawValue)
-                .multilineTextAlignment(.center)
-                .font(.subheadline.weight(.semibold))
-                .padding(10)
-                .frame(maxWidth: .infinity)
-                .background(Color.secondary.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .disabled(isDealing)
-    }
-
-    private func startDrill() {
-        stopDealing()
-        guessResult = nil
-        showGuessPrompt = false
-        currentCard = nil
-        remainingCard = nil
-        deck = TrainingCard.fullDeck().shuffled()
-        sessionStart = Date()
-        dealtCount = 0
-        pendingDuration = nil
-
-        var index = 0
-        isDealing = true
-        dealingTimer = Timer.scheduledTimer(withTimeInterval: dealInterval, repeats: true) { timer in
-            guard index < min(cardsToDeal, deck.count) else {
-                timer.invalidate()
-                finishDealing()
-                return
-            }
-            currentCard = deck[index]
-            dealtCount = index + 1
-            index += 1
-        }
-
-        if let dealingTimer {
-            RunLoop.current.add(dealingTimer, forMode: .common)
-        }
-    }
-
-    private func finishDealing() {
-        isDealing = false
-        showGuessPrompt = true
-        remainingCard = deck.last
-        let duration = Date().timeIntervalSince(sessionStart ?? Date())
-        pendingDuration = duration
-    }
-
-    private func stopDealing() {
-        dealingTimer?.invalidate()
-        dealingTimer = nil
-        isDealing = false
-    }
-
-    private func submitGuess(_ category: TrainingCard.Category) {
-        guard let remainingCard, let duration = pendingDuration else { return }
-        let correct = remainingCard.category == category
-        guessResult = correct ? "Correct! The last card was \(remainingCard.display)." : "Incorrect. The last card was \(remainingCard.display)."
-        let session = DeckCountThroughSession(date: Date(), durationSeconds: duration, correctGuess: correct)
-        sessions.insert(session, at: 0)
-        pendingDuration = nil
-        persistSessions()
+    private func beginRun() {
+        runConfigID = UUID()
+        navigateToRun = true
     }
 
     private func loadSessions() {
@@ -4090,6 +4013,317 @@ struct DeckCountThroughView: View {
         let minutes = Int(seconds) / 60
         let remainingSeconds = Int(seconds) % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+}
+
+struct DeckCountThroughRunView: View {
+    let minutes: Int
+    let seconds: Int
+    let onComplete: (DeckCountThroughSession) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var phase: Phase = .countdown
+    @State private var countdownValue: Int = 3
+    @State private var deck: [TrainingCard] = TrainingCard.fullDeck().shuffled()
+    @State private var currentCard: TrainingCard?
+    @State private var dealtCount: Int = 0
+    @State private var sessionStart: Date?
+    @State private var pendingDuration: TimeInterval?
+    @State private var remainingCard: TrainingCard?
+    @State private var countdownTimer: Timer?
+    @State private var dealingTimer: Timer?
+    @State private var guessResult: String?
+    @State private var cardAnimationToggle: Bool = false
+
+    private let cardsToDeal = 51
+
+    private var totalDuration: TimeInterval { max(Double(minutes * 60 + seconds), 1) }
+    private var dealInterval: TimeInterval { max(totalDuration / Double(cardsToDeal), 0.05) }
+
+    enum Phase {
+        case countdown
+        case dealing
+        case guessing
+        case finished
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Deck Count Through")
+                    .font(.title3.weight(.semibold))
+                Text("Get ready for a shuffled deck. After a brief countdown we'll deal 51 cards for you to track, then you'll guess whether the last card is Low, Neutral, or High.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            Group {
+                switch phase {
+                case .countdown:
+                    countdownView
+                case .dealing:
+                    dealingView
+                case .guessing:
+                    guessingPrompt
+                case .finished:
+                    resultView
+                }
+            }
+
+            if phase == .guessing {
+                guessButtons
+            }
+
+            if let guessResult {
+                Text(guessResult)
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Spacer()
+
+            if phase == .finished {
+                Button(action: dismiss.callAsFunction) {
+                    Text("Done")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color(uiColor: .systemGroupedBackground))
+        .navigationBarBackButtonHidden(phase == .dealing || phase == .guessing)
+        .navigationTitle("Deck Count Through")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear(perform: startRun)
+        .onDisappear(perform: stopTimers)
+    }
+
+    private var countdownView: some View {
+        VStack(spacing: 16) {
+            Text("Starting in")
+                .font(.headline)
+            ZStack {
+                Circle()
+                    .stroke(Color.accentColor.opacity(0.2), lineWidth: 12)
+                Circle()
+                    .trim(from: 0, to: CGFloat(countdownProgress))
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeInOut(duration: 0.9), value: countdownValue)
+                Text("\(countdownValue)")
+                    .font(.system(size: 44, weight: .bold))
+            }
+            .frame(width: 140, height: 140)
+            Text("Keep your eyes on the cards—dealing begins as soon as the countdown ends.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
+    }
+
+    private var dealingView: some View {
+        VStack(spacing: 12) {
+            Text("Dealing...")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.white)
+                    .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 8)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 220)
+                if let card = currentCard {
+                    CardIconView(card: card)
+                        .frame(width: 120)
+                        .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
+                        .id(card.id)
+                        .animation(.easeInOut(duration: 0.25), value: cardAnimationToggle)
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "rectangle.stack.fill")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("Preparing cards")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            HStack {
+                Label("\(dealtCount)/\(cardsToDeal) cards", systemImage: "clock")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("Target time: \(Int(totalDuration))s")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var guessingPrompt: some View {
+        VStack(spacing: 14) {
+            Text("Make your call")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.white)
+                    .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 8)
+                    .frame(height: 220)
+                VStack(spacing: 10) {
+                    Image(systemName: "questionmark.square.dashed")
+                        .font(.largeTitle)
+                        .foregroundColor(.secondary)
+                    Text("What's the remaining card?")
+                        .foregroundColor(.secondary)
+                }
+            }
+            Text("Choose whether the last card is Low (2-6), Neutral (7-9), or High (10-A).")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.leading)
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var guessButtons: some View {
+        HStack(spacing: 10) {
+            guessButton(for: .low)
+            guessButton(for: .neutral)
+            guessButton(for: .high)
+        }
+    }
+
+    private var resultView: some View {
+        VStack(spacing: 14) {
+            Text("Result")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let remainingCard {
+                CardIconView(card: remainingCard)
+                    .frame(width: 140)
+            }
+            Text(guessResult ?? "Session complete.")
+                .font(.body.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func guessButton(for category: TrainingCard.Category) -> some View {
+        Button(action: { submitGuess(category) }) {
+            Text(category.rawValue)
+                .multilineTextAlignment(.center)
+                .font(.subheadline.weight(.semibold))
+                .padding(12)
+                .frame(maxWidth: .infinity)
+                .background(Color.white)
+                .foregroundColor(.primary)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 3)
+        }
+    }
+
+    private func startRun() {
+        stopTimers()
+        deck = TrainingCard.fullDeck().shuffled()
+        remainingCard = deck.last
+        dealtCount = 0
+        guessResult = nil
+        phase = .countdown
+        countdownValue = 3
+        sessionStart = nil
+        pendingDuration = nil
+        startCountdown()
+    }
+
+    private func startCountdown() {
+        countdownTimer?.invalidate()
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
+            if countdownValue <= 0 {
+                timer.invalidate()
+                startDealing()
+            } else {
+                countdownValue -= 1
+            }
+        }
+        if let countdownTimer {
+            RunLoop.main.add(countdownTimer, forMode: .common)
+        }
+    }
+
+    private func startDealing() {
+        phase = .dealing
+        sessionStart = Date()
+        dealtCount = 0
+        var index = 0
+        dealingTimer?.invalidate()
+        dealingTimer = Timer.scheduledTimer(withTimeInterval: dealInterval, repeats: true) { timer in
+            guard index < min(cardsToDeal, deck.count) else {
+                timer.invalidate()
+                finishDealing()
+                return
+            }
+            let card = deck[index]
+            withAnimation(.easeInOut(duration: 0.25)) {
+                currentCard = card
+                cardAnimationToggle.toggle()
+            }
+            dealtCount = index + 1
+            index += 1
+        }
+        if let dealingTimer {
+            RunLoop.main.add(dealingTimer, forMode: .common)
+        }
+    }
+
+    private func finishDealing() {
+        phase = .guessing
+        pendingDuration = Date().timeIntervalSince(sessionStart ?? Date())
+        currentCard = nil
+    }
+
+    private func submitGuess(_ category: TrainingCard.Category) {
+        guard phase == .guessing, let remainingCard else { return }
+        stopTimers()
+        let duration = pendingDuration ?? Date().timeIntervalSince(sessionStart ?? Date())
+        let correct = remainingCard.category == category
+        guessResult = correct ? "Correct! The last card was \(remainingCard.display)." : "Incorrect. The last card was \(remainingCard.display)."
+        let session = DeckCountThroughSession(date: Date(), durationSeconds: duration, correctGuess: correct)
+        onComplete(session)
+        phase = .finished
+    }
+
+    private func stopTimers() {
+        countdownTimer?.invalidate()
+        dealingTimer?.invalidate()
+        countdownTimer = nil
+        dealingTimer = nil
+    }
+
+    private var countdownProgress: Double {
+        let total = 3.0
+        return max(0, min(1, (total - Double(countdownValue)) / total))
     }
 }
 
