@@ -3692,6 +3692,506 @@ struct PlaceholderFeatureView: View {
     }
 }
 
+// MARK: - Training Suite
+
+struct TrainingOption: Identifiable {
+    let id = UUID()
+    let title: String
+    let icon: String
+    let destination: AnyView
+}
+
+struct TrainingSuiteView: View {
+    private let options: [TrainingOption] = [
+        TrainingOption(
+            title: "Card Sorting",
+            icon: "square.grid.2x2",
+            destination: AnyView(PlaceholderFeatureView(title: "Card Sorting"))
+        ),
+        TrainingOption(
+            title: "Speed Counter",
+            icon: "speedometer",
+            destination: AnyView(PlaceholderFeatureView(title: "Speed Counter"))
+        ),
+        TrainingOption(
+            title: "Deck Count Through",
+            icon: "rectangle.stack",
+            destination: AnyView(DeckCountThroughView())
+        ),
+        TrainingOption(
+            title: "Strategy Quiz",
+            icon: "questionmark.square.dashed",
+            destination: AnyView(PlaceholderFeatureView(title: "Strategy Quiz"))
+        ),
+        TrainingOption(
+            title: "Hand Simulation",
+            icon: "hands.clap",
+            destination: AnyView(PlaceholderFeatureView(title: "Hand Simulation"))
+        ),
+        TrainingOption(
+            title: "Deck Estimation and Bet Sizing",
+            icon: "scalemass",
+            destination: AnyView(PlaceholderFeatureView(title: "Deck Estimation and Bet Sizing"))
+        ),
+        TrainingOption(
+            title: "Test Out",
+            icon: "checkmark.seal",
+            destination: AnyView(PlaceholderFeatureView(title: "Test Out"))
+        ),
+        TrainingOption(
+            title: "Stats",
+            icon: "chart.bar.doc.horizontal",
+            destination: AnyView(TrainingStatsView())
+        )
+    ]
+
+    private let columns: [GridItem] = [
+        GridItem(.flexible(minimum: 120), spacing: 16),
+        GridItem(.flexible(minimum: 120), spacing: 16)
+    ]
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 16) {
+                ForEach(options) { option in
+                    NavigationLink {
+                        option.destination
+                            .navigationTitle(option.title)
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        VStack(spacing: 12) {
+                            Image(systemName: option.icon)
+                                .font(.largeTitle)
+                                .frame(width: 64, height: 64)
+                                .background(Color.accentColor.opacity(0.12))
+                                .foregroundColor(.accentColor)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            Text(option.title)
+                                .font(.headline)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.secondary.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+}
+
+struct TrainingCard: Identifiable, Equatable, Hashable {
+    enum Rank: Int, CaseIterable {
+        case ace = 1, two, three, four, five, six, seven, eight, nine, ten, jack, queen, king
+
+        var label: String {
+            switch self {
+            case .ace: return "A"
+            case .jack: return "J"
+            case .queen: return "Q"
+            case .king: return "K"
+            default: return String(rawValue)
+            }
+        }
+    }
+
+    enum Suit: CaseIterable {
+        case spades, hearts, clubs, diamonds
+
+        var symbol: String {
+            switch self {
+            case .spades: return "♠︎"
+            case .hearts: return "♥︎"
+            case .clubs: return "♣︎"
+            case .diamonds: return "♦︎"
+            }
+        }
+    }
+
+    enum Category: String {
+        case low = "Low (2-6)"
+        case neutral = "Neutral (7-9)"
+        case high = "High (10-A)"
+    }
+
+    let id = UUID()
+    let rank: Rank
+    let suit: Suit
+
+    var display: String { "\(rank.label)\(suit.symbol)" }
+
+    var category: Category {
+        switch rank {
+        case .two, .three, .four, .five, .six:
+            return .low
+        case .seven, .eight, .nine:
+            return .neutral
+        default:
+            return .high
+        }
+    }
+
+    static func fullDeck() -> [TrainingCard] {
+        Suit.allCases.flatMap { suit in
+            Rank.allCases.map { rank in
+                TrainingCard(rank: rank, suit: suit)
+            }
+        }
+    }
+}
+
+struct DeckCountThroughSession: Identifiable, Codable {
+    let id: UUID
+    let date: Date
+    let durationSeconds: Double
+    let correctGuess: Bool
+
+    init(date: Date, durationSeconds: Double, correctGuess: Bool) {
+        id = UUID()
+        self.date = date
+        self.durationSeconds = durationSeconds
+        self.correctGuess = correctGuess
+    }
+}
+
+struct DeckCountThroughStats {
+    let averageTime: Double?
+    let bestTime: Double?
+    let accuracy: Double?
+
+    static func make(for sessions: [DeckCountThroughSession]) -> DeckCountThroughStats {
+        guard !sessions.isEmpty else { return DeckCountThroughStats(averageTime: nil, bestTime: nil, accuracy: nil) }
+        let durations = sessions.map { $0.durationSeconds }
+        let average = durations.reduce(0, +) / Double(durations.count)
+        let best = durations.min()
+        let accuracy = Double(sessions.filter { $0.correctGuess }.count) / Double(sessions.count)
+        return DeckCountThroughStats(averageTime: average, bestTime: best, accuracy: accuracy)
+    }
+}
+
+struct DeckCountThroughView: View {
+    @AppStorage("deckCountThroughSessions") private var storedSessions: Data = Data()
+
+    @State private var sessions: [DeckCountThroughSession] = []
+    @State private var selectedMinutes: Int = 0
+    @State private var selectedSeconds: Int = 30
+    @State private var deck: [TrainingCard] = []
+    @State private var currentCard: TrainingCard?
+    @State private var remainingCard: TrainingCard?
+    @State private var isDealing: Bool = false
+    @State private var showGuessPrompt: Bool = false
+    @State private var guessResult: String?
+    @State private var dealingTimer: Timer?
+    @State private var sessionStart: Date?
+    @State private var dealtCount: Int = 0
+    @State private var pendingDuration: TimeInterval?
+
+    private let cardsToDeal = 51
+
+    private var totalDuration: TimeInterval {
+        let seconds = (selectedMinutes * 60) + selectedSeconds
+        return max(Double(seconds), 1)
+    }
+
+    private var dealInterval: TimeInterval {
+        max(totalDuration / Double(cardsToDeal), 0.05)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Deck Count Through")
+                        .font(.title2.weight(.semibold))
+                    Text("A card counter should be able to count down a full deck in 30 seconds or less. This drill will shuffle a fresh deck, deal 51 cards within your chosen time, and ask you to guess whether the last card is Low, Neutral, or High.")
+                        .foregroundColor(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Deal Time")
+                        .font(.headline)
+                    HStack {
+                        Picker("Minutes", selection: $selectedMinutes) {
+                            ForEach(0..<10) { Text("\($0) min").tag($0) }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(maxWidth: .infinity)
+
+                        Picker("Seconds", selection: $selectedSeconds) {
+                            ForEach(0..<60) { Text("\($0) sec").tag($0) }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .frame(height: 140)
+                    Text("Cards will be dealt evenly across \(Int(totalDuration)) seconds.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+
+                VStack(spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Current Card")
+                                .font(.headline)
+                            Text(currentCard?.display ?? "—")
+                                .font(.largeTitle.weight(.bold))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 6) {
+                            Text("Cards Dealt")
+                                .font(.headline)
+                            Text("\(dealtCount)/\(cardsToDeal)")
+                                .font(.title3.weight(.semibold))
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.secondary.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                    if let guessResult {
+                        Text(guessResult)
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    if showGuessPrompt, let remainingCard {
+                        VStack(spacing: 8) {
+                            Text("What is the remaining card?")
+                                .font(.headline)
+                            Text("(Actual card: \(remainingCard.display))")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            HStack {
+                                guessButton(for: .low)
+                                guessButton(for: .neutral)
+                                guessButton(for: .high)
+                            }
+                        }
+                    }
+
+                    Button(action: startDrill) {
+                        HStack {
+                            Image(systemName: isDealing ? "stop.fill" : "play.fill")
+                            Text(isDealing ? "Reset" : "Start Dealing")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .disabled(isDealing && !showGuessPrompt)
+                }
+
+                if let latest = sessions.first {
+                    DeckCountThroughStatsSummary(
+                        overall: DeckCountThroughStats.make(for: sessions),
+                        weekly: DeckCountThroughStats.make(for: lastWeekSessions)
+                    )
+                    .padding(.top)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Average time and accuracy")
+                    .accessibilityValue("Most recent session took \(formatTime(latest.durationSeconds))")
+                }
+            }
+            .padding()
+        }
+        .onAppear(perform: loadSessions)
+        .onDisappear(perform: stopDealing)
+    }
+
+    private var lastWeekSessions: [DeckCountThroughSession] {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return [] }
+        return sessions.filter { $0.date >= weekAgo }
+    }
+
+    private func guessButton(for category: TrainingCard.Category) -> some View {
+        Button(action: { submitGuess(category) }) {
+            Text(category.rawValue)
+                .multilineTextAlignment(.center)
+                .font(.subheadline.weight(.semibold))
+                .padding(10)
+                .frame(maxWidth: .infinity)
+                .background(Color.secondary.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .disabled(isDealing)
+    }
+
+    private func startDrill() {
+        stopDealing()
+        guessResult = nil
+        showGuessPrompt = false
+        currentCard = nil
+        remainingCard = nil
+        deck = TrainingCard.fullDeck().shuffled()
+        sessionStart = Date()
+        dealtCount = 0
+        pendingDuration = nil
+
+        var index = 0
+        isDealing = true
+        dealingTimer = Timer.scheduledTimer(withTimeInterval: dealInterval, repeats: true) { timer in
+            guard index < min(cardsToDeal, deck.count) else {
+                timer.invalidate()
+                finishDealing()
+                return
+            }
+            currentCard = deck[index]
+            dealtCount = index + 1
+            index += 1
+        }
+
+        if let dealingTimer {
+            RunLoop.current.add(dealingTimer, forMode: .common)
+        }
+    }
+
+    private func finishDealing() {
+        isDealing = false
+        showGuessPrompt = true
+        remainingCard = deck.last
+        let duration = Date().timeIntervalSince(sessionStart ?? Date())
+        pendingDuration = duration
+    }
+
+    private func stopDealing() {
+        dealingTimer?.invalidate()
+        dealingTimer = nil
+        isDealing = false
+    }
+
+    private func submitGuess(_ category: TrainingCard.Category) {
+        guard let remainingCard, let duration = pendingDuration else { return }
+        let correct = remainingCard.category == category
+        guessResult = correct ? "Correct! The last card was \(remainingCard.display)." : "Incorrect. The last card was \(remainingCard.display)."
+        let session = DeckCountThroughSession(date: Date(), durationSeconds: duration, correctGuess: correct)
+        sessions.insert(session, at: 0)
+        pendingDuration = nil
+        persistSessions()
+    }
+
+    private func loadSessions() {
+        guard let decoded = try? JSONDecoder().decode([DeckCountThroughSession].self, from: storedSessions) else { return }
+        sessions = decoded
+    }
+
+    private func persistSessions() {
+        guard let data = try? JSONEncoder().encode(sessions) else { return }
+        storedSessions = data
+    }
+
+    private func formatTime(_ seconds: Double) -> String {
+        let minutes = Int(seconds) / 60
+        let remainingSeconds = Int(seconds) % 60
+        return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+}
+
+struct DeckCountThroughStatsSummary: View {
+    let overall: DeckCountThroughStats
+    let weekly: DeckCountThroughStats
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Recent Stats")
+                .font(.headline)
+            statRow(title: "Average Time", overall: formattedTime(overall.averageTime), weekly: formattedTime(weekly.averageTime))
+            statRow(title: "Best Time", overall: formattedTime(overall.bestTime), weekly: formattedTime(weekly.bestTime))
+            statRow(title: "Accuracy", overall: formattedPercent(overall.accuracy), weekly: formattedPercent(weekly.accuracy))
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func statRow(title: String, overall: String, weekly: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            HStack {
+                Label(overall, systemImage: "clock")
+                Spacer()
+                Text("Last 7 days: \(weekly)")
+                    .foregroundColor(.secondary)
+                    .font(.footnote)
+            }
+        }
+    }
+
+    private func formattedTime(_ time: Double?) -> String {
+        guard let time else { return "—" }
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private func formattedPercent(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.0f%%", value * 100)
+    }
+}
+
+struct TrainingStatsView: View {
+    @AppStorage("deckCountThroughSessions") private var storedSessions: Data = Data()
+
+    private var sessions: [DeckCountThroughSession] {
+        (try? JSONDecoder().decode([DeckCountThroughSession].self, from: storedSessions)) ?? []
+    }
+
+    private var lastWeekSessions: [DeckCountThroughSession] {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return [] }
+        return sessions.filter { $0.date >= weekAgo }
+    }
+
+    var body: some View {
+        List {
+            Section("Deck Count Through") {
+                statRow(title: "Average Time", overall: DeckCountThroughStats.make(for: sessions).averageTime, weekly: DeckCountThroughStats.make(for: lastWeekSessions).averageTime, formatter: timeLabel)
+                statRow(title: "Best Time", overall: DeckCountThroughStats.make(for: sessions).bestTime, weekly: DeckCountThroughStats.make(for: lastWeekSessions).bestTime, formatter: timeLabel)
+                statRow(title: "Accuracy", overall: DeckCountThroughStats.make(for: sessions).accuracy, weekly: DeckCountThroughStats.make(for: lastWeekSessions).accuracy, formatter: percentLabel)
+            }
+
+            Section("More Training Stats") {
+                Text("Card Sorting, Speed Counter, Strategy Quiz, Hand Simulation, Deck Estimation and Bet Sizing, and Test Out stats will appear here once those drills are available.")
+                    .foregroundColor(.secondary)
+                    .font(.subheadline)
+                    .padding(.vertical, 4)
+            }
+        }
+        .navigationTitle("Training Stats")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func statRow(title: String, overall: Double?, weekly: Double?, formatter: (Double?) -> String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.headline)
+            Text("All-time: \(formatter(overall))")
+            Text("Last 7 days: \(formatter(weekly))")
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func timeLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        let minutes = Int(value) / 60
+        let seconds = Int(value) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private func percentLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.0f%%", value * 100)
+    }
+}
+
 struct HomeView: View {
     private let defaultRules = GameRules(
         decks: 6,
@@ -3725,7 +4225,7 @@ struct HomeView: View {
                     }
 
                     NavigationLink {
-                        PlaceholderFeatureView(title: "Training Suite")
+                        TrainingSuiteView()
                             .navigationTitle("Training Suite")
                             .navigationBarTitleDisplayMode(.inline)
                     } label: {
