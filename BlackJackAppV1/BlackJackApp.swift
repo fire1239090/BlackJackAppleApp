@@ -443,6 +443,8 @@ struct TripLoggerView: View {
             let formattedValue = isCurrency ? String(format: "$%.2f", value) : String(format: "%.2f", value)
             Text(formattedValue)
                 .font(.title3.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             if !suffix.isEmpty {
                 Text(suffix)
                     .font(.caption2)
@@ -673,10 +675,14 @@ struct LocationNoteDetailView: View {
     @State private var isEditing: Bool = false
 
     private var relatedComments: [String] {
+        let existingNotesLower = note.notes.lowercased()
         sessions
             .filter { $0.location.caseInsensitiveCompare(note.location) == .orderedSame && $0.city.caseInsensitiveCompare(note.city) == .orderedSame }
             .compactMap { $0.comments.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .filter { comment in
+                guard !comment.isEmpty else { return false }
+                return !existingNotesLower.contains(comment.lowercased())
+            }
     }
 
     var body: some View {
