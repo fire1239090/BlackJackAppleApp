@@ -676,7 +676,7 @@ struct LocationNoteDetailView: View {
 
     private var relatedComments: [String] {
         let existingNotesLower = note.notes.lowercased()
-        sessions
+        return sessions
             .filter { $0.location.caseInsensitiveCompare(note.location) == .orderedSame && $0.city.caseInsensitiveCompare(note.city) == .orderedSame }
             .compactMap { $0.comments.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { comment in
