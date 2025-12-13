@@ -3706,7 +3706,7 @@ struct TrainingSuiteView: View {
         TrainingOption(
             title: "Card Sorting",
             icon: "square.grid.2x2",
-            destination: AnyView(PlaceholderFeatureView(title: "Card Sorting"))
+            destination: AnyView(CardSortingView())
         ),
         TrainingOption(
             title: "Speed Counter",
@@ -3887,6 +3887,296 @@ struct CardIconView: View {
         }
         .frame(minWidth: 80, minHeight: 112)
         .aspectRatio(2/3, contentMode: .fit)
+    }
+}
+
+struct CardSortingAttempt: Identifiable, Codable {
+    let id: UUID
+    let date: Date
+    let correct: Bool
+
+    init(date: Date, correct: Bool) {
+        id = UUID()
+        self.date = date
+        self.correct = correct
+    }
+}
+
+struct CardSortingStats {
+    let totalAttempts: Int
+    let correctAttempts: Int
+    let longestStreak: Int
+
+    var accuracy: Double? {
+        guard totalAttempts > 0 else { return nil }
+        return Double(correctAttempts) / Double(totalAttempts)
+    }
+
+    static func make(for attempts: [CardSortingAttempt]) -> CardSortingStats {
+        let ordered = attempts.sorted { $0.date < $1.date }
+        var correctCount = 0
+        var streak = 0
+        var bestStreak = 0
+
+        for attempt in ordered {
+            if attempt.correct {
+                correctCount += 1
+                streak += 1
+                bestStreak = max(bestStreak, streak)
+            } else {
+                streak = 0
+            }
+        }
+
+        return CardSortingStats(
+            totalAttempts: ordered.count,
+            correctAttempts: correctCount,
+            longestStreak: bestStreak
+        )
+    }
+}
+
+struct CardSortingView: View {
+    @AppStorage("cardSortingAttempts") private var storedAttempts: Data = Data()
+
+    @State private var showIntro = true
+    @State private var currentCard: TrainingCard = TrainingCard.fullDeck().randomElement() ?? TrainingCard(rank: .ace, suit: .spades)
+    @State private var dragOffset: CGSize = .zero
+    @State private var feedback: String?
+    @State private var feedbackIsPositive: Bool = true
+    @State private var currentStreak: Int = 0
+    @State private var bestSessionStreak: Int = 0
+    @State private var attemptsThisSession: Int = 0
+    @State private var correctThisSession: Int = 0
+
+    private var attempts: [CardSortingAttempt] {
+        (try? JSONDecoder().decode([CardSortingAttempt].self, from: storedAttempts)) ?? []
+    }
+
+    private var lastWeekAttempts: [CardSortingAttempt] {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return [] }
+        return attempts.filter { $0.date >= weekAgo }
+    }
+
+    private var overallStats: CardSortingStats { .make(for: attempts) }
+    private var weeklyStats: CardSortingStats { .make(for: lastWeekAttempts) }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                if showIntro {
+                    introView
+                } else {
+                    gameView
+                }
+
+                CardSortingStatsSummary(overall: overallStats, weekly: weeklyStats)
+            }
+            .padding()
+        }
+        .navigationTitle("Card Sorting")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var introView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("How it works")
+                .font(.title3.weight(.semibold))
+            Text("Swipe like Tinder: left for **Low (2–6)**, right for **High (10–A)**, and up for **Neutral (7–9)**. Build a long streak by tagging cards correctly.")
+                .fixedSize(horizontal: false, vertical: true)
+            Text("You can play as long as you like. Every swipe is saved so you can review accuracy and streaks over time.")
+                .foregroundColor(.secondary)
+            Button {
+                withAnimation {
+                    showIntro = false
+                }
+            } label: {
+                Text("Get Started")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.accentColor)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
+
+    private var gameView: some View {
+        VStack(spacing: 16) {
+            Text("Swipe the card: left = Low, right = High, up = Neutral.")
+                .multilineTextAlignment(.center)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            ZStack {
+                CardIconView(card: currentCard)
+                    .offset(dragOffset)
+                    .rotationEffect(.degrees(Double(dragOffset.width / 12)))
+                    .gesture(
+                        DragGesture()
+                            .onChanged { gesture in
+                                dragOffset = gesture.translation
+                            }
+                            .onEnded { gesture in
+                                handleSwipe(gesture.translation)
+                            }
+                    )
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("Streak: \(currentStreak)", systemImage: "flame.fill")
+                    Spacer()
+                    Label("Best: \(bestSessionStreak)", systemImage: "crown.fill")
+                }
+                .font(.headline)
+
+                HStack {
+                    Label("Session correct: \(correctThisSession)", systemImage: "checkmark.circle")
+                    Spacer()
+                    if attemptsThisSession > 0 {
+                        let accuracy = Double(correctThisSession) / Double(attemptsThisSession)
+                        Text("Session accuracy: \(String(format: "%.0f%%", accuracy * 100))")
+                            .foregroundColor(.secondary)
+                            .font(.subheadline)
+                    } else {
+                        Text("Session accuracy: —")
+                            .foregroundColor(.secondary)
+                            .font(.subheadline)
+                    }
+                }
+            }
+
+            if let feedback {
+                HStack {
+                    Image(systemName: feedbackIsPositive ? "hand.thumbsup" : "xmark.circle")
+                        .foregroundColor(feedbackIsPositive ? .green : .red)
+                    Text(feedback)
+                        .foregroundColor(.primary)
+                    Spacer()
+                }
+                .padding()
+                .background(feedbackIsPositive ? Color.green.opacity(0.12) : Color.red.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
+
+    private func handleSwipe(_ translation: CGSize) {
+        let direction = swipeDirection(from: translation)
+        withAnimation {
+            dragOffset = .zero
+        }
+
+        guard let direction else { return }
+        evaluateGuess(direction)
+    }
+
+    private func swipeDirection(from translation: CGSize) -> TrainingCard.Category? {
+        let horizontal = abs(translation.width)
+        let vertical = abs(translation.height)
+        let threshold: CGFloat = 60
+
+        if horizontal > vertical {
+            if translation.width > threshold {
+                return .high
+            } else if translation.width < -threshold {
+                return .low
+            }
+        } else if translation.height < -threshold {
+            return .neutral
+        }
+
+        return nil
+    }
+
+    private func evaluateGuess(_ guess: TrainingCard.Category) {
+        let isCorrect = guess == currentCard.category
+        attemptsThisSession += 1
+        if isCorrect {
+            currentStreak += 1
+            bestSessionStreak = max(bestSessionStreak, currentStreak)
+            correctThisSession += 1
+        } else {
+            currentStreak = 0
+        }
+
+        feedbackIsPositive = isCorrect
+        feedback = isCorrect
+            ? "Correct! \(currentCard.display) is \(currentCard.category.rawValue)."
+            : "Oops! \(currentCard.display) is \(currentCard.category.rawValue)."
+
+        appendAttempt(correct: isCorrect)
+        currentCard = TrainingCard.fullDeck().randomElement() ?? currentCard
+    }
+
+    private func appendAttempt(correct: Bool) {
+        var updatedAttempts = attempts
+        updatedAttempts.append(CardSortingAttempt(date: Date(), correct: correct))
+        if let data = try? JSONEncoder().encode(updatedAttempts) {
+            storedAttempts = data
+        }
+    }
+}
+
+struct CardSortingStatsSummary: View {
+    let overall: CardSortingStats
+    let weekly: CardSortingStats
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Card Sorting Progress")
+                .font(.headline)
+            statRow(
+                title: "Correct Decisions",
+                overall: countLabel(overall.correctAttempts, attempts: overall.totalAttempts),
+                weekly: countLabel(weekly.correctAttempts, attempts: weekly.totalAttempts)
+            )
+            statRow(
+                title: "Accuracy",
+                overall: percentLabel(overall.accuracy),
+                weekly: percentLabel(weekly.accuracy)
+            )
+            statRow(
+                title: "Longest Streak",
+                overall: streakLabel(overall.longestStreak, attempts: overall.totalAttempts),
+                weekly: streakLabel(weekly.longestStreak, attempts: weekly.totalAttempts)
+            )
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func statRow(title: String, overall: String, weekly: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            HStack {
+                Text("All-time: \(overall)")
+                Spacer()
+                Text("Last 7 days: \(weekly)")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func percentLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.0f%%", value * 100)
+    }
+
+    private func countLabel(_ count: Int, attempts: Int) -> String {
+        attempts > 0 ? String(count) : "—"
+    }
+
+    private func streakLabel(_ streak: Int, attempts: Int) -> String {
+        attempts > 0 ? String(streak) : "—"
     }
 }
 
@@ -4401,6 +4691,7 @@ struct DeckCountThroughStatsSummary: View {
 
 struct TrainingStatsView: View {
     @AppStorage("deckCountThroughSessions") private var storedSessions: Data = Data()
+    @AppStorage("cardSortingAttempts") private var storedCardSorting: Data = Data()
 
     private var sessions: [DeckCountThroughSession] {
         (try? JSONDecoder().decode([DeckCountThroughSession].self, from: storedSessions)) ?? []
@@ -4411,8 +4702,41 @@ struct TrainingStatsView: View {
         return sessions.filter { $0.date >= weekAgo }
     }
 
+    private var cardSortingAttempts: [CardSortingAttempt] {
+        (try? JSONDecoder().decode([CardSortingAttempt].self, from: storedCardSorting)) ?? []
+    }
+
+    private var lastWeekCardSortingAttempts: [CardSortingAttempt] {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return [] }
+        return cardSortingAttempts.filter { $0.date >= weekAgo }
+    }
+
+    private var cardSortingOverall: CardSortingStats { .make(for: cardSortingAttempts) }
+    private var cardSortingWeekly: CardSortingStats { .make(for: lastWeekCardSortingAttempts) }
+
     var body: some View {
         List {
+            Section("Card Sorting") {
+                statRow(
+                    title: "Correct Decisions",
+                    overall: Double(cardSortingOverall.correctAttempts),
+                    weekly: Double(cardSortingWeekly.correctAttempts),
+                    formatter: countLabel
+                )
+                statRow(
+                    title: "Accuracy",
+                    overall: cardSortingOverall.accuracy,
+                    weekly: cardSortingWeekly.accuracy,
+                    formatter: percentLabel
+                )
+                statRow(
+                    title: "Longest Streak",
+                    overall: Double(cardSortingOverall.longestStreak),
+                    weekly: Double(cardSortingWeekly.longestStreak),
+                    formatter: countLabel
+                )
+            }
+
             Section("Deck Count Through") {
                 statRow(title: "Average Time", overall: DeckCountThroughStats.make(for: sessions).averageTime, weekly: DeckCountThroughStats.make(for: lastWeekSessions).averageTime, formatter: timeLabel)
                 statRow(title: "Best Time", overall: DeckCountThroughStats.make(for: sessions).bestTime, weekly: DeckCountThroughStats.make(for: lastWeekSessions).bestTime, formatter: timeLabel)
@@ -4450,6 +4774,11 @@ struct TrainingStatsView: View {
     private func percentLabel(_ value: Double?) -> String {
         guard let value else { return "—" }
         return String(format: "%.0f%%", value * 100)
+    }
+
+    private func countLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(Int(value))
     }
 }
 
