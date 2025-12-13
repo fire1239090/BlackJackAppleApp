@@ -4015,42 +4015,65 @@ struct FaceCardArtworkView: View {
     let suit: TrainingCard.Suit
     let color: Color
 
+    private struct FaceCardMetrics {
+        let edge: CGFloat
+        let frameCorner: CGFloat
+        let borderWidth: CGFloat
+        let dividerHeight: CGFloat
+        let portraitHeight: CGFloat
+        let suitIconSize: CGFloat
+        let labelFontSize: CGFloat
+        let horizontalPadding: CGFloat
+        let verticalStackSpacing: CGFloat
+        let contentPadding: CGFloat
+
+        init(proxy: GeometryProxy) {
+            edge = min(proxy.size.width, proxy.size.height)
+            frameCorner = edge * 0.08
+            borderWidth = edge * 0.025
+            dividerHeight = edge * 0.035
+            portraitHeight = edge * 0.48
+            suitIconSize = edge * 0.08
+            labelFontSize = edge * 0.12
+            horizontalPadding = edge * 0.1
+            verticalStackSpacing = edge * 0.05
+            contentPadding = edge * 0.08
+        }
+    }
+
     var body: some View {
         GeometryReader { proxy in
-            let size = min(proxy.size.width, proxy.size.height)
-            let frameCorner = size * 0.08
-            let borderWidth = size * 0.025
-            let dividerHeight = size * 0.035
+            let metrics = FaceCardMetrics(proxy: proxy)
 
             ZStack {
-                RoundedRectangle(cornerRadius: frameCorner, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.frameCorner, style: .continuous)
                     .fill(Color.white)
-                RoundedRectangle(cornerRadius: frameCorner, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.1), lineWidth: borderWidth)
+                RoundedRectangle(cornerRadius: metrics.frameCorner, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.1), lineWidth: metrics.borderWidth)
 
-                VStack(spacing: size * 0.05) {
-                    portraitArtwork(height: size * 0.48)
+                VStack(spacing: metrics.verticalStackSpacing) {
+                    portraitArtwork(height: metrics.portraitHeight)
 
                     Rectangle()
                         .fill(color.opacity(0.12))
-                        .frame(height: dividerHeight)
+                        .frame(height: metrics.dividerHeight)
                         .overlay(
-                            HStack(spacing: size * 0.06) {
-                                suitIcon(size: size * 0.08)
+                            HStack(spacing: metrics.edge * 0.06) {
+                                suitIcon(size: metrics.suitIconSize)
                                 Spacer()
                                 Text(rank.label)
-                                    .font(.system(size: size * 0.12, weight: .black, design: .rounded))
+                                    .font(.system(size: metrics.labelFontSize, weight: .black, design: .rounded))
                                     .foregroundColor(color)
                                 Spacer()
-                                suitIcon(size: size * 0.08)
+                                suitIcon(size: metrics.suitIconSize)
                             }
-                            .padding(.horizontal, size * 0.1)
+                            .padding(.horizontal, metrics.horizontalPadding)
                         )
 
-                    portraitArtwork(height: size * 0.48)
+                    portraitArtwork(height: metrics.portraitHeight)
                         .rotationEffect(.degrees(180))
                 }
-                .padding(size * 0.08)
+                .padding(metrics.contentPadding)
             }
         }
     }
