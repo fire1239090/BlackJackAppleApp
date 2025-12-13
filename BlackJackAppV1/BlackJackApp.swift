@@ -3851,6 +3851,20 @@ struct CardIconView: View {
         let flipped: Bool
     }
 
+    struct Metrics {
+        let cardSize: CGSize
+
+        var base: CGFloat { min(cardSize.width, cardSize.height) }
+        var cornerPadding: CGFloat { cardSize.width * 0.07 }
+        var rankFontSize: CGFloat { cardSize.height * 0.18 }
+        var suitFontSize: CGFloat { cardSize.height * 0.135 }
+        var accentSuitSize: CGFloat { cardSize.height * 0.21 }
+        var pipFontSize: CGFloat { cardSize.height * 0.155 }
+
+        var interiorSize: CGSize { CGSize(width: cardSize.width * 0.82, height: cardSize.height * 0.74) }
+        var cornerRadius: CGFloat { base * 0.16 }
+    }
+
     let card: TrainingCard
 
     private var cardColor: Color {
@@ -3864,214 +3878,63 @@ struct CardIconView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let cardWidth = proxy.size.width
-            let cardHeight = proxy.size.height
-            let base = min(cardWidth, cardHeight)
-
-            let cornerPadding = cardWidth * 0.07
-            let rankFontSize = cardHeight * 0.18
-            let suitFontSize = cardHeight * 0.135
-            let accentSuitSize = cardHeight * 0.21
-            let pipFontSize = cardHeight * 0.155
-
-            let interiorWidth = cardWidth * 0.82
-            let interiorHeight = cardHeight * 0.74
-
-            let cornerRadius = base * 0.16
+            let metrics = Metrics(cardSize: proxy.size)
 
             ZStack {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.cornerRadius, style: .continuous)
                     .fill(Color.white)
                     .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 4)
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.cornerRadius, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
             }
             .overlay(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: cardHeight * 0.008) {
+                VStack(alignment: .leading, spacing: proxy.size.height * 0.008) {
                     Text(card.rank.label)
-                        .font(.system(size: rankFontSize, weight: .bold, design: .rounded))
+                        .font(.system(size: metrics.rankFontSize, weight: .bold, design: .rounded))
                         .foregroundColor(cardColor)
                     Text(card.suit.symbol)
-                        .font(.system(size: suitFontSize))
+                        .font(.system(size: metrics.suitFontSize))
                         .foregroundColor(cardColor)
-                        .padding([.horizontal, .bottom], cornerPadding)
+                        .rotationEffect(.degrees(180))
                 }
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-        }
-        .frame(minWidth: 88, minHeight: 125)
-        .aspectRatio(2.5/3.5, contentMode: .fit)
-    }
-
-    private var pipPlacements: [PipPlacement] {
-        let left: CGFloat = 0.24
-        let right: CGFloat = 0.76
-        let centerX: CGFloat = 0.5
-
-        let top: CGFloat = 0.14
-        let upper: CGFloat = 0.30
-        let middle: CGFloat = 0.50
-        let lower: CGFloat = 0.70
-        let bottom: CGFloat = 0.86
-
-        func placement(_ x: CGFloat, _ y: CGFloat) -> PipPlacement {
-            PipPlacement(x: x, y: y, flipped: y > middle)
-        }
-
-        switch card.rank {
-        case .ace:
-            return [placement(centerX, middle)]
-        case .two:
-            return [placement(centerX, top), placement(centerX, bottom)]
-        case .three:
-            return [placement(centerX, top), placement(centerX, middle), placement(centerX, bottom)]
-        case .four:
-            return [placement(left, top), placement(right, top), placement(left, bottom), placement(right, bottom)]
-        case .five:
-            return [placement(left, top), placement(right, top), placement(centerX, middle), placement(left, bottom), placement(right, bottom)]
-        case .six:
-            return [
-                placement(left, top), placement(right, top),
-                placement(left, middle), placement(right, middle),
-                placement(left, bottom), placement(right, bottom)
-            ]
-        case .seven:
-            return [
-                placement(centerX, upper),
-                placement(left, top), placement(right, top),
-                placement(left, middle), placement(right, middle),
-                placement(left, bottom), placement(right, bottom)
-            ]
-        case .eight:
-            return [
-                placement(centerX, upper), placement(centerX, lower),
-                placement(left, top), placement(right, top),
-                placement(left, middle), placement(right, middle),
-                placement(left, bottom), placement(right, bottom)
-            ]
-        case .nine:
-            return [
-                placement(centerX, middle),
-                placement(centerX, upper), placement(centerX, lower),
-                placement(left, top), placement(right, top),
-                placement(left, middle), placement(right, middle),
-                placement(left, bottom), placement(right, bottom)
-            ]
-        case .ten:
-            return [
-                placement(left, top), placement(right, top),
-                placement(left, upper), placement(right, upper),
-                placement(left, middle), placement(right, middle),
-                placement(left, lower), placement(right, lower),
-                placement(left, bottom), placement(right, bottom)
-            ]
-        case .jack, .queen, .king:
-            return []
-        }
-    }
-}
-
-struct FaceCardArtworkView: View {
-    let rank: TrainingCard.Rank
-    let suit: TrainingCard.Suit
-    let color: Color
-
-    var body: some View {
-        GeometryReader { proxy in
-            let size = min(proxy.size.width, proxy.size.height)
-            let frameCorner = size * 0.08
-            let emblemSize = size * 0.46
-            let accentCircle = size * 0.24
-            let suitSize = size * 0.16
-            let borderWidth = size * 0.025
-
-            ZStack {
-                RoundedRectangle(cornerRadius: frameCorner, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.white, color.opacity(0.15)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                RoundedRectangle(cornerRadius: frameCorner, style: .continuous)
-                    .strokeBorder(color.opacity(0.35), lineWidth: borderWidth)
-
-                VStack(spacing: size * 0.07) {
-                    HStack(spacing: size * 0.08) {
-                        suitIcon(size: suitSize)
-                        Spacer()
-                        suitIcon(size: suitSize)
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    ZStack {
-                        Circle()
-                            .fill(Color.white.opacity(0.95))
-                            .frame(width: emblemSize, height: emblemSize)
-                            .overlay(
-                                Circle()
-                                    .stroke(color.opacity(0.4), lineWidth: borderWidth)
-                            )
-
-                        Text(rank.label)
-                            .font(.system(size: emblemSize * 0.7, weight: .black, design: .rounded))
-                            .foregroundColor(color)
-                            .shadow(color: Color.black.opacity(0.08), radius: 2, x: 0, y: 1)
-
-                        Circle()
-                            .fill(color.opacity(0.08))
-                            .frame(width: accentCircle, height: accentCircle)
-                            .overlay(
-                                suitIcon(size: suitSize * 1.3)
-                            )
-                    }
-
-                    HStack(spacing: size * 0.08) {
-                        suitIcon(size: suitSize)
-                        Spacer()
-                        suitIcon(size: suitSize)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .padding([.top, .leading], cornerPadding)
+                .padding([.top, .leading], metrics.cornerPadding)
             }
             .overlay(alignment: .bottomTrailing) {
-                VStack(alignment: .trailing, spacing: cardHeight * 0.008) {
+                VStack(alignment: .trailing, spacing: proxy.size.height * 0.008) {
                     Text(card.rank.label)
-                        .font(.system(size: rankFontSize, weight: .bold, design: .rounded))
+                        .font(.system(size: metrics.rankFontSize, weight: .bold, design: .rounded))
                         .foregroundColor(cardColor)
                         .rotationEffect(.degrees(180))
                     Text(card.suit.symbol)
-                        .font(.system(size: suitFontSize))
+                        .font(.system(size: metrics.suitFontSize))
                         .foregroundColor(cardColor)
                         .rotationEffect(.degrees(180))
                 }
-                .padding([.trailing, .bottom], cornerPadding)
+                .padding([.trailing, .bottom], metrics.cornerPadding)
             }
             .overlay(alignment: .topTrailing) {
                 Text(card.suit.symbol)
-                    .font(.system(size: accentSuitSize))
+                    .font(.system(size: metrics.accentSuitSize))
                     .foregroundColor(cardColor)
-                    .padding([.top, .trailing], cornerPadding)
+                    .padding([.top, .trailing], metrics.cornerPadding)
             }
             .overlay(alignment: .bottomLeading) {
                 Text(card.suit.symbol)
-                    .font(.system(size: accentSuitSize))
+                    .font(.system(size: metrics.accentSuitSize))
                     .foregroundColor(cardColor)
                     .rotationEffect(.degrees(180))
-                    .padding([.leading, .bottom], cornerPadding)
+                    .padding([.leading, .bottom], metrics.cornerPadding)
             }
             .overlay {
                 ZStack {
                     if pipPlacements.isEmpty {
                         FaceCardArtworkView(rank: card.rank, suit: card.suit, color: cardColor)
-                            .frame(width: interiorWidth, height: interiorHeight)
+                            .frame(width: metrics.interiorSize.width, height: metrics.interiorSize.height)
                     } else {
                         GeometryReader { pipProxy in
                             ForEach(pipPlacements) { placement in
                                 Text(card.suit.symbol)
-                                    .font(.system(size: pipFontSize, weight: .semibold))
+                                    .font(.system(size: metrics.pipFontSize, weight: .semibold))
                                     .foregroundColor(cardColor)
                                     .rotationEffect(placement.flipped ? .degrees(180) : .degrees(0))
                                     .position(
@@ -4081,7 +3944,7 @@ struct FaceCardArtworkView: View {
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                         }
-                        .frame(width: interiorWidth, height: interiorHeight)
+                        .frame(width: metrics.interiorSize.width, height: metrics.interiorSize.height)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
