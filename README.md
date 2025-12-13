@@ -34,3 +34,8 @@ This project is a SwiftUI iOS app that estimates the expected hourly value for a
 - If you see negative EV, revisit the bet spread or rules—tight penetration, low max bet, or harsh rules can outweigh the counting edge.
 - Ensure blackjack payout is 3:2 for traditional games; 6:5 payouts will usually produce negative EV even with counting.
 - For fastest results, run on a physical device; simulators may take longer for large simulations.
+
+## Testing
+- Run the iOS unit/UI test suite from Xcode via **Product → Test** (⌘U) using an iOS 17 simulator such as iPhone 15.
+- From the command line, execute `xcodebuild test -scheme BlackJackAppV1 -destination 'platform=iOS Simulator,name=iPhone 15'` on macOS with Xcode installed.
+- In containerized or Linux environments without Xcode, automated UI testing is unavailable; rely on local Xcode runs for verification.
