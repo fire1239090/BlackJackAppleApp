@@ -3873,10 +3873,8 @@ struct CardIconView: View {
             let accentSuitSize = cardHeight * 0.22
             let pipFontSize = cardHeight * 0.16
 
-            let pipInsetX = cardWidth * 0.12
-            let pipInsetY = cardHeight * 0.16
-            let pipAreaWidth = cardWidth - (pipInsetX * 2)
-            let pipAreaHeight = cardHeight - (pipInsetY * 2)
+            let pipAreaWidth = cardWidth * 0.76
+            let pipAreaHeight = cardHeight * 0.68
 
             let cornerRadius = base * 0.16
 
@@ -3911,28 +3909,26 @@ struct CardIconView: View {
 
                     ZStack {
                         if pipPlacements.isEmpty {
-                            VStack(spacing: cardHeight * 0.012) {
-                                Text(card.rank.label)
-                                    .font(.system(size: cardHeight * 0.28, weight: .black, design: .rounded))
-                                    .foregroundColor(cardColor)
-                                Text(card.suit.symbol)
-                                    .font(.system(size: cardHeight * 0.28))
-                                    .foregroundColor(cardColor)
-                            }
+                            FaceCardArtworkView(rank: card.rank, suit: card.suit, color: cardColor)
+                                .frame(width: pipAreaWidth, height: pipAreaHeight)
                         } else {
-                            ForEach(pipPlacements) { placement in
-                                Text(card.suit.symbol)
-                                    .font(.system(size: pipFontSize, weight: .semibold))
-                                    .foregroundColor(cardColor)
-                                    .rotationEffect(placement.flipped ? .degrees(180) : .degrees(0))
-                                    .position(
-                                        x: pipInsetX + (placement.x * pipAreaWidth),
-                                        y: pipInsetY + (placement.y * pipAreaHeight)
-                                    )
+                            GeometryReader { pipProxy in
+                                ForEach(pipPlacements) { placement in
+                                    Text(card.suit.symbol)
+                                        .font(.system(size: pipFontSize, weight: .semibold))
+                                        .foregroundColor(cardColor)
+                                        .rotationEffect(placement.flipped ? .degrees(180) : .degrees(0))
+                                        .position(
+                                            x: placement.x * pipProxy.size.width,
+                                            y: placement.y * pipProxy.size.height
+                                        )
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                             }
+                            .frame(width: pipAreaWidth, height: pipAreaHeight)
                         }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
 
                     Spacer()
 
@@ -4014,6 +4010,82 @@ struct CardIconView: View {
         case .jack, .queen, .king:
             return []
         }
+    }
+}
+
+struct FaceCardArtworkView: View {
+    let rank: TrainingCard.Rank
+    let suit: TrainingCard.Suit
+    let color: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = min(proxy.size.width, proxy.size.height)
+            let frameCorner = size * 0.08
+            let emblemSize = size * 0.46
+            let accentCircle = size * 0.24
+            let suitSize = size * 0.16
+            let borderWidth = size * 0.025
+
+            ZStack {
+                RoundedRectangle(cornerRadius: frameCorner, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white, color.opacity(0.15)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                RoundedRectangle(cornerRadius: frameCorner, style: .continuous)
+                    .strokeBorder(color.opacity(0.35), lineWidth: borderWidth)
+
+                VStack(spacing: size * 0.07) {
+                    HStack(spacing: size * 0.08) {
+                        suitIcon(size: suitSize)
+                        Spacer()
+                        suitIcon(size: suitSize)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.95))
+                            .frame(width: emblemSize, height: emblemSize)
+                            .overlay(
+                                Circle()
+                                    .stroke(color.opacity(0.4), lineWidth: borderWidth)
+                            )
+
+                        Text(rank.label)
+                            .font(.system(size: emblemSize * 0.7, weight: .black, design: .rounded))
+                            .foregroundColor(color)
+                            .shadow(color: Color.black.opacity(0.08), radius: 2, x: 0, y: 1)
+
+                        Circle()
+                            .fill(color.opacity(0.08))
+                            .frame(width: accentCircle, height: accentCircle)
+                            .overlay(
+                                suitIcon(size: suitSize * 1.3)
+                            )
+                    }
+
+                    HStack(spacing: size * 0.08) {
+                        suitIcon(size: suitSize)
+                        Spacer()
+                        suitIcon(size: suitSize)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .padding(size * 0.14)
+            }
+        }
+    }
+
+    private func suitIcon(size: CGFloat) -> some View {
+        Text(suit.symbol)
+            .font(.system(size: size, weight: .semibold))
+            .foregroundColor(color)
+            .minimumScaleFactor(0.1)
     }
 }
 struct CardSortingAttemptEntry: Identifiable, Codable {
