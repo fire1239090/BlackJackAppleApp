@@ -3843,6 +3843,13 @@ struct TrainingCard: Identifiable, Equatable, Hashable {
 }
 
 struct CardIconView: View {
+    struct PipPlacement: Identifiable {
+        let id = UUID()
+        let x: CGFloat
+        let y: CGFloat
+        let flipped: Bool
+    }
+
     let card: TrainingCard
 
     private var cardColor: Color {
@@ -3855,106 +3862,152 @@ struct CardIconView: View {
     }
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white)
-                .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 4)
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        GeometryReader { proxy in
+            let size = min(proxy.size.width, proxy.size.height)
+            let cornerPadding = size * 0.08
+            let rankFontSize = size * 0.20
+            let suitFontSize = size * 0.14
+            let accentSuitSize = size * 0.22
+            let pipFontSize = size * 0.16
+            let pipInset = size * 0.16
+            let pipAreaWidth = proxy.size.width - (pipInset * 2)
+            let pipAreaHeight = proxy.size.height - (pipInset * 2)
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(card.rank.label)
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundColor(cardColor)
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white)
+                    .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 4)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+
+                VStack(spacing: 0) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: size * 0.02) {
+                            Text(card.rank.label)
+                                .font(.system(size: rankFontSize, weight: .bold, design: .rounded))
+                                .foregroundColor(cardColor)
+                            Text(card.suit.symbol)
+                                .font(.system(size: suitFontSize))
+                                .foregroundColor(cardColor)
+                        }
+
+                        Spacer()
+
                         Text(card.suit.symbol)
-                            .font(.system(size: 18))
+                            .font(.system(size: accentSuitSize))
                             .foregroundColor(cardColor)
                     }
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .padding([.top, .horizontal], cornerPadding)
+
                     Spacer()
-                    Text(card.suit.symbol)
-                        .font(.system(size: 32))
+
+                    ZStack {
+                        if pipPlacements.isEmpty {
+                            VStack(spacing: size * 0.02) {
+                                Text(card.rank.label)
+                                    .font(.system(size: size * 0.28, weight: .black, design: .rounded))
+                                    .foregroundColor(cardColor)
+                                Text(card.suit.symbol)
+                                    .font(.system(size: size * 0.28))
+                                    .foregroundColor(cardColor)
+                            }
+                        } else {
+                            ForEach(pipPlacements) { placement in
+                                Text(card.suit.symbol)
+                                    .font(.system(size: pipFontSize, weight: .semibold))
+                                    .foregroundColor(cardColor)
+                                    .rotationEffect(placement.flipped ? .degrees(180) : .degrees(0))
+                                    .position(
+                                        x: pipInset + (placement.x * pipAreaWidth),
+                                        y: pipInset + (placement.y * pipAreaHeight)
+                                    )
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    Text(card.display)
+                        .font(.system(size: size * 0.16, weight: .semibold, design: .rounded))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                         .foregroundColor(cardColor)
+                        .padding([.horizontal, .bottom], cornerPadding)
                 }
-
-                Spacer()
-
-                centerContent
-
-                Spacer()
-
-                Text(card.display)
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .foregroundColor(cardColor)
             }
-            .padding(12)
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .frame(minWidth: 80, minHeight: 112)
         .aspectRatio(2/3, contentMode: .fit)
     }
 
-    private var centerContent: some View {
-        Group {
-            if pipRows.isEmpty {
-                VStack(spacing: 6) {
-                    Text(card.rank.label)
-                        .font(.system(size: 28, weight: .black, design: .rounded))
-                        .foregroundColor(cardColor)
-                    Text(card.suit.symbol)
-                        .font(.system(size: 28))
-                        .foregroundColor(cardColor)
-                }
-                .frame(maxWidth: .infinity)
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(Array(pipRows.enumerated()), id: \.offset) { index, count in
-                        HStack(spacing: 6) {
-                            Spacer(minLength: 0)
-                            ForEach(0..<count, id: \.self) { _ in
-                                Text(card.suit.symbol)
-                                    .font(.system(size: 22))
-                                    .foregroundColor(cardColor)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Row \(index + 1) pips")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-    }
+    private var pipPlacements: [PipPlacement] {
+        let left: CGFloat = 0.28
+        let right: CGFloat = 0.72
+        let centerX: CGFloat = 0.5
 
-    private var pipRows: [Int] {
+        let top: CGFloat = 0.18
+        let upper: CGFloat = 0.32
+        let middle: CGFloat = 0.50
+        let lower: CGFloat = 0.68
+        let bottom: CGFloat = 0.82
+
+        func placement(_ x: CGFloat, _ y: CGFloat) -> PipPlacement {
+            PipPlacement(x: x, y: y, flipped: y > middle)
+        }
+
         switch card.rank {
         case .ace:
-            return [1]
+            return [placement(centerX, middle)]
         case .two:
-            return [1, 1]
+            return [placement(centerX, top), placement(centerX, bottom)]
         case .three:
-            return [1, 1, 1]
+            return [placement(centerX, top), placement(centerX, middle), placement(centerX, bottom)]
         case .four:
-            return [2, 2]
+            return [placement(left, top), placement(right, top), placement(left, bottom), placement(right, bottom)]
         case .five:
-            return [2, 1, 2]
+            return [placement(left, top), placement(right, top), placement(centerX, middle), placement(left, bottom), placement(right, bottom)]
         case .six:
-            return [2, 2, 2]
+            return [
+                placement(left, top), placement(right, top),
+                placement(left, middle), placement(right, middle),
+                placement(left, bottom), placement(right, bottom)
+            ]
         case .seven:
-            return [2, 1, 2, 2]
+            return [
+                placement(centerX, upper),
+                placement(left, top), placement(right, top),
+                placement(left, middle), placement(right, middle),
+                placement(left, bottom), placement(right, bottom)
+            ]
         case .eight:
-            return [2, 2, 2, 2]
+            return [
+                placement(centerX, upper), placement(centerX, lower),
+                placement(left, top), placement(right, top),
+                placement(left, middle), placement(right, middle),
+                placement(left, bottom), placement(right, bottom)
+            ]
         case .nine:
-            return [2, 2, 1, 2, 2]
+            return [
+                placement(centerX, upper), placement(centerX, middle), placement(centerX, lower),
+                placement(left, top), placement(right, top),
+                placement(left, middle), placement(right, middle),
+                placement(left, bottom), placement(right, bottom)
+            ]
         case .ten:
-            return [2, 2, 2, 2, 2]
+            return [
+                placement(left, top), placement(right, top),
+                placement(left, upper), placement(right, upper),
+                placement(left, middle), placement(right, middle),
+                placement(left, lower), placement(right, lower),
+                placement(left, bottom), placement(right, bottom)
+            ]
         case .jack, .queen, .king:
             return []
         }
     }
 }
+
 
 struct CardSortingAttemptRecord: Identifiable, Codable {
     let id: UUID
