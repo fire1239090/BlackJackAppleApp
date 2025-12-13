@@ -3844,6 +3844,16 @@ struct TrainingCard: Identifiable, Equatable, Hashable {
 
 struct CardIconView: View {
     let card: TrainingCard
+
+    private var cardColor: Color {
+        switch card.suit {
+        case .hearts, .diamonds:
+            return .red
+        default:
+            return .primary
+        }
+    }
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -3857,17 +3867,21 @@ struct CardIconView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(card.rank.label)
                             .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundColor(cardColor)
                         Text(card.suit.symbol)
                             .font(.system(size: 18))
+                            .foregroundColor(cardColor)
                     }
                     Spacer()
                     Text(card.suit.symbol)
                         .font(.system(size: 32))
+                        .foregroundColor(cardColor)
                 }
                 Spacer()
                 Text(card.display)
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .frame(maxWidth: .infinity, alignment: .trailing)
+                    .foregroundColor(cardColor)
             }
             .padding(12)
         }
@@ -3899,7 +3913,8 @@ struct DeckCountThroughStats {
         guard !sessions.isEmpty else { return DeckCountThroughStats(averageTime: nil, bestTime: nil, accuracy: nil) }
         let durations = sessions.map { $0.durationSeconds }
         let average = durations.reduce(0, +) / Double(durations.count)
-        let best = durations.min()
+        let successfulDurations = sessions.filter { $0.correctGuess }.map { $0.durationSeconds }
+        let best = successfulDurations.min()
         let accuracy = Double(sessions.filter { $0.correctGuess }.count) / Double(sessions.count)
         return DeckCountThroughStats(averageTime: average, bestTime: best, accuracy: accuracy)
     }
@@ -4104,6 +4119,13 @@ struct DeckCountThroughRunView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: startRun)
         .onDisappear(perform: stopTimers)
+        .toolbar {
+            if phase != .finished {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", role: .cancel, action: cancelRun)
+                }
+            }
+        }
     }
 
     private var countdownView: some View {
@@ -4324,6 +4346,11 @@ struct DeckCountThroughRunView: View {
     private var countdownProgress: Double {
         let total = 3.0
         return max(0, min(1, (total - Double(countdownValue)) / total))
+    }
+
+    private func cancelRun() {
+        stopTimers()
+        dismiss()
     }
 }
 
