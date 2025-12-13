@@ -3858,6 +3858,7 @@ struct CardIconView: View {
         var cornerPadding: CGFloat { cardSize.width * 0.07 }
         var rankFontSize: CGFloat { cardSize.height * 0.18 }
         var suitFontSize: CGFloat { cardSize.height * 0.135 }
+        var accentSuitSize: CGFloat { cardSize.height * 0.21 }
         var pipFontSize: CGFloat { cardSize.height * 0.155 }
 
         var interiorSize: CGSize { CGSize(width: cardSize.width * 0.82, height: cardSize.height * 0.74) }
@@ -3894,6 +3895,7 @@ struct CardIconView: View {
                     Text(card.suit.symbol)
                         .font(.system(size: metrics.suitFontSize))
                         .foregroundColor(cardColor)
+                        .rotationEffect(.degrees(180))
                 }
                 .padding([.top, .leading], metrics.cornerPadding)
             }
@@ -3909,6 +3911,19 @@ struct CardIconView: View {
                         .rotationEffect(.degrees(180))
                 }
                 .padding([.trailing, .bottom], metrics.cornerPadding)
+            }
+            .overlay(alignment: .topTrailing) {
+                Text(card.suit.symbol)
+                    .font(.system(size: metrics.accentSuitSize))
+                    .foregroundColor(cardColor)
+                    .padding([.top, .trailing], metrics.cornerPadding)
+            }
+            .overlay(alignment: .bottomLeading) {
+                Text(card.suit.symbol)
+                    .font(.system(size: metrics.accentSuitSize))
+                    .foregroundColor(cardColor)
+                    .rotationEffect(.degrees(180))
+                    .padding([.leading, .bottom], metrics.cornerPadding)
             }
             .overlay {
                 ZStack {
