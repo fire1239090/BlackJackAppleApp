@@ -3706,7 +3706,7 @@ struct TrainingSuiteView: View {
         TrainingOption(
             title: "Card Sorting",
             icon: "square.grid.2x2",
-            destination: AnyView(PlaceholderFeatureView(title: "Card Sorting"))
+            destination: AnyView(CardSortingView())
         ),
         TrainingOption(
             title: "Speed Counter",
@@ -3842,7 +3842,15 @@ struct TrainingCard: Identifiable, Equatable, Hashable {
     }
 }
 
+
 struct CardIconView: View {
+    struct PipPlacement: Identifiable {
+        let id = UUID()
+        let x: CGFloat
+        let y: CGFloat
+        let flipped: Bool
+    }
+
     let card: TrainingCard
 
     private var cardColor: Color {
@@ -3855,38 +3863,613 @@ struct CardIconView: View {
     }
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white)
-                .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 4)
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        GeometryReader { proxy in
+            let cardWidth = proxy.size.width
+            let cardHeight = proxy.size.height
+            let base = min(cardWidth, cardHeight)
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(card.rank.label)
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundColor(cardColor)
-                        Text(card.suit.symbol)
-                            .font(.system(size: 18))
-                            .foregroundColor(cardColor)
-                    }
-                    Spacer()
+            let cornerPadding = cardWidth * 0.07
+            let rankFontSize = cardHeight * 0.18
+            let suitFontSize = cardHeight * 0.135
+            let accentSuitSize = cardHeight * 0.21
+            let pipFontSize = cardHeight * 0.155
+
+            let interiorWidth = cardWidth * 0.82
+            let interiorHeight = cardHeight * 0.74
+
+            let cornerRadius = base * 0.16
+
+            ZStack {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.white)
+                    .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 4)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+            }
+            .overlay(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: cardHeight * 0.008) {
+                    Text(card.rank.label)
+                        .font(.system(size: rankFontSize, weight: .bold, design: .rounded))
+                        .foregroundColor(cardColor)
                     Text(card.suit.symbol)
-                        .font(.system(size: 32))
+                        .font(.system(size: suitFontSize))
                         .foregroundColor(cardColor)
                 }
-                Spacer()
-                Text(card.display)
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .foregroundColor(cardColor)
+                .padding([.top, .leading], cornerPadding)
             }
-            .padding(12)
+            .overlay(alignment: .bottomTrailing) {
+                VStack(alignment: .trailing, spacing: cardHeight * 0.008) {
+                    Text(card.rank.label)
+                        .font(.system(size: rankFontSize, weight: .bold, design: .rounded))
+                        .foregroundColor(cardColor)
+                        .rotationEffect(.degrees(180))
+                    Text(card.suit.symbol)
+                        .font(.system(size: suitFontSize))
+                        .foregroundColor(cardColor)
+                        .rotationEffect(.degrees(180))
+                }
+                .padding([.trailing, .bottom], cornerPadding)
+            }
+            .overlay(alignment: .topTrailing) {
+                Text(card.suit.symbol)
+                    .font(.system(size: accentSuitSize))
+                    .foregroundColor(cardColor)
+                    .padding([.top, .trailing], cornerPadding)
+            }
+            .overlay(alignment: .bottomLeading) {
+                Text(card.suit.symbol)
+                    .font(.system(size: accentSuitSize))
+                    .foregroundColor(cardColor)
+                    .rotationEffect(.degrees(180))
+                    .padding([.leading, .bottom], cornerPadding)
+            }
+            .overlay {
+                ZStack {
+                    if pipPlacements.isEmpty {
+                        FaceCardArtworkView(rank: card.rank, suit: card.suit, color: cardColor)
+                            .frame(width: interiorWidth, height: interiorHeight)
+                    } else {
+                        GeometryReader { pipProxy in
+                            ForEach(pipPlacements) { placement in
+                                Text(card.suit.symbol)
+                                    .font(.system(size: pipFontSize, weight: .semibold))
+                                    .foregroundColor(cardColor)
+                                    .rotationEffect(placement.flipped ? .degrees(180) : .degrees(0))
+                                    .position(
+                                        x: placement.x * pipProxy.size.width,
+                                        y: placement.y * pipProxy.size.height
+                                    )
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        }
+                        .frame(width: interiorWidth, height: interiorHeight)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
-        .frame(minWidth: 80, minHeight: 112)
-        .aspectRatio(2/3, contentMode: .fit)
+        .frame(minWidth: 88, minHeight: 125)
+        .aspectRatio(2.5/3.5, contentMode: .fit)
+    }
+
+    private var pipPlacements: [PipPlacement] {
+        // Ratios mirror the referenced 2.5x3.5 layout so pips stay centered as the card scales
+        let left: CGFloat = 0.24
+        let right: CGFloat = 0.76
+        let centerX: CGFloat = 0.5
+
+        let top: CGFloat = 0.12
+        let upper: CGFloat = 0.27
+        let upperMid: CGFloat = 0.38
+        let middle: CGFloat = 0.50
+        let lowerMid: CGFloat = 0.62
+        let lower: CGFloat = 0.73
+        let bottom: CGFloat = 0.88
+
+        func placement(_ x: CGFloat, _ y: CGFloat) -> PipPlacement {
+            PipPlacement(x: x, y: y, flipped: y > middle)
+        }
+
+        switch card.rank {
+        case .ace:
+            return [placement(centerX, middle)]
+        case .two:
+            return [placement(centerX, top), placement(centerX, bottom)]
+        case .three:
+            return [placement(centerX, top), placement(centerX, middle), placement(centerX, bottom)]
+        case .four:
+            return [placement(left, top), placement(right, top), placement(left, bottom), placement(right, bottom)]
+        case .five:
+            return [placement(left, top), placement(right, top), placement(centerX, middle), placement(left, bottom), placement(right, bottom)]
+        case .six:
+            return [
+                placement(left, top), placement(right, top),
+                placement(left, lower), placement(right, lower),
+                placement(left, bottom), placement(right, bottom)
+            ]
+        case .seven:
+            return [
+                placement(centerX, middle),
+                placement(left, top), placement(right, top),
+                placement(left, lower), placement(right, lower),
+                placement(left, bottom), placement(right, bottom)
+            ]
+        case .eight:
+            return [
+                placement(centerX, upperMid), placement(centerX, lowerMid),
+                placement(left, top), placement(right, top),
+                placement(left, lower), placement(right, lower),
+                placement(left, bottom), placement(right, bottom)
+            ]
+        case .nine:
+            return [
+                placement(centerX, middle),
+                placement(centerX, upperMid), placement(centerX, lowerMid),
+                placement(left, top), placement(right, top),
+                placement(left, lower), placement(right, lower),
+                placement(left, bottom), placement(right, bottom)
+            ]
+        case .ten:
+            return [
+                placement(left, top), placement(right, top),
+                placement(left, upper), placement(right, upper),
+                placement(left, middle), placement(right, middle),
+                placement(left, lower), placement(right, lower),
+                placement(left, bottom), placement(right, bottom)
+            ]
+        case .jack, .queen, .king:
+            return []
+        }
+    }
+}
+struct FaceCardArtworkView: View {
+    let rank: TrainingCard.Rank
+    let suit: TrainingCard.Suit
+    let color: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = min(proxy.size.width, proxy.size.height)
+            let frameCorner = size * 0.08
+            let crestSize = size * 0.5
+            let ribbonHeight = size * 0.14
+            let suitSize = size * 0.16
+            let borderWidth = size * 0.025
+            let dividerHeight = size * 0.02
+
+            ZStack {
+                RoundedRectangle(cornerRadius: frameCorner, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white, color.opacity(0.15)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                RoundedRectangle(cornerRadius: frameCorner, style: .continuous)
+                    .strokeBorder(color.opacity(0.35), lineWidth: borderWidth)
+
+                VStack(spacing: size * 0.05) {
+                    faceSegment(size: size, suitSize: suitSize, crestSize: crestSize, ribbonHeight: ribbonHeight)
+                    Rectangle()
+                        .fill(color.opacity(0.2))
+                        .frame(height: dividerHeight)
+                        .overlay(
+                            LinearGradient(colors: [color.opacity(0.0), color.opacity(0.35), color.opacity(0.0)], startPoint: .leading, endPoint: .trailing)
+                                .mask(Rectangle().frame(height: dividerHeight))
+                        )
+                    faceSegment(size: size, suitSize: suitSize, crestSize: crestSize, ribbonHeight: ribbonHeight)
+                        .rotationEffect(.degrees(180))
+                }
+                .padding(size * 0.12)
+            }
+        }
+    }
+
+    private func faceSegment(size: CGFloat, suitSize: CGFloat, crestSize: CGFloat, ribbonHeight: CGFloat) -> some View {
+        VStack(spacing: size * 0.04) {
+            HStack(spacing: size * 0.08) {
+                suitIcon(size: suitSize * 0.9)
+                Spacer()
+                suitIcon(size: suitSize * 0.9)
+            }
+            .frame(maxWidth: .infinity)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: crestSize * 0.16, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [color.opacity(0.18), Color.white.opacity(0.92), color.opacity(0.14)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: crestSize, height: crestSize * 0.6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: crestSize * 0.16, style: .continuous)
+                            .stroke(color.opacity(0.35), lineWidth: crestSize * 0.03)
+                    )
+
+                VStack(spacing: ribbonHeight * 0.2) {
+                    RoundedRectangle(cornerRadius: ribbonHeight * 0.35, style: .continuous)
+                        .fill(color.opacity(0.22))
+                        .frame(width: crestSize * 0.9, height: ribbonHeight)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: ribbonHeight * 0.35, style: .continuous)
+                                .stroke(color.opacity(0.4), lineWidth: crestSize * 0.015)
+                        )
+                        .overlay(
+                            Text(rank.label)
+                                .font(.system(size: crestSize * 0.38, weight: .black, design: .rounded))
+                                .foregroundColor(color)
+                        )
+
+                    HStack(spacing: crestSize * 0.05) {
+                        suitIcon(size: suitSize * 1.05)
+                        RoundedRectangle(cornerRadius: crestSize * 0.12, style: .continuous)
+                            .fill(color.opacity(0.14))
+                            .frame(width: crestSize * 0.28, height: crestSize * 0.32)
+                            .overlay(
+                                Image(systemName: suitIconName())
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .padding(crestSize * 0.08)
+                                    .foregroundColor(color.opacity(0.75))
+                            )
+                        suitIcon(size: suitSize * 1.05)
+                    }
+                }
+            }
+
+            HStack(spacing: size * 0.08) {
+                suitIcon(size: suitSize * 0.9)
+                Spacer()
+                suitIcon(size: suitSize * 0.9)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func suitIconName() -> String {
+        switch suit {
+        case .hearts: return "suit.heart.fill"
+        case .diamonds: return "suit.diamond.fill"
+        case .clubs: return "suit.club.fill"
+        case .spades: return "suit.spade.fill"
+        }
+    }
+
+    private func suitIcon(size: CGFloat) -> some View {
+        Text(suit.symbol)
+            .font(.system(size: size, weight: .semibold))
+            .foregroundColor(color)
+            .minimumScaleFactor(0.1)
+    }
+}
+struct CardSortingAttemptEntry: Identifiable, Codable {
+    let id: UUID
+    let date: Date
+    let correct: Bool
+    let decisionTime: TimeInterval?
+
+    init(date: Date, correct: Bool, decisionTime: TimeInterval?) {
+        id = UUID()
+        self.date = date
+        self.correct = correct
+        self.decisionTime = decisionTime
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        date = try container.decode(Date.self, forKey: .date)
+        correct = try container.decode(Bool.self, forKey: .correct)
+        decisionTime = try container.decodeIfPresent(TimeInterval.self, forKey: .decisionTime)
+    }
+}
+
+struct CardSortingStats {
+    let totalAttempts: Int
+    let correctAttempts: Int
+    let longestStreak: Int
+    let averageDecisionTime: Double?
+
+    var accuracy: Double? {
+        guard totalAttempts > 0 else { return nil }
+        return Double(correctAttempts) / Double(totalAttempts)
+    }
+
+    static func make(for attempts: [CardSortingAttemptEntry]) -> CardSortingStats {
+        let ordered = attempts.sorted { $0.date < $1.date }
+        var correctCount = 0
+        var streak = 0
+        var bestStreak = 0
+        var decisionTimes: [Double] = []
+
+        for attempt in ordered {
+            if attempt.correct {
+                correctCount += 1
+                streak += 1
+                bestStreak = max(bestStreak, streak)
+            } else {
+                streak = 0
+            }
+
+            if let duration = attempt.decisionTime {
+                decisionTimes.append(duration)
+            }
+        }
+
+        return CardSortingStats(
+            totalAttempts: ordered.count,
+            correctAttempts: correctCount,
+            longestStreak: bestStreak,
+            averageDecisionTime: decisionTimes.isEmpty ? nil : decisionTimes.reduce(0, +) / Double(decisionTimes.count)
+        )
+    }
+}
+
+struct CardSortingView: View {
+    @AppStorage("cardSortingAttempts") private var storedAttempts: Data = Data()
+
+    @State private var showIntro = true
+    @State private var currentCard: TrainingCard = TrainingCard.fullDeck().randomElement() ?? TrainingCard(rank: .ace, suit: .spades)
+    @State private var dragOffset: CGSize = .zero
+    @State private var feedback: String?
+    @State private var feedbackIsPositive: Bool = true
+    @State private var currentStreak: Int = 0
+    @State private var bestSessionStreak: Int = 0
+    @State private var attemptsThisSession: Int = 0
+    @State private var correctThisSession: Int = 0
+    @State private var cardShownAt: Date = Date()
+
+    private var attempts: [CardSortingAttemptEntry] {
+        (try? JSONDecoder().decode([CardSortingAttemptEntry].self, from: storedAttempts)) ?? []
+    }
+
+    private var lastWeekAttempts: [CardSortingAttemptEntry] {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return [] }
+        return attempts.filter { $0.date >= weekAgo }
+    }
+
+    private var overallStats: CardSortingStats { .make(for: attempts) }
+    private var weeklyStats: CardSortingStats { .make(for: lastWeekAttempts) }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                if showIntro {
+                    introView
+                } else {
+                    gameView
+                }
+
+                CardSortingStatsSummary(overall: overallStats, weekly: weeklyStats)
+            }
+            .padding()
+        }
+        .navigationTitle("Card Sorting")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if !showIntro {
+                cardShownAt = Date()
+            }
+        }
+    }
+
+    private var introView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("How it works")
+                .font(.title3.weight(.semibold))
+            Text("Swipe like Tinder: left for **Low (2–6)**, right for **High (10–A)**, and up for **Neutral (7–9)**. Build a long streak by tagging cards correctly.")
+                .fixedSize(horizontal: false, vertical: true)
+            Text("You can play as long as you like. Every swipe is saved so you can review accuracy and streaks over time.")
+                .foregroundColor(.secondary)
+            Button {
+                withAnimation {
+                    showIntro = false
+                    cardShownAt = Date()
+                }
+            } label: {
+                Text("Get Started")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.accentColor)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
+
+    private var gameView: some View {
+        VStack(spacing: 16) {
+            Text("Swipe the card: left = Low, right = High, up = Neutral.")
+                .multilineTextAlignment(.center)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            ZStack {
+                CardIconView(card: currentCard)
+                    .offset(dragOffset)
+                    .rotationEffect(.degrees(Double(dragOffset.width / 12)))
+                    .gesture(
+                        DragGesture()
+                            .onChanged { gesture in
+                                dragOffset = gesture.translation
+                            }
+                            .onEnded { gesture in
+                                handleSwipe(gesture.translation)
+                            }
+                    )
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("Streak: \(currentStreak)", systemImage: "flame.fill")
+                    Spacer()
+                    Label("Best: \(bestSessionStreak)", systemImage: "crown.fill")
+                }
+                .font(.headline)
+
+                HStack {
+                    Label("Session correct: \(correctThisSession)", systemImage: "checkmark.circle")
+                    Spacer()
+                    if attemptsThisSession > 0 {
+                        let accuracy = Double(correctThisSession) / Double(attemptsThisSession)
+                        Text("Session accuracy: \(String(format: "%.0f%%", accuracy * 100))")
+                            .foregroundColor(.secondary)
+                            .font(.subheadline)
+                    } else {
+                        Text("Session accuracy: —")
+                            .foregroundColor(.secondary)
+                            .font(.subheadline)
+                    }
+                }
+            }
+
+            if let feedback {
+                HStack {
+                    Image(systemName: feedbackIsPositive ? "hand.thumbsup" : "xmark.circle")
+                        .foregroundColor(feedbackIsPositive ? .green : .red)
+                    Text(feedback)
+                        .foregroundColor(.primary)
+                    Spacer()
+                }
+                .padding()
+                .background(feedbackIsPositive ? Color.green.opacity(0.12) : Color.red.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
+
+    private func handleSwipe(_ translation: CGSize) {
+        let direction = swipeDirection(from: translation)
+        withAnimation {
+            dragOffset = .zero
+        }
+
+        guard let direction else { return }
+        evaluateGuess(direction)
+    }
+
+    private func swipeDirection(from translation: CGSize) -> TrainingCard.Category? {
+        let horizontal = abs(translation.width)
+        let vertical = abs(translation.height)
+        let threshold: CGFloat = 60
+
+        if horizontal > vertical {
+            if translation.width > threshold {
+                return .high
+            } else if translation.width < -threshold {
+                return .low
+            }
+        } else if translation.height < -threshold {
+            return .neutral
+        }
+
+        return nil
+    }
+
+    private func evaluateGuess(_ guess: TrainingCard.Category) {
+        let isCorrect = guess == currentCard.category
+        let decisionDuration = Date().timeIntervalSince(cardShownAt)
+        attemptsThisSession += 1
+        if isCorrect {
+            currentStreak += 1
+            bestSessionStreak = max(bestSessionStreak, currentStreak)
+            correctThisSession += 1
+        } else {
+            currentStreak = 0
+        }
+
+        feedbackIsPositive = isCorrect
+        feedback = isCorrect
+            ? "Correct! \(currentCard.display) is \(currentCard.category.rawValue)."
+            : "Oops! \(currentCard.display) is \(currentCard.category.rawValue)."
+
+        appendAttempt(correct: isCorrect, decisionTime: decisionDuration)
+        currentCard = TrainingCard.fullDeck().randomElement() ?? currentCard
+        cardShownAt = Date()
+    }
+
+    private func appendAttempt(correct: Bool, decisionTime: TimeInterval) {
+        var updatedAttempts = attempts
+        updatedAttempts.append(CardSortingAttemptEntry(date: Date(), correct: correct, decisionTime: decisionTime))
+        if let data = try? JSONEncoder().encode(updatedAttempts) {
+            storedAttempts = data
+        }
+    }
+}
+
+struct CardSortingStatsSummary: View {
+    let overall: CardSortingStats
+    let weekly: CardSortingStats
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Card Sorting Progress")
+                .font(.headline)
+            statRow(
+                title: "Correct Decisions",
+                overall: countLabel(overall.correctAttempts, attempts: overall.totalAttempts),
+                weekly: countLabel(weekly.correctAttempts, attempts: weekly.totalAttempts)
+            )
+            statRow(
+                title: "Accuracy",
+                overall: percentLabel(overall.accuracy),
+                weekly: percentLabel(weekly.accuracy)
+            )
+            statRow(
+                title: "Avg. Decision Time",
+                overall: timeLabel(overall.averageDecisionTime),
+                weekly: timeLabel(weekly.averageDecisionTime)
+            )
+            statRow(
+                title: "Longest Streak",
+                overall: streakLabel(overall.longestStreak, attempts: overall.totalAttempts),
+                weekly: streakLabel(weekly.longestStreak, attempts: weekly.totalAttempts)
+            )
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func statRow(title: String, overall: String, weekly: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            HStack {
+                Text("All-time: \(overall)")
+                Spacer()
+                Text("Last 7 days: \(weekly)")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func percentLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.0f%%", value * 100)
+    }
+
+    private func timeLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.1fs", value)
+    }
+
+    private func countLabel(_ count: Int, attempts: Int) -> String {
+        attempts > 0 ? String(count) : "—"
+    }
+
+    private func streakLabel(_ streak: Int, attempts: Int) -> String {
+        attempts > 0 ? String(streak) : "—"
     }
 }
 
@@ -4401,6 +4984,7 @@ struct DeckCountThroughStatsSummary: View {
 
 struct TrainingStatsView: View {
     @AppStorage("deckCountThroughSessions") private var storedSessions: Data = Data()
+    @AppStorage("cardSortingAttempts") private var storedCardSorting: Data = Data()
 
     private var sessions: [DeckCountThroughSession] {
         (try? JSONDecoder().decode([DeckCountThroughSession].self, from: storedSessions)) ?? []
@@ -4411,8 +4995,47 @@ struct TrainingStatsView: View {
         return sessions.filter { $0.date >= weekAgo }
     }
 
+    private var cardSortingAttempts: [CardSortingAttemptEntry] {
+        (try? JSONDecoder().decode([CardSortingAttemptEntry].self, from: storedCardSorting)) ?? []
+    }
+
+    private var lastWeekCardSortingAttempts: [CardSortingAttemptEntry] {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return [] }
+        return cardSortingAttempts.filter { $0.date >= weekAgo }
+    }
+
+    private var cardSortingOverall: CardSortingStats { .make(for: cardSortingAttempts) }
+    private var cardSortingWeekly: CardSortingStats { .make(for: lastWeekCardSortingAttempts) }
+
     var body: some View {
         List {
+            Section("Card Sorting") {
+                statRow(
+                    title: "Correct Decisions",
+                    overall: Double(cardSortingOverall.correctAttempts),
+                    weekly: Double(cardSortingWeekly.correctAttempts),
+                    formatter: countLabel
+                )
+                statRow(
+                    title: "Accuracy",
+                    overall: cardSortingOverall.accuracy,
+                    weekly: cardSortingWeekly.accuracy,
+                    formatter: percentLabel
+                )
+                statRow(
+                    title: "Avg. Decision Time",
+                    overall: cardSortingOverall.averageDecisionTime,
+                    weekly: cardSortingWeekly.averageDecisionTime,
+                    formatter: decisionTimeLabel
+                )
+                statRow(
+                    title: "Longest Streak",
+                    overall: Double(cardSortingOverall.longestStreak),
+                    weekly: Double(cardSortingWeekly.longestStreak),
+                    formatter: countLabel
+                )
+            }
+
             Section("Deck Count Through") {
                 statRow(title: "Average Time", overall: DeckCountThroughStats.make(for: sessions).averageTime, weekly: DeckCountThroughStats.make(for: lastWeekSessions).averageTime, formatter: timeLabel)
                 statRow(title: "Best Time", overall: DeckCountThroughStats.make(for: sessions).bestTime, weekly: DeckCountThroughStats.make(for: lastWeekSessions).bestTime, formatter: timeLabel)
@@ -4447,9 +5070,19 @@ struct TrainingStatsView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
+    private func decisionTimeLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.1fs", value)
+    }
+
     private func percentLabel(_ value: Double?) -> String {
         guard let value else { return "—" }
         return String(format: "%.0f%%", value * 100)
+    }
+
+    private func countLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(Int(value))
     }
 }
 
