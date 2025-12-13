@@ -3858,7 +3858,6 @@ struct CardIconView: View {
         var cornerPadding: CGFloat { cardSize.width * 0.07 }
         var rankFontSize: CGFloat { cardSize.height * 0.18 }
         var suitFontSize: CGFloat { cardSize.height * 0.135 }
-        var accentSuitSize: CGFloat { cardSize.height * 0.21 }
         var pipFontSize: CGFloat { cardSize.height * 0.155 }
 
         var interiorSize: CGSize { CGSize(width: cardSize.width * 0.82, height: cardSize.height * 0.74) }
@@ -3895,7 +3894,6 @@ struct CardIconView: View {
                     Text(card.suit.symbol)
                         .font(.system(size: metrics.suitFontSize))
                         .foregroundColor(cardColor)
-                        .rotationEffect(.degrees(180))
                 }
                 .padding([.top, .leading], metrics.cornerPadding)
             }
@@ -3911,19 +3909,6 @@ struct CardIconView: View {
                         .rotationEffect(.degrees(180))
                 }
                 .padding([.trailing, .bottom], metrics.cornerPadding)
-            }
-            .overlay(alignment: .topTrailing) {
-                Text(card.suit.symbol)
-                    .font(.system(size: metrics.accentSuitSize))
-                    .foregroundColor(cardColor)
-                    .padding([.top, .trailing], metrics.cornerPadding)
-            }
-            .overlay(alignment: .bottomLeading) {
-                Text(card.suit.symbol)
-                    .font(.system(size: metrics.accentSuitSize))
-                    .foregroundColor(cardColor)
-                    .rotationEffect(.degrees(180))
-                    .padding([.leading, .bottom], metrics.cornerPadding)
             }
             .overlay {
                 ZStack {
@@ -4034,112 +4019,90 @@ struct FaceCardArtworkView: View {
         GeometryReader { proxy in
             let size = min(proxy.size.width, proxy.size.height)
             let frameCorner = size * 0.08
-            let crestSize = size * 0.5
-            let ribbonHeight = size * 0.14
-            let suitSize = size * 0.16
             let borderWidth = size * 0.025
-            let dividerHeight = size * 0.02
+            let dividerHeight = size * 0.035
 
             ZStack {
                 RoundedRectangle(cornerRadius: frameCorner, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.white, color.opacity(0.15)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .fill(Color.white)
                 RoundedRectangle(cornerRadius: frameCorner, style: .continuous)
-                    .strokeBorder(color.opacity(0.35), lineWidth: borderWidth)
+                    .strokeBorder(Color.primary.opacity(0.1), lineWidth: borderWidth)
 
                 VStack(spacing: size * 0.05) {
-                    faceSegment(size: size, suitSize: suitSize, crestSize: crestSize, ribbonHeight: ribbonHeight)
+                    portraitArtwork(height: size * 0.48)
+
                     Rectangle()
-                        .fill(color.opacity(0.2))
+                        .fill(color.opacity(0.12))
                         .frame(height: dividerHeight)
                         .overlay(
-                            LinearGradient(colors: [color.opacity(0.0), color.opacity(0.35), color.opacity(0.0)], startPoint: .leading, endPoint: .trailing)
-                                .mask(Rectangle().frame(height: dividerHeight))
+                            HStack(spacing: size * 0.06) {
+                                suitIcon(size: size * 0.08)
+                                Spacer()
+                                Text(rank.label)
+                                    .font(.system(size: size * 0.12, weight: .black, design: .rounded))
+                                    .foregroundColor(color)
+                                Spacer()
+                                suitIcon(size: size * 0.08)
+                            }
+                            .padding(.horizontal, size * 0.1)
                         )
-                    faceSegment(size: size, suitSize: suitSize, crestSize: crestSize, ribbonHeight: ribbonHeight)
+
+                    portraitArtwork(height: size * 0.48)
                         .rotationEffect(.degrees(180))
                 }
-                .padding(size * 0.12)
+                .padding(size * 0.08)
             }
         }
     }
 
-    private func faceSegment(size: CGFloat, suitSize: CGFloat, crestSize: CGFloat, ribbonHeight: CGFloat) -> some View {
-        VStack(spacing: size * 0.04) {
-            HStack(spacing: size * 0.08) {
-                suitIcon(size: suitSize * 0.9)
-                Spacer()
-                suitIcon(size: suitSize * 0.9)
-            }
-            .frame(maxWidth: .infinity)
+    @ViewBuilder
+    private func portraitArtwork(height: CGFloat) -> some View {
+        let cornerRadius = height * 0.12
+        let strokeWidth = height * 0.022
+        let headSize = height * 0.3
+        let torsoHeight = height * 0.22
+        let shoulderWidth = height * 0.55
 
-            ZStack {
-                RoundedRectangle(cornerRadius: crestSize * 0.16, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [color.opacity(0.18), Color.white.opacity(0.92), color.opacity(0.14)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: crestSize, height: crestSize * 0.6)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: crestSize * 0.16, style: .continuous)
-                            .stroke(color.opacity(0.35), lineWidth: crestSize * 0.03)
-                    )
+        let gradient = LinearGradient(
+            colors: [color.opacity(0.2), color.opacity(0.05)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
 
-                VStack(spacing: ribbonHeight * 0.2) {
-                    RoundedRectangle(cornerRadius: ribbonHeight * 0.35, style: .continuous)
-                        .fill(color.opacity(0.22))
-                        .frame(width: crestSize * 0.9, height: ribbonHeight)
+        return ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(gradient)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(color.opacity(0.4), lineWidth: strokeWidth)
+
+            VStack(spacing: height * 0.06) {
+                crownRow(height: height)
+
+                ZStack {
+                    Capsule()
+                        .fill(color.opacity(0.18))
+                        .frame(width: shoulderWidth, height: torsoHeight)
                         .overlay(
-                            RoundedRectangle(cornerRadius: ribbonHeight * 0.35, style: .continuous)
-                                .stroke(color.opacity(0.4), lineWidth: crestSize * 0.015)
-                        )
-                        .overlay(
-                            Text(rank.label)
-                                .font(.system(size: crestSize * 0.38, weight: .black, design: .rounded))
-                                .foregroundColor(color)
+                            Capsule()
+                                .strokeBorder(color.opacity(0.45), lineWidth: strokeWidth * 0.7)
                         )
 
-                    HStack(spacing: crestSize * 0.05) {
-                        suitIcon(size: suitSize * 1.05)
-                        RoundedRectangle(cornerRadius: crestSize * 0.12, style: .continuous)
-                            .fill(color.opacity(0.14))
-                            .frame(width: crestSize * 0.28, height: crestSize * 0.32)
-                            .overlay(
-                                Image(systemName: suitIconName())
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .padding(crestSize * 0.08)
-                                    .foregroundColor(color.opacity(0.75))
-                            )
-                        suitIcon(size: suitSize * 1.05)
+                    VStack(spacing: height * 0.03) {
+                        faceLayer(headSize: headSize)
+
+                        HStack(spacing: height * 0.04) {
+                            suitIcon(size: height * 0.08)
+                            decorativeBand(height: height * 0.05)
+                            suitIcon(size: height * 0.08)
+                        }
                     }
                 }
-            }
 
-            HStack(spacing: size * 0.08) {
-                suitIcon(size: suitSize * 0.9)
-                Spacer()
-                suitIcon(size: suitSize * 0.9)
+                bannerRow(height: height)
             }
-            .frame(maxWidth: .infinity)
+            .padding(height * 0.1)
         }
-    }
-
-    private func suitIconName() -> String {
-        switch suit {
-        case .hearts: return "suit.heart.fill"
-        case .diamonds: return "suit.diamond.fill"
-        case .clubs: return "suit.club.fill"
-        case .spades: return "suit.spade.fill"
-        }
+        .frame(height: height)
     }
 
     private func suitIcon(size: CGFloat) -> some View {
@@ -4148,7 +4111,102 @@ struct FaceCardArtworkView: View {
             .foregroundColor(color)
             .minimumScaleFactor(0.1)
     }
+
+    private func faceLayer(headSize: CGFloat) -> some View {
+        ZStack {
+            Circle()
+                .fill(Color.white)
+                .frame(width: headSize, height: headSize)
+                .overlay(
+                    Circle()
+                        .stroke(color.opacity(0.4), lineWidth: headSize * 0.06)
+                )
+
+            VStack(spacing: headSize * 0.04) {
+                HStack(spacing: headSize * 0.16) {
+                    eye(size: headSize * 0.12)
+                    eye(size: headSize * 0.12)
+                }
+
+                Rectangle()
+                    .fill(color.opacity(0.6))
+                    .frame(width: headSize * 0.32, height: headSize * 0.08)
+                    .cornerRadius(headSize * 0.04)
+            }
+
+            if rank != .jack {
+                Image(systemName: "crown.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: headSize * 0.8)
+                    .foregroundStyle(color.opacity(0.9))
+                    .offset(y: -headSize * 0.78)
+                    .shadow(color: color.opacity(0.35), radius: headSize * 0.1, x: 0, y: headSize * 0.05)
+            } else {
+                Image(systemName: "figure.stand")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: headSize * 0.7)
+                    .foregroundColor(color.opacity(0.85))
+                    .offset(y: -headSize * 0.2)
+            }
+        }
+    }
+
+    private func eye(size: CGFloat) -> some View {
+        Circle()
+            .fill(color.opacity(0.8))
+            .frame(width: size, height: size)
+            .overlay(
+                Circle()
+                    .fill(Color.white.opacity(0.6))
+                    .frame(width: size * 0.35, height: size * 0.35)
+                    .offset(x: size * 0.12, y: size * 0.1)
+            )
+    }
+
+    private func decorativeBand(height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: height / 2, style: .continuous)
+            .fill(color.opacity(0.45))
+            .frame(width: height * 5, height: height)
+            .overlay(
+                HStack(spacing: height * 0.6) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        suitIcon(size: height * 0.8)
+                    }
+                }
+            )
+    }
+
+    private func crownRow(height: CGFloat) -> some View {
+        HStack(spacing: height * 0.14) {
+            suitIcon(size: height * 0.08)
+            Image(systemName: rank == .jack ? "person.fill" : "crown.fill")
+                .resizable()
+                .scaledToFit()
+                .frame(height: height * 0.18)
+                .foregroundStyle(color)
+            suitIcon(size: height * 0.08)
+        }
+    }
+
+    private func bannerRow(height: CGFloat) -> some View {
+        HStack(spacing: height * 0.08) {
+            suitIcon(size: height * 0.09)
+
+            VStack(spacing: height * 0.01) {
+                Text(rank.label)
+                    .font(.system(size: height * 0.16, weight: .black, design: .rounded))
+                Text(suit.symbol)
+                    .font(.system(size: height * 0.16, weight: .bold, design: .rounded))
+            }
+            .foregroundColor(color)
+
+            suitIcon(size: height * 0.09)
+        }
+    }
 }
+
 struct CardSortingAttemptEntry: Identifiable, Codable {
     let id: UUID
     let date: Date
