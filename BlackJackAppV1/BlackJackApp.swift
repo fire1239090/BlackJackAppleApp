@@ -4052,7 +4052,7 @@ struct FaceCardArtworkView: View {
                     .strokeBorder(Color.primary.opacity(0.1), lineWidth: metrics.borderWidth)
 
                 VStack(spacing: metrics.verticalStackSpacing) {
-                    portraitArtwork(height: metrics.portraitHeight)
+                    portraitArtwork(metrics: metrics)
 
                     Rectangle()
                         .fill(color.opacity(0.12))
@@ -4070,7 +4070,7 @@ struct FaceCardArtworkView: View {
                             .padding(.horizontal, metrics.horizontalPadding)
                         )
 
-                    portraitArtwork(height: metrics.portraitHeight)
+                    portraitArtwork(metrics: metrics)
                         .rotationEffect(.degrees(180))
                 }
                 .padding(metrics.contentPadding)
@@ -4079,7 +4079,8 @@ struct FaceCardArtworkView: View {
     }
 
     @ViewBuilder
-    private func portraitArtwork(height: CGFloat) -> some View {
+    private func portraitArtwork(metrics: FaceCardMetrics) -> some View {
+        let height = metrics.portraitHeight
         let cornerRadius = height * 0.12
         let strokeWidth = height * 0.022
         let headSize = height * 0.3
