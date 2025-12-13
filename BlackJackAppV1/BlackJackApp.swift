@@ -3808,6 +3808,15 @@ struct TrainingCard: Identifiable, Equatable, Hashable {
             case .diamonds: return "♦︎"
             }
         }
+
+        var assetName: String {
+            switch self {
+            case .spades: return "spades"
+            case .hearts: return "hearts"
+            case .clubs: return "clubs"
+            case .diamonds: return "diamonds"
+            }
+        }
     }
 
     enum Category: String {
@@ -3876,7 +3885,36 @@ struct CardIconView: View {
         }
     }
 
+    private var cardAssetName: String {
+        "card_\(card.suit.assetName)_\(card.rank.label)"
+    }
+
+    private var cardAssetImage: Image? {
+        #if canImport(UIKit)
+        if UIImage(named: cardAssetName) != nil {
+            return Image(cardAssetName)
+        }
+        #endif
+        return nil
+    }
+
     var body: some View {
+        Group {
+            if let assetImage = cardAssetImage {
+                assetImage
+                    .resizable()
+                    .renderingMode(.original)
+                    .scaledToFit()
+                    .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 4)
+            } else {
+                drawnCard
+            }
+        }
+        .frame(minWidth: 88, minHeight: 125)
+        .aspectRatio(2.5/3.5, contentMode: .fit)
+    }
+
+    private var drawnCard: some View {
         GeometryReader { proxy in
             let metrics = Metrics(cardSize: proxy.size)
 
@@ -3951,8 +3989,6 @@ struct CardIconView: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
-        .frame(minWidth: 88, minHeight: 125)
-        .aspectRatio(2.5/3.5, contentMode: .fit)
     }
 
     private var pipPlacements: [PipPlacement] {
