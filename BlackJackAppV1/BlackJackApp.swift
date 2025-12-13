@@ -3895,6 +3895,7 @@ struct CardIconView: View {
                     Text(card.suit.symbol)
                         .font(.system(size: metrics.suitFontSize))
                         .foregroundColor(cardColor)
+                        .rotationEffect(.degrees(180))
                 }
                 .padding([.top, .leading], metrics.cornerPadding)
             }
