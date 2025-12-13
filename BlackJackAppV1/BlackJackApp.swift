@@ -4119,6 +4119,7 @@ struct FaceCardArtworkView: View {
                             suitIcon(size: height * 0.08)
                         }
                     }
+                    .padding(.horizontal, size * 0.14)
                 }
 
                 bannerRow(height: height)
