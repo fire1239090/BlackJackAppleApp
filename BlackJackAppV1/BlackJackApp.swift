@@ -3863,26 +3863,33 @@ struct CardIconView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let size = min(proxy.size.width, proxy.size.height)
-            let cornerPadding = size * 0.08
-            let rankFontSize = size * 0.20
-            let suitFontSize = size * 0.14
-            let accentSuitSize = size * 0.22
-            let pipFontSize = size * 0.16
-            let pipInset = size * 0.16
-            let pipAreaWidth = proxy.size.width - (pipInset * 2)
-            let pipAreaHeight = proxy.size.height - (pipInset * 2)
+            let cardWidth = proxy.size.width
+            let cardHeight = proxy.size.height
+            let base = min(cardWidth, cardHeight)
+
+            let cornerPadding = cardWidth * 0.075
+            let rankFontSize = cardHeight * 0.19
+            let suitFontSize = cardHeight * 0.14
+            let accentSuitSize = cardHeight * 0.22
+            let pipFontSize = cardHeight * 0.16
+
+            let pipInsetX = cardWidth * 0.12
+            let pipInsetY = cardHeight * 0.16
+            let pipAreaWidth = cardWidth - (pipInsetX * 2)
+            let pipAreaHeight = cardHeight - (pipInsetY * 2)
+
+            let cornerRadius = base * 0.16
 
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(Color.white)
                     .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 4)
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
 
                 VStack(spacing: 0) {
                     HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: size * 0.02) {
+                        VStack(alignment: .leading, spacing: cardHeight * 0.008) {
                             Text(card.rank.label)
                                 .font(.system(size: rankFontSize, weight: .bold, design: .rounded))
                                 .foregroundColor(cardColor)
@@ -3904,12 +3911,12 @@ struct CardIconView: View {
 
                     ZStack {
                         if pipPlacements.isEmpty {
-                            VStack(spacing: size * 0.02) {
+                            VStack(spacing: cardHeight * 0.012) {
                                 Text(card.rank.label)
-                                    .font(.system(size: size * 0.28, weight: .black, design: .rounded))
+                                    .font(.system(size: cardHeight * 0.28, weight: .black, design: .rounded))
                                     .foregroundColor(cardColor)
                                 Text(card.suit.symbol)
-                                    .font(.system(size: size * 0.28))
+                                    .font(.system(size: cardHeight * 0.28))
                                     .foregroundColor(cardColor)
                             }
                         } else {
@@ -3919,17 +3926,18 @@ struct CardIconView: View {
                                     .foregroundColor(cardColor)
                                     .rotationEffect(placement.flipped ? .degrees(180) : .degrees(0))
                                     .position(
-                                        x: pipInset + (placement.x * pipAreaWidth),
-                                        y: pipInset + (placement.y * pipAreaHeight)
+                                        x: pipInsetX + (placement.x * pipAreaWidth),
+                                        y: pipInsetY + (placement.y * pipAreaHeight)
                                     )
                             }
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     Spacer()
 
                     Text(card.display)
-                        .font(.system(size: size * 0.16, weight: .semibold, design: .rounded))
+                        .font(.system(size: cardHeight * 0.16, weight: .semibold, design: .rounded))
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .foregroundColor(cardColor)
                         .padding([.horizontal, .bottom], cornerPadding)
@@ -3937,8 +3945,400 @@ struct CardIconView: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
-        .frame(minWidth: 80, minHeight: 112)
-        .aspectRatio(2/3, contentMode: .fit)
+        .frame(minWidth: 88, minHeight: 125)
+        .aspectRatio(2.5/3.5, contentMode: .fit)
+    }
+
+    private var pipPlacements: [PipPlacement] {
+        let left: CGFloat = 0.24
+        let right: CGFloat = 0.76
+        let centerX: CGFloat = 0.5
+
+        let top: CGFloat = 0.14
+        let upper: CGFloat = 0.30
+        let middle: CGFloat = 0.50
+        let lower: CGFloat = 0.70
+        let bottom: CGFloat = 0.86
+
+        func placement(_ x: CGFloat, _ y: CGFloat) -> PipPlacement {
+            PipPlacement(x: x, y: y, flipped: y > middle)
+        }
+
+        switch card.rank {
+        case .ace:
+            return [placement(centerX, middle)]
+        case .two:
+            return [placement(centerX, top), placement(centerX, bottom)]
+        case .three:
+            return [placement(centerX, top), placement(centerX, middle), placement(centerX, bottom)]
+        case .four:
+            return [placement(left, top), placement(right, top), placement(left, bottom), placement(right, bottom)]
+        case .five:
+            return [placement(left, top), placement(right, top), placement(centerX, middle), placement(left, bottom), placement(right, bottom)]
+        case .six:
+            return [
+                placement(left, top), placement(right, top),
+                placement(left, middle), placement(right, middle),
+                placement(left, bottom), placement(right, bottom)
+            ]
+        case .seven:
+            return [
+                placement(centerX, upper),
+                placement(left, top), placement(right, top),
+                placement(left, middle), placement(right, middle),
+                placement(left, bottom), placement(right, bottom)
+            ]
+        case .eight:
+            return [
+                placement(centerX, upper), placement(centerX, lower),
+                placement(left, top), placement(right, top),
+                placement(left, middle), placement(right, middle),
+                placement(left, bottom), placement(right, bottom)
+            ]
+        case .nine:
+            return [
+                placement(centerX, middle),
+                placement(centerX, upper), placement(centerX, lower),
+                placement(left, top), placement(right, top),
+                placement(left, middle), placement(right, middle),
+                placement(left, bottom), placement(right, bottom)
+            ]
+        case .ten:
+            return [
+                placement(left, top), placement(right, top),
+                placement(left, upper), placement(right, upper),
+                placement(left, middle), placement(right, middle),
+                placement(left, lower), placement(right, lower),
+                placement(left, bottom), placement(right, bottom)
+            ]
+        case .jack, .queen, .king:
+            return []
+        }
+    }
+}
+struct CardSortingAttemptRecord: Identifiable, Codable {
+    let id: UUID
+    let date: Date
+    let correct: Bool
+    let decisionTime: TimeInterval?
+
+    init(date: Date, correct: Bool, decisionTime: TimeInterval?) {
+        id = UUID()
+        self.date = date
+        self.correct = correct
+        self.decisionTime = decisionTime
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        date = try container.decode(Date.self, forKey: .date)
+        correct = try container.decode(Bool.self, forKey: .correct)
+        decisionTime = try container.decodeIfPresent(TimeInterval.self, forKey: .decisionTime)
+    }
+}
+
+struct CardSortingStats {
+    let totalAttempts: Int
+    let correctAttempts: Int
+    let longestStreak: Int
+    let averageDecisionTime: Double?
+
+    var accuracy: Double? {
+        guard totalAttempts > 0 else { return nil }
+        return Double(correctAttempts) / Double(totalAttempts)
+    }
+
+    static func make(for attempts: [CardSortingAttemptRecord]) -> CardSortingStats {
+        let ordered = attempts.sorted { $0.date < $1.date }
+        var correctCount = 0
+        var streak = 0
+        var bestStreak = 0
+        var decisionTimes: [Double] = []
+
+        for attempt in ordered {
+            if attempt.correct {
+                correctCount += 1
+                streak += 1
+                bestStreak = max(bestStreak, streak)
+            } else {
+                streak = 0
+            }
+
+            if let duration = attempt.decisionTime {
+                decisionTimes.append(duration)
+            }
+        }
+
+        return CardSortingStats(
+            totalAttempts: ordered.count,
+            correctAttempts: correctCount,
+            longestStreak: bestStreak,
+            averageDecisionTime: decisionTimes.isEmpty ? nil : decisionTimes.reduce(0, +) / Double(decisionTimes.count)
+        )
+    }
+}
+
+struct CardSortingView: View {
+    @AppStorage("cardSortingAttempts") private var storedAttempts: Data = Data()
+
+    @State private var showIntro = true
+    @State private var currentCard: TrainingCard = TrainingCard.fullDeck().randomElement() ?? TrainingCard(rank: .ace, suit: .spades)
+    @State private var dragOffset: CGSize = .zero
+    @State private var feedback: String?
+    @State private var feedbackIsPositive: Bool = true
+    @State private var currentStreak: Int = 0
+    @State private var bestSessionStreak: Int = 0
+    @State private var attemptsThisSession: Int = 0
+    @State private var correctThisSession: Int = 0
+    @State private var cardShownAt: Date = Date()
+
+    private var attempts: [CardSortingAttemptRecord] {
+        (try? JSONDecoder().decode([CardSortingAttemptRecord].self, from: storedAttempts)) ?? []
+    }
+
+    private var lastWeekAttempts: [CardSortingAttemptRecord] {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return [] }
+        return attempts.filter { $0.date >= weekAgo }
+    }
+
+    private var overallStats: CardSortingStats { .make(for: attempts) }
+    private var weeklyStats: CardSortingStats { .make(for: lastWeekAttempts) }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                if showIntro {
+                    introView
+                } else {
+                    gameView
+                }
+
+                CardSortingStatsSummary(overall: overallStats, weekly: weeklyStats)
+            }
+            .padding()
+        }
+        .navigationTitle("Card Sorting")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if !showIntro {
+                cardShownAt = Date()
+            }
+        }
+    }
+
+    private var introView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("How it works")
+                .font(.title3.weight(.semibold))
+            Text("Swipe like Tinder: left for **Low (2–6)**, right for **High (10–A)**, and up for **Neutral (7–9)**. Build a long streak by tagging cards correctly.")
+                .fixedSize(horizontal: false, vertical: true)
+            Text("You can play as long as you like. Every swipe is saved so you can review accuracy and streaks over time.")
+                .foregroundColor(.secondary)
+            Button {
+                withAnimation {
+                    showIntro = false
+                    cardShownAt = Date()
+                }
+            } label: {
+                Text("Get Started")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.accentColor)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
+
+    private var gameView: some View {
+        VStack(spacing: 16) {
+            Text("Swipe the card: left = Low, right = High, up = Neutral.")
+                .multilineTextAlignment(.center)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            ZStack {
+                CardIconView(card: currentCard)
+                    .offset(dragOffset)
+                    .rotationEffect(.degrees(Double(dragOffset.width / 12)))
+                    .gesture(
+                        DragGesture()
+                            .onChanged { gesture in
+                                dragOffset = gesture.translation
+                            }
+                            .onEnded { gesture in
+                                handleSwipe(gesture.translation)
+                            }
+                    )
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("Streak: \(currentStreak)", systemImage: "flame.fill")
+                    Spacer()
+                    Label("Best: \(bestSessionStreak)", systemImage: "crown.fill")
+                }
+                .font(.headline)
+
+                HStack {
+                    Label("Session correct: \(correctThisSession)", systemImage: "checkmark.circle")
+                    Spacer()
+                    if attemptsThisSession > 0 {
+                        let accuracy = Double(correctThisSession) / Double(attemptsThisSession)
+                        Text("Session accuracy: \(String(format: "%.0f%%", accuracy * 100))")
+                            .foregroundColor(.secondary)
+                            .font(.subheadline)
+                    } else {
+                        Text("Session accuracy: —")
+                            .foregroundColor(.secondary)
+                            .font(.subheadline)
+                    }
+                }
+            }
+
+            if let feedback {
+                HStack {
+                    Image(systemName: feedbackIsPositive ? "hand.thumbsup" : "xmark.circle")
+                        .foregroundColor(feedbackIsPositive ? .green : .red)
+                    Text(feedback)
+                        .foregroundColor(.primary)
+                    Spacer()
+                }
+                .padding()
+                .background(feedbackIsPositive ? Color.green.opacity(0.12) : Color.red.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
+
+    private func handleSwipe(_ translation: CGSize) {
+        let direction = swipeDirection(from: translation)
+        withAnimation {
+            dragOffset = .zero
+        }
+
+        guard let direction else { return }
+        evaluateGuess(direction)
+    }
+
+    private func swipeDirection(from translation: CGSize) -> TrainingCard.Category? {
+        let horizontal = abs(translation.width)
+        let vertical = abs(translation.height)
+        let threshold: CGFloat = 60
+
+        if horizontal > vertical {
+            if translation.width > threshold {
+                return .high
+            } else if translation.width < -threshold {
+                return .low
+            }
+        } else if translation.height < -threshold {
+            return .neutral
+        }
+
+        return nil
+    }
+
+    private func evaluateGuess(_ guess: TrainingCard.Category) {
+        let isCorrect = guess == currentCard.category
+        let decisionDuration = Date().timeIntervalSince(cardShownAt)
+        attemptsThisSession += 1
+        if isCorrect {
+            currentStreak += 1
+            bestSessionStreak = max(bestSessionStreak, currentStreak)
+            correctThisSession += 1
+        } else {
+            currentStreak = 0
+        }
+
+        feedbackIsPositive = isCorrect
+        feedback = isCorrect
+            ? "Correct! \(currentCard.display) is \(currentCard.category.rawValue)."
+            : "Oops! \(currentCard.display) is \(currentCard.category.rawValue)."
+
+        appendAttempt(correct: isCorrect, decisionTime: decisionDuration)
+        currentCard = TrainingCard.fullDeck().randomElement() ?? currentCard
+        cardShownAt = Date()
+    }
+
+    private func appendAttempt(correct: Bool, decisionTime: TimeInterval) {
+        var updatedAttempts = attempts
+        updatedAttempts.append(CardSortingAttemptRecord(date: Date(), correct: correct, decisionTime: decisionTime))
+        if let data = try? JSONEncoder().encode(updatedAttempts) {
+            storedAttempts = data
+        }
+    }
+}
+
+struct CardSortingStatsSummary: View {
+    let overall: CardSortingStats
+    let weekly: CardSortingStats
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Card Sorting Progress")
+                .font(.headline)
+            statRow(
+                title: "Correct Decisions",
+                overall: countLabel(overall.correctAttempts, attempts: overall.totalAttempts),
+                weekly: countLabel(weekly.correctAttempts, attempts: weekly.totalAttempts)
+            )
+            statRow(
+                title: "Accuracy",
+                overall: percentLabel(overall.accuracy),
+                weekly: percentLabel(weekly.accuracy)
+            )
+            statRow(
+                title: "Avg. Decision Time",
+                overall: timeLabel(overall.averageDecisionTime),
+                weekly: timeLabel(weekly.averageDecisionTime)
+            )
+            statRow(
+                title: "Longest Streak",
+                overall: streakLabel(overall.longestStreak, attempts: overall.totalAttempts),
+                weekly: streakLabel(weekly.longestStreak, attempts: weekly.totalAttempts)
+            )
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func statRow(title: String, overall: String, weekly: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            HStack {
+                Text("All-time: \(overall)")
+                Spacer()
+                Text("Last 7 days: \(weekly)")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func percentLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.0f%%", value * 100)
+    }
+
+    private func timeLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.1fs", value)
+    }
+
+    private func countLabel(_ count: Int, attempts: Int) -> String {
+        attempts > 0 ? String(count) : "—"
+    }
+
+    private func streakLabel(_ streak: Int, attempts: Int) -> String {
+        attempts > 0 ? String(streak) : "—"
     }
 
     private var pipPlacements: [PipPlacement] {
