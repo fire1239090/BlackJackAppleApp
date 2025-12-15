@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UIKit
 #if canImport(Charts)
 import Charts
 #endif
@@ -4837,83 +4838,84 @@ struct SpeedCounterRunView: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Dealing hands from a \(settings.deckCount)-deck shoe.")
-                    .font(.headline)
-                Text("Hands dealt: \(handsDealt)")
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        ZStack {
+            Color(uiColor: .systemGroupedBackground)
+                .ignoresSafeArea()
 
-            VStack(spacing: 24) {
-                dealerArea
-                Divider()
-                playerArea
-            }
-            .padding()
-            .frame(maxWidth: .infinity)
-            .background(Color.secondary.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-            if isAskingCount {
-                countPrompt
-            } else if let feedbackMessage {
-                Text(feedbackMessage)
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            if awaitingNextHand {
-                Button(action: continueAfterPrompt) {
-                    Text("Next Hand")
+            VStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Dealing hands from a \(settings.deckCount)-deck shoe.")
                         .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    Text("Hands dealt: \(handsDealt)")
+                        .foregroundColor(.secondary)
                 }
-            }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            if shoeFinished {
-                VStack(spacing: 12) {
-                    Text("Shoe complete")
+                ZStack(alignment: .bottom) {
+                    VStack(spacing: 18) {
+                        dealerArea
+                        Spacer(minLength: 12)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                    playerArea
+                        .padding(.bottom, 8)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.secondary.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                if let feedbackMessage {
+                    Text(feedbackMessage)
                         .font(.headline)
-                    HStack {
-                        Button(action: dismiss.callAsFunction) {
-                            Text("Back to Start Screen")
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.secondary.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        }
-                        Button(action: restartShoe) {
-                            Text("Keep Going")
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.accentColor)
-                                .foregroundColor(.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                if shoeFinished {
+                    VStack(spacing: 12) {
+                        Text("Shoe complete")
+                            .font(.headline)
+                        HStack {
+                            Button(action: dismiss.callAsFunction) {
+                                Text("Back to Start Screen")
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.secondary.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                            Button(action: restartShoe) {
+                                Text("Keep Going")
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.accentColor)
+                                    .foregroundColor(.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
                         }
                     }
                 }
-            }
 
-            Spacer()
+                Spacer()
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .navigationTitle("Speed Counter")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear(perform: startShoe)
+            .onDisappear { runningTask?.cancel() }
+
+            if isAskingCount {
+                modalOverlay { countPrompt }
+            } else if awaitingNextHand && !shoeFinished {
+                modalOverlay { nextHandPrompt }
+            }
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle("Speed Counter")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear(perform: startShoe)
-        .onDisappear { runningTask?.cancel() }
     }
 
     private var dealerArea: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .center, spacing: 8) {
             Text("Dealer")
                 .font(.subheadline.weight(.semibold))
             HStack(spacing: 12) {
@@ -4921,12 +4923,13 @@ struct SpeedCounterRunView: View {
                     SpeedCounterCardView(card: card)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var playerArea: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .center, spacing: 8) {
             Text("Player")
                 .font(.subheadline.weight(.semibold))
             ScrollView(.horizontal, showsIndicators: false) {
@@ -4935,9 +4938,10 @@ struct SpeedCounterRunView: View {
                         playerHandView(hand)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private func playerHandView(_ hand: SpeedCounterHandState) -> some View {
@@ -4956,8 +4960,8 @@ struct SpeedCounterRunView: View {
     }
 
     private var countPrompt: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("What is the running count?")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("What's the count?")
                 .font(.headline)
             TextField("Enter count", text: $answerText)
                 .keyboardType(.numberPad)
@@ -4975,8 +4979,38 @@ struct SpeedCounterRunView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var nextHandPrompt: some View {
+        VStack(spacing: 12) {
+            Text("Ready for the next hand?")
+                .font(.headline)
+            Button(action: continueAfterPrompt) {
+                Text("Next Hand")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 12)
+                    .background(Color.accentColor)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .padding()
+    }
+
+    @ViewBuilder
+    private func modalOverlay<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        Color.black.opacity(0.35)
+            .ignoresSafeArea()
+            .overlay(
+                content()
+                    .frame(maxWidth: 360)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .shadow(radius: 14)
+                    .padding()
+            )
     }
 
     private func startShoe() {
@@ -5257,12 +5291,26 @@ struct SpeedCounterCardView: View {
     var body: some View {
         ZStack {
             if card.isFaceDown {
-                CardBackView()
+                CardBackAssetView()
             } else {
                 CardIconView(card: card.card.trainingCard)
             }
         }
         .frame(width: 80)
+    }
+}
+
+struct CardBackAssetView: View {
+    var body: some View {
+        if let image = UIImage(named: "CardBackArt") {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 3)
+        } else {
+            CardBackView()
+        }
     }
 }
 
