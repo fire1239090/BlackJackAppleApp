@@ -1,12 +1,12 @@
 {
-  "images": [
+  "images" : [
     {
-      "filename": "card_hearts_A.svg",
-      "idiom": "universal"
+      "filename" : "ace_of_hearts.png",
+      "idiom" : "universal"
     }
   ],
-  "info": {
-    "version": 1,
-    "author": "xcode"
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
   }
 }

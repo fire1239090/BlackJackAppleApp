@@ -1,12 +1,12 @@
 {
-  "images": [
+  "images" : [
     {
-      "filename": "card_clubs_Q.svg",
-      "idiom": "universal"
+      "filename" : "queen_of_clubs.png",
+      "idiom" : "universal"
     }
   ],
-  "info": {
-    "version": 1,
-    "author": "xcode"
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
   }
 }
