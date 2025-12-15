@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UIKit
 #if canImport(Charts)
 import Charts
 #endif
@@ -3711,7 +3712,7 @@ struct TrainingSuiteView: View {
         TrainingOption(
             title: "Speed Counter",
             icon: "speedometer",
-            destination: AnyView(PlaceholderFeatureView(title: "Speed Counter"))
+            destination: AnyView(SpeedCounterView())
         ),
         TrainingOption(
             title: "Deck Count Through",
@@ -4611,6 +4612,957 @@ struct CardSortingStatsSummary: View {
     }
 }
 
+// MARK: - Speed Counter
+
+struct SpeedCounterSettings {
+    var dealSpeed: Double = 0.45
+    var deckCount: Int = 6
+    var askForNextHand: Bool = false
+    var handsBetweenPrompts: Int = 2
+}
+
+struct SpeedCounterSession: Identifiable, Codable {
+    let id: UUID
+    let date: Date
+    let correctEntries: Int
+    let totalEntries: Int
+
+    init(date: Date, correctEntries: Int, totalEntries: Int) {
+        id = UUID()
+        self.date = date
+        self.correctEntries = correctEntries
+        self.totalEntries = totalEntries
+    }
+
+    var isPerfect: Bool { totalEntries > 0 && correctEntries == totalEntries }
+}
+
+struct SpeedCounterStats {
+    let correctEntries: Int
+    let accuracy: Double?
+    let perfectShoes: Int
+    let perfectPercentage: Double?
+
+    static func make(for sessions: [SpeedCounterSession]) -> SpeedCounterStats {
+        let correct = sessions.reduce(0) { $0 + $1.correctEntries }
+        let total = sessions.reduce(0) { $0 + $1.totalEntries }
+        let perfect = sessions.filter { $0.isPerfect }.count
+        let accuracy = total > 0 ? Double(correct) / Double(total) : nil
+        let perfectPct = sessions.isEmpty ? nil : Double(perfect) / Double(sessions.count)
+
+        return SpeedCounterStats(
+            correctEntries: correct,
+            accuracy: accuracy,
+            perfectShoes: perfect,
+            perfectPercentage: perfectPct
+        )
+    }
+}
+
+struct SpeedCounterCard: Identifiable {
+    let id = UUID()
+    let rank: Int
+    let suit: TrainingCard.Suit
+
+    var trainingCard: TrainingCard {
+        TrainingCard(rank: TrainingCard.Rank(rawValue: rank) ?? .ace, suit: suit)
+    }
+
+    var hiLoValue: Int { Card(rank: rank).hiLoValue }
+
+    static func shoe(decks: Int) -> [SpeedCounterCard] {
+        var cards: [SpeedCounterCard] = []
+        for _ in 0..<max(decks, 1) {
+            for suit in TrainingCard.Suit.allCases {
+                for rank in 1...13 {
+                    cards.append(SpeedCounterCard(rank: rank, suit: suit))
+                }
+            }
+        }
+        return cards.shuffled()
+    }
+}
+
+struct SpeedCounterDealtCard: Identifiable {
+    let id = UUID()
+    let card: SpeedCounterCard
+    var isFaceDown: Bool = false
+    var isPerpendicular: Bool = false
+}
+
+struct SpeedCounterHandState: Identifiable {
+    let id = UUID()
+    var cards: [SpeedCounterDealtCard]
+    var doubleCard: SpeedCounterDealtCard?
+    var isSplitAce: Bool
+    var splitDepth: Int
+}
+
+struct SpeedCounterView: View {
+    @AppStorage("speedCounterSessions") private var storedSessions: Data = Data()
+
+    @State private var settings = SpeedCounterSettings()
+    @State private var sessions: [SpeedCounterSession] = []
+    @State private var startRun: Bool = false
+    @State private var runID = UUID()
+
+    private var lastWeekSessions: [SpeedCounterSession] {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return [] }
+        return sessions.filter { $0.date >= weekAgo }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Speed Counter")
+                        .font(.title2.weight(.semibold))
+                    Text("Simulate rapid-fire blackjack hands, keep the running count, and get quizzed at your chosen cadence.")
+                        .foregroundColor(.secondary)
+                }
+
+                VStack(spacing: 14) {
+                    HStack {
+                        Text("Dealing Speed")
+                        Spacer()
+                        Text(String(format: "%.2fs", settings.dealSpeed))
+                            .foregroundColor(.secondary)
+                    }
+                    Slider(value: $settings.dealSpeed, in: 0.2...1.2, step: 0.05) {
+                        Text("Dealing Speed")
+                    } minimumValueLabel: {
+                        Text("Faster")
+                    } maximumValueLabel: {
+                        Text("Slower")
+                    }
+
+                    Stepper(value: $settings.deckCount, in: 1...8) {
+                        Text("Number of Decks: \(settings.deckCount)")
+                    }
+
+                    Toggle("Ask for Next Hand", isOn: $settings.askForNextHand)
+
+                    Stepper(value: $settings.handsBetweenPrompts, in: 1...10) {
+                        Text("Hands Between Asking Count: \(settings.handsBetweenPrompts)")
+                    }
+                }
+                .padding()
+                .background(Color.secondary.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                Button(action: beginRun) {
+                    HStack {
+                        Image(systemName: "play.circle.fill")
+                        Text("Start Drill")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.accentColor)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+
+                SpeedCounterStatsSummary(
+                    overall: SpeedCounterStats.make(for: sessions),
+                    weekly: SpeedCounterStats.make(for: lastWeekSessions)
+                )
+            }
+            .padding()
+
+            NavigationLink(isActive: $startRun) {
+                SpeedCounterRunView(
+                    settings: settings,
+                    onComplete: { session in
+                        sessions.insert(session, at: 0)
+                        persistSessions()
+                    }
+                )
+                .id(runID)
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+        }
+        .onAppear(perform: loadSessions)
+        .navigationTitle("Speed Counter")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func beginRun() {
+        runID = UUID()
+        startRun = true
+    }
+
+    private func loadSessions() {
+        guard let decoded = try? JSONDecoder().decode([SpeedCounterSession].self, from: storedSessions) else { return }
+        sessions = decoded
+    }
+
+    private func persistSessions() {
+        guard let data = try? JSONEncoder().encode(sessions) else { return }
+        storedSessions = data
+    }
+}
+
+struct SpeedCounterRunView: View {
+    private let cardWidth: CGFloat = 80
+    private var cardHeight: CGFloat { cardWidth / (2.5/3.5) }
+    private let handSpacing: CGFloat = 24
+    private let cardOffsetX: CGFloat = 26
+    private let cardOffsetY: CGFloat = 18
+
+    let settings: SpeedCounterSettings
+    let onComplete: (SpeedCounterSession) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var shoe: [SpeedCounterCard] = []
+    @State private var dealerCards: [SpeedCounterDealtCard] = []
+    @State private var playerHands: [SpeedCounterHandState] = []
+    @State private var runningCount: Int = 0
+    @State private var handsDealt: Int = 0
+    @State private var promptCounter: Int = 0
+    @State private var totalPrompts: Int = 0
+    @State private var correctPrompts: Int = 0
+    @State private var isAskingCount: Bool = false
+    @State private var answerText: String = ""
+    @State private var feedbackMessage: String?
+    @State private var showFeedbackModal: Bool = false
+    @State private var awaitingNextHand: Bool = false
+    @State private var shoeFinished: Bool = false
+    @State private var runningTask: Task<Void, Never>?
+    @State private var totalShoeCards: Int = 0
+    @State private var showRunningCount: Bool = false
+    @State private var pendingAutoAdvanceAfterFeedback: Bool = false
+    @State private var sessionLogged: Bool = false
+
+    private var gameRules: GameRules {
+        GameRules(
+            decks: settings.deckCount,
+            dealerHitsSoft17: false,
+            doubleAfterSplit: true,
+            surrenderAllowed: false,
+            blackjackPayout: 1.5,
+            penetration: 1.0
+        )
+    }
+
+    var body: some View {
+        ZStack {
+            Color(uiColor: .systemGroupedBackground)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                VStack(spacing: 6) {
+                    ProgressView(value: shoeProgress) {
+                        Text("Shoe Progress")
+                            .font(.subheadline.weight(.semibold))
+                    } currentValueLabel: {
+                        Text(shoeProgressLabel)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .progressViewStyle(.linear)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Dealing hands from a \(settings.deckCount)-deck shoe.")
+                        .font(.headline)
+                    Text("Hands dealt: \(handsDealt)")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                ZStack(alignment: .bottom) {
+                    VStack(spacing: 18) {
+                        dealerArea
+                        Spacer(minLength: 12)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                    playerArea
+                        .padding(.bottom, 8)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.secondary.opacity(0.06))
+                )
+
+                HStack(spacing: 10) {
+                    Text("Running Count:")
+                        .font(.headline)
+                    Text(showRunningCount ? "\(runningCount)" : "— —")
+                        .font(.title3.monospacedDigit())
+                        .foregroundColor(.secondary)
+                    Button(action: { showRunningCount.toggle() }) {
+                        Image(systemName: showRunningCount ? "eye.slash.fill" : "eye.fill")
+                            .font(.headline)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showRunningCount ? "Hide running count" : "Show running count")
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+
+                if shoeFinished {
+                    VStack(spacing: 12) {
+                        Text("Shoe complete")
+                            .font(.headline)
+                        HStack {
+                            Button(action: dismiss.callAsFunction) {
+                                Text("Back to Start Screen")
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.secondary.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                            Button(action: restartShoe) {
+                                Text("Keep Going")
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.accentColor)
+                                    .foregroundColor(.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .navigationTitle("Speed Counter")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear(perform: startShoe)
+            .onDisappear {
+                runningTask?.cancel()
+                Task { await logSessionIfNeeded() }
+            }
+
+            if isAskingCount {
+                modalOverlay { countPrompt }
+            } else if showFeedbackModal, let feedbackMessage {
+                modalOverlay {
+                    feedbackPrompt(message: feedbackMessage)
+                }
+            } else if awaitingNextHand && !shoeFinished {
+                modalOverlay { nextHandPrompt }
+            }
+        }
+    }
+
+    private var dealerArea: some View {
+        VStack(alignment: .center, spacing: 8) {
+            Text("Dealer")
+                .font(.subheadline.weight(.semibold))
+            HStack(spacing: 12) {
+                ForEach(dealerCards) { card in
+                    SpeedCounterCardView(card: card)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var playerArea: some View {
+        VStack(alignment: .center, spacing: 8) {
+            Text("Player")
+                .font(.subheadline.weight(.semibold))
+            GeometryReader { proxy in
+                let contentWidth = totalHandsWidth()
+                let horizontalPadding = max((proxy.size.width - contentWidth) / 2, 0) + 24
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .bottom, spacing: handSpacing) {
+                        ForEach(playerHands) { hand in
+                            playerHandView(hand)
+                        }
+                    }
+                    .padding(.horizontal, horizontalPadding)
+                    .frame(
+                        maxWidth: max(proxy.size.width, contentWidth + (horizontalPadding * 2)),
+                        alignment: .center
+                    )
+                    .frame(height: maxHandHeight + 32, alignment: .bottom)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .frame(height: maxHandHeight + 44)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private func playerHandView(_ hand: SpeedCounterHandState) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
+                SpeedCounterCardView(card: card)
+                    .offset(x: CGFloat(index) * cardOffsetX, y: CGFloat(-index) * cardOffsetY)
+            }
+
+            if let doubleCard = hand.doubleCard {
+                SpeedCounterCardView(card: doubleCard)
+                    .rotationEffect(.degrees(90))
+                    .offset(
+                        x: CGFloat(hand.cards.count) * cardOffsetX + 10,
+                        y: CGFloat(-hand.cards.count) * cardOffsetY - 6
+                    )
+            }
+        }
+    }
+
+    private func totalHandsWidth() -> CGFloat {
+        guard !playerHands.isEmpty else { return cardWidth }
+        let width = playerHands.reduce(0) { partial, hand in
+            partial + handWidth(hand)
+        }
+        let spacingWidth = handSpacing * CGFloat(max(playerHands.count - 1, 0))
+        return width + spacingWidth
+    }
+
+    private func handWidth(_ hand: SpeedCounterHandState) -> CGFloat {
+        let count = max(hand.cards.count, 1)
+        var width = cardWidth + CGFloat(max(0, count - 1)) * cardOffsetX
+        if hand.doubleCard != nil {
+            width += cardWidth * 0.6
+        }
+        return width
+    }
+
+    private var maxHandHeight: CGFloat {
+        guard !playerHands.isEmpty else { return cardHeight }
+        return playerHands.map(handHeight).max() ?? cardHeight
+    }
+
+    private func handHeight(_ hand: SpeedCounterHandState) -> CGFloat {
+        let count = max(hand.cards.count, 1)
+        var height = cardHeight + CGFloat(max(0, count - 1)) * cardOffsetY
+        if hand.doubleCard != nil {
+            height = max(height, cardWidth + cardOffsetY)
+        }
+        return height
+    }
+
+    private var countPrompt: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("What's the count?")
+                .font(.headline)
+            TextField("Enter count", text: $answerText)
+                .keyboardType(.numberPad)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button("Submit", action: submitCount)
+                    .buttonStyle(.borderedProminent)
+                Button("Skip") {
+                    isAskingCount = false
+                    feedbackMessage = "Skipped. Current running count is \(runningCount)."
+                    showFeedbackModal = true
+                    pendingAutoAdvanceAfterFeedback = !settings.askForNextHand
+                    if settings.askForNextHand {
+                        awaitingNextHand = true
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+    }
+
+    private func feedbackPrompt(message: String) -> some View {
+        VStack(spacing: 12) {
+            Text(message)
+                .font(.headline)
+                .multilineTextAlignment(.center)
+            Button("Close") {
+                dismissFeedback()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+    }
+
+    private var nextHandPrompt: some View {
+        VStack(spacing: 12) {
+            Text("Ready for the next hand?")
+                .font(.headline)
+            Button(action: continueAfterPrompt) {
+                Text("Next Hand")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 12)
+                    .background(Color.accentColor)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .padding()
+    }
+
+    @ViewBuilder
+    private func modalOverlay<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        Color.black.opacity(0.35)
+            .ignoresSafeArea()
+            .overlay(
+                content()
+                    .frame(maxWidth: 360)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .shadow(radius: 14)
+                    .padding()
+            )
+    }
+
+    private func startShoe() {
+        runningTask?.cancel()
+        sessionLogged = false
+        runningCount = 0
+        handsDealt = 0
+        promptCounter = 0
+        totalPrompts = 0
+        correctPrompts = 0
+        isAskingCount = false
+        answerText = ""
+        awaitingNextHand = false
+        shoeFinished = false
+        feedbackMessage = nil
+        showFeedbackModal = false
+        showRunningCount = false
+        pendingAutoAdvanceAfterFeedback = false
+        dealerCards = []
+        playerHands = []
+        shoe = SpeedCounterCard.shoe(decks: settings.deckCount)
+        totalShoeCards = shoe.count
+        scheduleNextHand()
+    }
+
+    private func restartShoe() {
+        startShoe()
+    }
+
+    private func scheduleNextHand(delay: Double = 0.5) {
+        guard !shoeFinished else { return }
+        runningTask?.cancel()
+        runningTask = Task {
+            await MainActor.run { awaitingNextHand = false }
+            if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+            await playHand()
+        }
+    }
+
+    @MainActor
+    private func continueAfterPrompt() {
+        awaitingNextHand = false
+        scheduleNextHand(delay: 0.1)
+    }
+
+    private func playHand() async {
+        guard shoe.count > 15 else {
+            await finishShoe()
+            return
+        }
+
+        await MainActor.run {
+            dealerCards = []
+            playerHands = [SpeedCounterHandState(cards: [], doubleCard: nil, isSplitAce: false, splitDepth: 0)]
+        }
+
+        // Initial deal: player, dealer (hole), player, dealer (up)
+        guard await dealCard(toPlayerHand: 0) != nil else { await finishShoe(); return }
+        guard await dealDealerCard(faceDown: true) != nil else { await finishShoe(); return }
+        guard await dealCard(toPlayerHand: 0) != nil else { await finishShoe(); return }
+        guard let dealerUp = await dealDealerCard(faceDown: false) else { await finishShoe(); return }
+
+        await playPlayerHands(dealerUp: dealerUp.card)
+        await revealHoleCard()
+        await dealerPlay()
+        await clearTable()
+
+        await MainActor.run {
+            handsDealt += 1
+            promptCounter += 1
+        }
+
+        await handlePostHand()
+    }
+
+    private func handlePostHand() async {
+        if await shouldAskForCount() {
+            await MainActor.run {
+                isAskingCount = true
+                answerText = ""
+                feedbackMessage = nil
+                promptCounter = 0
+            }
+            return
+        }
+
+        if settings.askForNextHand {
+            await MainActor.run { awaitingNextHand = true }
+        } else {
+            scheduleNextHand()
+        }
+    }
+
+    private func shouldAskForCount() async -> Bool {
+        await MainActor.run {
+            promptCounter >= settings.handsBetweenPrompts
+        }
+    }
+
+    private func dealCard(toPlayerHand index: Int, perpendicular: Bool = false) async -> SpeedCounterDealtCard? {
+        guard let next = await drawCard(faceDown: false) else { return nil }
+        await MainActor.run {
+            withAnimation(.easeInOut(duration: settings.dealSpeed)) {
+                if perpendicular {
+                    playerHands[index].doubleCard = SpeedCounterDealtCard(card: next.card, isFaceDown: false, isPerpendicular: true)
+                } else {
+                    playerHands[index].cards.append(next)
+                }
+            }
+        }
+        try? await Task.sleep(nanoseconds: UInt64(settings.dealSpeed * 1_000_000_000))
+        return next
+    }
+
+    private func dealDealerCard(faceDown: Bool) async -> SpeedCounterDealtCard? {
+        guard let next = await drawCard(faceDown: faceDown) else { return nil }
+        await MainActor.run {
+            withAnimation(.easeInOut(duration: settings.dealSpeed)) {
+                dealerCards.append(next)
+            }
+        }
+        try? await Task.sleep(nanoseconds: UInt64(settings.dealSpeed * 1_000_000_000))
+        return next
+    }
+
+    private func drawCard(faceDown: Bool) async -> SpeedCounterDealtCard? {
+        await MainActor.run {
+            guard !shoe.isEmpty else { return nil }
+            let card = shoe.removeLast()
+            if !faceDown {
+                runningCount += card.hiLoValue
+            }
+            return SpeedCounterDealtCard(card: card, isFaceDown: faceDown, isPerpendicular: false)
+        }
+    }
+
+    private func playPlayerHands(dealerUp: SpeedCounterCard) async {
+        var handIndex = 0
+        while handIndex < playerHands.count {
+            await playSingleHand(at: handIndex, dealerUp: dealerUp, splitDepth: playerHands[handIndex].splitDepth)
+            handIndex += 1
+        }
+    }
+
+    private func playSingleHand(at index: Int, dealerUp: SpeedCounterCard, splitDepth: Int) async {
+        while true {
+            guard index < playerHands.count else { return }
+            let currentHand = await MainActor.run { playerHands[index] }
+            let handModel = hand(from: currentHand)
+
+            if currentHand.isSplitAce && currentHand.cards.count >= 2 { return }
+            if handModel.isBlackjack || handModel.isBusted { return }
+
+            let action = StrategyAdvisor.baseAction(for: handModel, dealerUp: Card(rank: dealerUp.rank), rules: gameRules)
+
+            switch action {
+            case .split where splitDepth < 3 && handModel.canSplit:
+                await performSplit(at: index, dealerUp: dealerUp, splitDepth: splitDepth)
+                return
+            case .double where currentHand.cards.count == 2:
+                _ = await dealCard(toPlayerHand: index, perpendicular: true)
+                return
+            case .hit:
+                _ = await dealCard(toPlayerHand: index)
+            default:
+                return
+            }
+        }
+    }
+
+    private func performSplit(at index: Int, dealerUp: SpeedCounterCard, splitDepth: Int) async {
+        let hand = await MainActor.run { playerHands[index] }
+        guard hand.cards.count == 2 else { return }
+
+        let first = hand.cards[0]
+        let second = hand.cards[1]
+
+        await MainActor.run {
+            playerHands.remove(at: index)
+            let left = SpeedCounterHandState(cards: [first], doubleCard: nil, isSplitAce: first.card.rank == 1, splitDepth: splitDepth + 1)
+            let right = SpeedCounterHandState(cards: [second], doubleCard: nil, isSplitAce: second.card.rank == 1, splitDepth: splitDepth + 1)
+            playerHands.insert(right, at: index)
+            playerHands.insert(left, at: index)
+        }
+
+        _ = await dealCard(toPlayerHand: index)
+        _ = await dealCard(toPlayerHand: index + 1)
+
+        await playSingleHand(at: index, dealerUp: dealerUp, splitDepth: splitDepth + 1)
+        await playSingleHand(at: index + 1, dealerUp: dealerUp, splitDepth: splitDepth + 1)
+    }
+
+    private func hand(from state: SpeedCounterHandState) -> Hand {
+        var cards = state.cards.map { Card(rank: $0.card.rank) }
+        if let doubleCard = state.doubleCard {
+            cards.append(Card(rank: doubleCard.card.rank))
+        }
+        return Hand(cards: cards, isSplitAce: state.isSplitAce, fromSplit: state.splitDepth > 0)
+    }
+
+    private func revealHoleCard() async {
+        await MainActor.run {
+            if let index = dealerCards.firstIndex(where: { $0.isFaceDown }) {
+                dealerCards[index].isFaceDown = false
+                runningCount += dealerCards[index].card.hiLoValue
+            }
+        }
+        try? await Task.sleep(nanoseconds: UInt64(settings.dealSpeed * 1_000_000_000))
+    }
+
+    private func dealerPlay() async {
+        var dealerHand = await MainActor.run { Hand(cards: dealerCards.map { Card(rank: $0.card.rank) }) }
+
+        while true {
+            let value = dealerHand.bestValue
+            let isSoft = dealerHand.isSoft
+            if value < 17 || (value == 17 && gameRules.dealerHitsSoft17 && isSoft) {
+                if let newCard = await drawCard(faceDown: false) {
+                    await MainActor.run {
+                        withAnimation(.easeInOut(duration: settings.dealSpeed)) {
+                            dealerCards.append(newCard)
+                        }
+                        dealerHand.cards.append(Card(rank: newCard.card.rank))
+                    }
+                    try? await Task.sleep(nanoseconds: UInt64(settings.dealSpeed * 1_000_000_000))
+                } else {
+                    break
+                }
+            } else {
+                break
+            }
+        }
+    }
+
+    private func clearTable() async {
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        await MainActor.run {
+            withAnimation(.easeInOut(duration: 0.35)) {
+                dealerCards = []
+                playerHands = []
+            }
+        }
+    }
+
+    private func finishShoe() async {
+        let alreadyFinished = await MainActor.run { () -> Bool in
+            let wasFinished = shoeFinished
+            if !wasFinished {
+                shoeFinished = true
+                isAskingCount = false
+                awaitingNextHand = false
+            }
+            return wasFinished
+        }
+        if alreadyFinished { return }
+        await logSessionIfNeeded(force: true)
+    }
+
+    private func logSessionIfNeeded(force: Bool = false) async {
+        let snapshot = await MainActor.run { () -> (logged: Bool, hasData: Bool, correct: Int, total: Int) in
+            let hasData = handsDealt > 0 || totalPrompts > 0 || force
+            return (sessionLogged, hasData, correctPrompts, totalPrompts)
+        }
+
+        guard !snapshot.logged, snapshot.hasData else { return }
+
+        let session = SpeedCounterSession(date: Date(), correctEntries: snapshot.correct, totalEntries: snapshot.total)
+
+        await MainActor.run {
+            sessionLogged = true
+            onComplete(session)
+        }
+    }
+
+    @MainActor
+    private func submitCount() {
+        totalPrompts += 1
+        isAskingCount = false
+        let guessed = Int(answerText.trimmingCharacters(in: .whitespacesAndNewlines))
+        if guessed == runningCount {
+            correctPrompts += 1
+            feedbackMessage = "Correct! Running count is \(runningCount)."
+        } else {
+            feedbackMessage = "Incorrect. Running count is \(runningCount)."
+        }
+
+        showFeedbackModal = true
+
+        pendingAutoAdvanceAfterFeedback = !settings.askForNextHand
+
+        if settings.askForNextHand {
+            awaitingNextHand = true
+        }
+    }
+
+    private var shoeProgress: Double {
+        guard totalShoeCards > 0 else { return 0 }
+        return 1 - (Double(shoe.count) / Double(totalShoeCards))
+    }
+
+    private var shoeProgressLabel: String {
+        let percentage = Int(round(shoeProgress * 100))
+        return "\(percentage)% of shoe played"
+    }
+
+    private func dismissFeedback() {
+        showFeedbackModal = false
+        feedbackMessage = nil
+        if pendingAutoAdvanceAfterFeedback && !shoeFinished {
+            pendingAutoAdvanceAfterFeedback = false
+            scheduleNextHand()
+        } else {
+            pendingAutoAdvanceAfterFeedback = false
+        }
+    }
+}
+
+struct SpeedCounterCardView: View {
+    let card: SpeedCounterDealtCard
+
+    var body: some View {
+        ZStack {
+            if card.isFaceDown {
+                CardBackAssetView()
+            } else {
+                CardIconView(card: card.card.trainingCard)
+            }
+        }
+        .frame(width: 80)
+    }
+}
+
+struct CardBackAssetView: View {
+    var body: some View {
+        if let image = UIImage(named: "CardBackArt") {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 3)
+        } else {
+            CardBackView()
+        }
+    }
+}
+
+struct CardBackView: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [Color(red: 0.86, green: 0.09, blue: 0.23), Color(red: 0.57, green: 0.02, blue: 0.14)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.8), lineWidth: 2)
+            )
+            .overlay(
+                VStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        cardBackPip
+                        cardBackPip
+                        cardBackPip
+                    }
+                    HStack(spacing: 6) {
+                        cardBackPip
+                        cardBackPip
+                        cardBackPip
+                    }
+                    HStack(spacing: 6) {
+                        cardBackPip
+                        cardBackPip
+                        cardBackPip
+                    }
+                }
+            )
+            .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 3)
+    }
+
+    private var cardBackPip: some View {
+        Circle()
+            .fill(Color.white.opacity(0.9))
+            .frame(width: 10, height: 10)
+    }
+}
+
+struct SpeedCounterStatsSummary: View {
+    let overall: SpeedCounterStats
+    let weekly: SpeedCounterStats
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Speed Counter Stats")
+                .font(.headline)
+            statRow(
+                title: "Correct Entries",
+                overall: countLabel(overall.correctEntries),
+                weekly: countLabel(weekly.correctEntries)
+            )
+            statRow(
+                title: "Accuracy of Decision",
+                overall: percentLabel(overall.accuracy),
+                weekly: percentLabel(weekly.accuracy)
+            )
+            statRow(
+                title: "Perfect Shoes",
+                overall: countLabel(overall.perfectShoes),
+                weekly: countLabel(weekly.perfectShoes)
+            )
+            statRow(
+                title: "% Perfect Shoes",
+                overall: percentLabel(overall.perfectPercentage),
+                weekly: percentLabel(weekly.perfectPercentage)
+            )
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func statRow(title: String, overall: String, weekly: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            HStack {
+                Text("All-time: \(overall)")
+                Spacer()
+                Text("Last 7 days: \(weekly)")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func percentLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.0f%%", value * 100)
+    }
+
+    private func countLabel(_ value: Int) -> String {
+        value > 0 ? String(value) : "—"
+    }
+}
+
 struct DeckCountThroughSession: Identifiable, Codable {
     let id: UUID
     let date: Date
@@ -5123,6 +6075,7 @@ struct DeckCountThroughStatsSummary: View {
 struct TrainingStatsView: View {
     @AppStorage("deckCountThroughSessions") private var storedSessions: Data = Data()
     @AppStorage("cardSortingAttempts") private var storedCardSorting: Data = Data()
+    @AppStorage("speedCounterSessions") private var storedSpeedCounter: Data = Data()
 
     private var sessions: [DeckCountThroughSession] {
         (try? JSONDecoder().decode([DeckCountThroughSession].self, from: storedSessions)) ?? []
@@ -5142,8 +6095,19 @@ struct TrainingStatsView: View {
         return cardSortingAttempts.filter { $0.date >= weekAgo }
     }
 
+    private var speedCounterSessions: [SpeedCounterSession] {
+        (try? JSONDecoder().decode([SpeedCounterSession].self, from: storedSpeedCounter)) ?? []
+    }
+
+    private var lastWeekSpeedCounterSessions: [SpeedCounterSession] {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return [] }
+        return speedCounterSessions.filter { $0.date >= weekAgo }
+    }
+
     private var cardSortingOverall: CardSortingStats { .make(for: cardSortingAttempts) }
     private var cardSortingWeekly: CardSortingStats { .make(for: lastWeekCardSortingAttempts) }
+    private var speedCounterOverall: SpeedCounterStats { .make(for: speedCounterSessions) }
+    private var speedCounterWeekly: SpeedCounterStats { .make(for: lastWeekSpeedCounterSessions) }
 
     var body: some View {
         List {
@@ -5180,8 +6144,15 @@ struct TrainingStatsView: View {
                 statRow(title: "Accuracy", overall: DeckCountThroughStats.make(for: sessions).accuracy, weekly: DeckCountThroughStats.make(for: lastWeekSessions).accuracy, formatter: percentLabel)
             }
 
+            Section("Speed Counter") {
+                statRow(title: "Correct Entries", overall: Double(speedCounterOverall.correctEntries), weekly: Double(speedCounterWeekly.correctEntries), formatter: countLabel)
+                statRow(title: "Accuracy of Decision", overall: speedCounterOverall.accuracy, weekly: speedCounterWeekly.accuracy, formatter: percentLabel)
+                statRow(title: "Perfect Shoes", overall: Double(speedCounterOverall.perfectShoes), weekly: Double(speedCounterWeekly.perfectShoes), formatter: countLabel)
+                statRow(title: "% Perfect Shoes", overall: speedCounterOverall.perfectPercentage, weekly: speedCounterWeekly.perfectPercentage, formatter: percentLabel)
+            }
+
             Section("More Training Stats") {
-                Text("Card Sorting, Speed Counter, Strategy Quiz, Hand Simulation, Deck Estimation and Bet Sizing, and Test Out stats will appear here once those drills are available.")
+                Text("Strategy Quiz, Hand Simulation, Deck Estimation and Bet Sizing, and Test Out stats will appear here once those drills are available.")
                     .foregroundColor(.secondary)
                     .font(.subheadline)
                     .padding(.vertical, 4)
