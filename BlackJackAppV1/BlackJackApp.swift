@@ -4828,9 +4828,13 @@ struct SpeedCounterRunView: View {
     @State private var isAskingCount: Bool = false
     @State private var answerText: String = ""
     @State private var feedbackMessage: String?
+    @State private var showFeedbackModal: Bool = false
     @State private var awaitingNextHand: Bool = false
     @State private var shoeFinished: Bool = false
     @State private var runningTask: Task<Void, Never>?
+    @State private var totalShoeCards: Int = 0
+    @State private var showRunningCount: Bool = false
+    @State private var pendingAutoAdvanceAfterFeedback: Bool = false
 
     private var gameRules: GameRules {
         GameRules(
@@ -4849,6 +4853,18 @@ struct SpeedCounterRunView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 16) {
+                VStack(spacing: 6) {
+                    ProgressView(value: shoeProgress) {
+                        Text("Shoe Progress")
+                            .font(.subheadline.weight(.semibold))
+                    } currentValueLabel: {
+                        Text(shoeProgressLabel)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .progressViewStyle(.linear)
+                }
+
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Dealing hands from a \(settings.deckCount)-deck shoe.")
                         .font(.headline)
@@ -4874,12 +4890,20 @@ struct SpeedCounterRunView: View {
                         .fill(Color.secondary.opacity(0.06))
                 )
 
-                if let feedbackMessage {
-                    Text(feedbackMessage)
+                HStack(spacing: 10) {
+                    Text("Running Count:")
                         .font(.headline)
+                    Text(showRunningCount ? "\(runningCount)" : "— —")
+                        .font(.title3.monospacedDigit())
                         .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
+                    Button(action: { showRunningCount.toggle() }) {
+                        Image(systemName: showRunningCount ? "eye.slash.fill" : "eye.fill")
+                            .font(.headline)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showRunningCount ? "Hide running count" : "Show running count")
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
 
                 if shoeFinished {
                     VStack(spacing: 12) {
@@ -4916,6 +4940,10 @@ struct SpeedCounterRunView: View {
 
             if isAskingCount {
                 modalOverlay { countPrompt }
+            } else if showFeedbackModal, let feedbackMessage {
+                modalOverlay {
+                    feedbackPrompt(message: feedbackMessage)
+                }
             } else if awaitingNextHand && !shoeFinished {
                 modalOverlay { nextHandPrompt }
             }
@@ -5027,12 +5055,29 @@ struct SpeedCounterRunView: View {
                 Button("Skip") {
                     isAskingCount = false
                     feedbackMessage = "Skipped. Current running count is \(runningCount)."
-                    scheduleNextHand()
+                    showFeedbackModal = true
+                    pendingAutoAdvanceAfterFeedback = !settings.askForNextHand
+                    if settings.askForNextHand {
+                        awaitingNextHand = true
+                    }
                 }
                 .buttonStyle(.bordered)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+    }
+
+    private func feedbackPrompt(message: String) -> some View {
+        VStack(spacing: 12) {
+            Text(message)
+                .font(.headline)
+                .multilineTextAlignment(.center)
+            Button("Close") {
+                dismissFeedback()
+            }
+            .buttonStyle(.borderedProminent)
+        }
         .padding()
     }
 
@@ -5080,9 +5125,13 @@ struct SpeedCounterRunView: View {
         awaitingNextHand = false
         shoeFinished = false
         feedbackMessage = nil
+        showFeedbackModal = false
+        showRunningCount = false
+        pendingAutoAdvanceAfterFeedback = false
         dealerCards = []
         playerHands = []
         shoe = SpeedCounterCard.shoe(decks: settings.deckCount)
+        totalShoeCards = shoe.count
         scheduleNextHand()
     }
 
@@ -5332,10 +5381,33 @@ struct SpeedCounterRunView: View {
             feedbackMessage = "Incorrect. Running count is \(runningCount)."
         }
 
+        showFeedbackModal = true
+
+        pendingAutoAdvanceAfterFeedback = !settings.askForNextHand
+
         if settings.askForNextHand {
             awaitingNextHand = true
-        } else {
+        }
+    }
+
+    private var shoeProgress: Double {
+        guard totalShoeCards > 0 else { return 0 }
+        return 1 - (Double(shoe.count) / Double(totalShoeCards))
+    }
+
+    private var shoeProgressLabel: String {
+        let percentage = Int(round(shoeProgress * 100))
+        return "\(percentage)% of shoe played"
+    }
+
+    private func dismissFeedback() {
+        showFeedbackModal = false
+        feedbackMessage = nil
+        if pendingAutoAdvanceAfterFeedback && !shoeFinished {
+            pendingAutoAdvanceAfterFeedback = false
             scheduleNextHand()
+        } else {
+            pendingAutoAdvanceAfterFeedback = false
         }
     }
 }
