@@ -4806,6 +4806,12 @@ struct SpeedCounterView: View {
 }
 
 struct SpeedCounterRunView: View {
+    private let cardWidth: CGFloat = 80
+    private var cardHeight: CGFloat { cardWidth / (2.5/3.5) }
+    private let handSpacing: CGFloat = 24
+    private let cardOffsetX: CGFloat = 26
+    private let cardOffsetY: CGFloat = 18
+
     let settings: SpeedCounterSettings
     let onComplete: (SpeedCounterSession) -> Void
 
@@ -4934,16 +4940,26 @@ struct SpeedCounterRunView: View {
         VStack(alignment: .center, spacing: 8) {
             Text("Player")
                 .font(.subheadline.weight(.semibold))
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 24) {
-                    ForEach(playerHands) { hand in
-                        playerHandView(hand)
+            GeometryReader { proxy in
+                let contentWidth = totalHandsWidth()
+                let horizontalPadding = max((proxy.size.width - contentWidth) / 2, 0) + 24
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .bottom, spacing: handSpacing) {
+                        ForEach(playerHands) { hand in
+                            playerHandView(hand)
+                        }
                     }
+                    .padding(.horizontal, horizontalPadding)
+                    .frame(
+                        maxWidth: max(proxy.size.width, contentWidth + (horizontalPadding * 2)),
+                        alignment: .center
+                    )
+                    .frame(height: maxHandHeight + 32, alignment: .bottom)
                 }
-                .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
-            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(height: maxHandHeight + 44)
         }
         .frame(maxWidth: .infinity, alignment: .center)
     }
@@ -4952,15 +4968,50 @@ struct SpeedCounterRunView: View {
         ZStack(alignment: .bottomLeading) {
             ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
                 SpeedCounterCardView(card: card)
-                    .offset(x: CGFloat(index) * 26, y: CGFloat(-index) * 18)
+                    .offset(x: CGFloat(index) * cardOffsetX, y: CGFloat(-index) * cardOffsetY)
             }
 
             if let doubleCard = hand.doubleCard {
                 SpeedCounterCardView(card: doubleCard)
                     .rotationEffect(.degrees(90))
-                    .offset(x: CGFloat(hand.cards.count) * 26 + 10, y: CGFloat(-hand.cards.count) * 18 - 6)
+                    .offset(
+                        x: CGFloat(hand.cards.count) * cardOffsetX + 10,
+                        y: CGFloat(-hand.cards.count) * cardOffsetY - 6
+                    )
             }
         }
+    }
+
+    private func totalHandsWidth() -> CGFloat {
+        guard !playerHands.isEmpty else { return cardWidth }
+        let width = playerHands.reduce(0) { partial, hand in
+            partial + handWidth(hand)
+        }
+        let spacingWidth = handSpacing * CGFloat(max(playerHands.count - 1, 0))
+        return width + spacingWidth
+    }
+
+    private func handWidth(_ hand: SpeedCounterHandState) -> CGFloat {
+        let count = max(hand.cards.count, 1)
+        var width = cardWidth + CGFloat(max(0, count - 1)) * cardOffsetX
+        if hand.doubleCard != nil {
+            width += cardWidth * 0.6
+        }
+        return width
+    }
+
+    private var maxHandHeight: CGFloat {
+        guard !playerHands.isEmpty else { return cardHeight }
+        return playerHands.map(handHeight).max() ?? cardHeight
+    }
+
+    private func handHeight(_ hand: SpeedCounterHandState) -> CGFloat {
+        let count = max(hand.cards.count, 1)
+        var height = cardHeight + CGFloat(max(0, count - 1)) * cardOffsetY
+        if hand.doubleCard != nil {
+            height = max(height, cardWidth + cardOffsetY)
+        }
+        return height
     }
 
     private var countPrompt: some View {
