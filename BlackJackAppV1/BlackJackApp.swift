@@ -4863,8 +4863,10 @@ struct SpeedCounterRunView: View {
                 }
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.secondary.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.secondary.opacity(0.06))
+                )
 
                 if let feedbackMessage {
                     Text(feedbackMessage)
@@ -4938,8 +4940,10 @@ struct SpeedCounterRunView: View {
                         playerHandView(hand)
                     }
                 }
+                .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, alignment: .center)
     }
