@@ -4835,6 +4835,7 @@ struct SpeedCounterRunView: View {
     @State private var totalShoeCards: Int = 0
     @State private var showRunningCount: Bool = false
     @State private var pendingAutoAdvanceAfterFeedback: Bool = false
+    @State private var sessionLogged: Bool = false
 
     private var gameRules: GameRules {
         GameRules(
@@ -4936,7 +4937,10 @@ struct SpeedCounterRunView: View {
             .navigationTitle("Speed Counter")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear(perform: startShoe)
-            .onDisappear { runningTask?.cancel() }
+            .onDisappear {
+                runningTask?.cancel()
+                Task { await logSessionIfNeeded() }
+            }
 
             if isAskingCount {
                 modalOverlay { countPrompt }
@@ -5115,6 +5119,7 @@ struct SpeedCounterRunView: View {
 
     private func startShoe() {
         runningTask?.cancel()
+        sessionLogged = false
         runningCount = 0
         handsDealt = 0
         promptCounter = 0
@@ -5365,8 +5370,23 @@ struct SpeedCounterRunView: View {
             return wasFinished
         }
         if alreadyFinished { return }
-        let session = SpeedCounterSession(date: Date(), correctEntries: correctPrompts, totalEntries: totalPrompts)
-        onComplete(session)
+        await logSessionIfNeeded(force: true)
+    }
+
+    private func logSessionIfNeeded(force: Bool = false) async {
+        let snapshot = await MainActor.run { () -> (logged: Bool, hasData: Bool, correct: Int, total: Int) in
+            let hasData = handsDealt > 0 || totalPrompts > 0 || force
+            return (sessionLogged, hasData, correctPrompts, totalPrompts)
+        }
+
+        guard !snapshot.logged, snapshot.hasData else { return }
+
+        let session = SpeedCounterSession(date: Date(), correctEntries: snapshot.correct, totalEntries: snapshot.total)
+
+        await MainActor.run {
+            sessionLogged = true
+            onComplete(session)
+        }
     }
 
     @MainActor
