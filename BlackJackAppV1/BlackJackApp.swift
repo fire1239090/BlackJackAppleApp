@@ -4942,7 +4942,7 @@ struct SpeedCounterRunView: View {
 
     private func playerHandView(_ hand: SpeedCounterHandState) -> some View {
         ZStack(alignment: .bottomLeading) {
-            ForEach(Array(hand.cards.enumerated()), id: \.(offset)) { index, card in
+            ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
                 SpeedCounterCardView(card: card)
                     .offset(x: CGFloat(index) * 26, y: CGFloat(-index) * 18)
             }
