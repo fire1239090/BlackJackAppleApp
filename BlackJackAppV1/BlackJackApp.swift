@@ -4626,15 +4626,30 @@ struct SpeedCounterSession: Identifiable, Codable {
     let date: Date
     let correctEntries: Int
     let totalEntries: Int
+    let completed: Bool
 
-    init(date: Date, correctEntries: Int, totalEntries: Int) {
+    init(date: Date, correctEntries: Int, totalEntries: Int, completed: Bool) {
         id = UUID()
         self.date = date
         self.correctEntries = correctEntries
         self.totalEntries = totalEntries
+        self.completed = completed
     }
 
-    var isPerfect: Bool { totalEntries > 0 && correctEntries == totalEntries }
+    private enum CodingKeys: String, CodingKey {
+        case id, date, correctEntries, totalEntries, completed
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        date = try container.decode(Date.self, forKey: .date)
+        correctEntries = try container.decode(Int.self, forKey: .correctEntries)
+        totalEntries = try container.decode(Int.self, forKey: .totalEntries)
+        completed = try container.decodeIfPresent(Bool.self, forKey: .completed) ?? false
+    }
+
+    var isPerfect: Bool { completed && totalEntries > 0 && correctEntries == totalEntries }
 }
 
 struct SpeedCounterStats {
@@ -4646,9 +4661,10 @@ struct SpeedCounterStats {
     static func make(for sessions: [SpeedCounterSession]) -> SpeedCounterStats {
         let correct = sessions.reduce(0) { $0 + $1.correctEntries }
         let total = sessions.reduce(0) { $0 + $1.totalEntries }
-        let perfect = sessions.filter { $0.isPerfect }.count
+        let completed = sessions.filter { $0.completed }
+        let perfect = completed.filter { $0.isPerfect }.count
         let accuracy = total > 0 ? Double(correct) / Double(total) : nil
-        let perfectPct = sessions.isEmpty ? nil : Double(perfect) / Double(sessions.count)
+        let perfectPct = completed.isEmpty ? nil : Double(perfect) / Double(completed.count)
 
         return SpeedCounterStats(
             correctEntries: correct,
@@ -5053,20 +5069,8 @@ struct SpeedCounterRunView: View {
             TextField("Enter count", text: $answerText)
                 .keyboardType(.numberPad)
                 .textFieldStyle(.roundedBorder)
-            HStack {
-                Button("Submit", action: submitCount)
-                    .buttonStyle(.borderedProminent)
-                Button("Skip") {
-                    isAskingCount = false
-                    feedbackMessage = "Skipped. Current running count is \(runningCount)."
-                    showFeedbackModal = true
-                    pendingAutoAdvanceAfterFeedback = !settings.askForNextHand
-                    if settings.askForNextHand {
-                        awaitingNextHand = true
-                    }
-                }
-                .buttonStyle(.bordered)
-            }
+            Button("Submit", action: submitCount)
+                .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
@@ -5370,18 +5374,23 @@ struct SpeedCounterRunView: View {
             return wasFinished
         }
         if alreadyFinished { return }
-        await logSessionIfNeeded(force: true)
+        await logSessionIfNeeded(force: true, completed: true)
     }
 
-    private func logSessionIfNeeded(force: Bool = false) async {
-        let snapshot = await MainActor.run { () -> (logged: Bool, hasData: Bool, correct: Int, total: Int) in
+    private func logSessionIfNeeded(force: Bool = false, completed: Bool = false) async {
+        let snapshot = await MainActor.run { () -> (logged: Bool, hasData: Bool, correct: Int, total: Int, completed: Bool) in
             let hasData = handsDealt > 0 || totalPrompts > 0 || force
-            return (sessionLogged, hasData, correctPrompts, totalPrompts)
+            return (sessionLogged, hasData, correctPrompts, totalPrompts, completed || shoeFinished)
         }
 
         guard !snapshot.logged, snapshot.hasData else { return }
 
-        let session = SpeedCounterSession(date: Date(), correctEntries: snapshot.correct, totalEntries: snapshot.total)
+        let session = SpeedCounterSession(
+            date: Date(),
+            correctEntries: snapshot.correct,
+            totalEntries: snapshot.total,
+            completed: snapshot.completed
+        )
 
         await MainActor.run {
             sessionLogged = true
