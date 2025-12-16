@@ -853,6 +853,19 @@ struct GameRules: Codable {
     var penetration: Double
 }
 
+extension GameRules {
+    static var defaultStrategyRules: GameRules {
+        GameRules(
+            decks: 6,
+            dealerHitsSoft17: true,
+            doubleAfterSplit: true,
+            surrenderAllowed: true,
+            blackjackPayout: 1.5,
+            penetration: 0.75
+        )
+    }
+}
+
 struct BetRampEntry: Identifiable, Codable {
     var id: UUID = .init()
     var trueCount: Int
@@ -1446,7 +1459,8 @@ struct DeviationChartView: View {
             return ChartCellData(
                 baseAction: base,
                 baseLabel: shortLabel(for: base),
-                deviations: deviationEntries
+                deviations: deviationEntries,
+                dealerValue: dealer
             )
         }
     }
@@ -1607,7 +1621,8 @@ struct BasicStrategyChartView: View {
             return ChartCellData(
                 baseAction: base,
                 baseLabel: shortLabel(for: base),
-                deviations: []
+                deviations: [],
+                dealerValue: dealer
             )
         }
     }
@@ -1658,6 +1673,140 @@ struct ChartCellData: Identifiable {
     let baseAction: PlayerAction
     let baseLabel: String
     let deviations: [DeviationCellEntry]
+    let dealerValue: Int
+}
+
+enum StrategyChartSectionType: String, CaseIterable, Identifiable {
+    case hardTotals
+    case softTotals
+    case pairSplitting
+    case surrender
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .hardTotals: return "Hard Totals"
+        case .softTotals: return "Soft Totals"
+        case .pairSplitting: return "Pair Splitting"
+        case .surrender: return "Surrender (Hard 14–16)"
+        }
+    }
+}
+
+struct StrategyChartSectionData: Identifiable {
+    let id = UUID()
+    let type: StrategyChartSectionType
+    let rows: [ChartRowData]
+
+    var title: String { type.title }
+}
+
+struct BasicStrategyChartBuilder {
+    let rules: GameRules
+
+    let dealerValues = Array(2...11)
+
+    private var rulesWithoutSurrender: GameRules {
+        var copy = rules
+        copy.surrenderAllowed = false
+        return copy
+    }
+
+    func sections(includeHard: Bool, includeSoft: Bool, includePairs: Bool, includeSurrender: Bool) -> [StrategyChartSectionData] {
+        var result: [StrategyChartSectionData] = []
+
+        if includeHard {
+            result.append(.init(type: .hardTotals, rows: hardRows()))
+        }
+
+        if includeSoft {
+            result.append(.init(type: .softTotals, rows: softRows()))
+        }
+
+        if includePairs {
+            result.append(.init(type: .pairSplitting, rows: pairRows()))
+        }
+
+        if includeSurrender {
+            result.append(.init(type: .surrender, rows: surrenderRows()))
+        }
+
+        return result
+    }
+
+    func hardRows() -> [ChartRowData] {
+        (5...21).map { total in
+            ChartRowData(label: "Hard \(total)", cells: cells(for: total, isSoft: false, pairRank: nil, allowSurrenderBase: false))
+        }
+    }
+
+    func softRows() -> [ChartRowData] {
+        (13...21).map { total in
+            ChartRowData(label: "Soft \(total)", cells: cells(for: total, isSoft: true, pairRank: nil, allowSurrenderBase: false))
+        }
+    }
+
+    func pairRows() -> [ChartRowData] {
+        (2...10).map { rank in
+            let label = rank == 1 ? "A" : "\(rank)"
+            return ChartRowData(label: "Pair \(label)", cells: cells(for: rank * 2, isSoft: false, pairRank: rank, allowSurrenderBase: false))
+        }
+    }
+
+    func surrenderRows() -> [ChartRowData] {
+        (14...16).map { total in
+            ChartRowData(label: "Hard \(total)", cells: cells(for: total, isSoft: false, pairRank: nil, allowSurrenderBase: true))
+        }
+    }
+
+    private func cells(for total: Int, isSoft: Bool, pairRank: Int?, allowSurrenderBase: Bool) -> [ChartCellData] {
+        dealerValues.map { dealer in
+            let hand = handFor(total: total, isSoft: isSoft, pairRank: pairRank)
+            let appliedRules = allowSurrenderBase ? rules : rulesWithoutSurrender
+            let base = StrategyAdvisor.baseAction(for: hand, dealerUp: Card(rank: dealerCardRank(dealer)), rules: appliedRules)
+            return ChartCellData(
+                baseAction: base,
+                baseLabel: shortLabel(for: base),
+                deviations: [],
+                dealerValue: dealer
+            )
+        }
+    }
+
+    private func handFor(total: Int, isSoft: Bool, pairRank: Int?) -> Hand {
+        if let pairRank {
+            return Hand(cards: [Card(rank: pairRank), Card(rank: pairRank)])
+        }
+
+        if isSoft {
+            let kicker = max(2, min(10, total - 11))
+            return Hand(cards: [Card(rank: 1), Card(rank: kicker)])
+        }
+
+        for first in stride(from: min(total - 2, 10), through: 2, by: -1) {
+            let second = total - first
+            guard (2...10).contains(second) else { continue }
+            let candidate = Hand(cards: [Card(rank: first), Card(rank: second)])
+            if !candidate.isSoft { return candidate }
+        }
+
+        return Hand(cards: [Card(rank: 10), Card(rank: max(2, total - 10))])
+    }
+
+    private func dealerCardRank(_ value: Int) -> Int {
+        value == 11 ? 1 : value
+    }
+
+    private func shortLabel(for action: PlayerAction) -> String {
+        switch action {
+        case .hit: return "H"
+        case .stand: return "S"
+        case .double: return "D"
+        case .split: return "P"
+        case .surrender: return "R"
+        }
+    }
 }
 
 private func chartActionColor(_ action: PlayerAction) -> Color {
@@ -3693,6 +3842,435 @@ struct PlaceholderFeatureView: View {
     }
 }
 
+struct StrategyQuizResult {
+    let incorrectCount: Int
+    let includedSections: [StrategyChartSectionType]
+    let sectionStatus: [StrategyChartSectionType: Bool]
+
+    var isPerfect: Bool { incorrectCount == 0 }
+
+    var includesAllSections: Bool {
+        Set(includedSections) == Set(StrategyChartSectionType.allCases)
+    }
+}
+
+private struct QuizCellFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
+struct StrategyQuizView: View {
+    let rules: GameRules
+
+    @AppStorage("strategyQuizHardCompletions") private var hardCompletions: Int = 0
+    @AppStorage("strategyQuizSoftCompletions") private var softCompletions: Int = 0
+    @AppStorage("strategyQuizPairCompletions") private var pairCompletions: Int = 0
+    @AppStorage("strategyQuizSurrenderCompletions") private var surrenderCompletions: Int = 0
+    @AppStorage("strategyQuizFullCompletions") private var fullChartCompletions: Int = 0
+
+    @State private var includeHard: Bool = true
+    @State private var includeSoft: Bool = true
+    @State private var includePairs: Bool = true
+    @State private var includeSurrender: Bool = true
+
+    @State private var stage: Stage = .intro
+    @State private var sections: [StrategyChartSectionData] = []
+    @State private var selections: [UUID: PlayerAction?] = [:]
+    @State private var result: StrategyQuizResult?
+    @State private var showResultAlert: Bool = false
+    @State private var quizID = UUID()
+
+    private let dealerValues = Array(2...11)
+
+    private enum Stage {
+        case intro, quiz
+    }
+
+    var body: some View {
+        Group {
+            switch stage {
+            case .intro:
+                introView
+            case .quiz:
+                quizBoard
+            }
+        }
+        .navigationTitle("Strategy Quiz")
+        .toolbar {
+            if stage == .quiz {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Submit", action: submitQuiz)
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+        .alert(resultAlertTitle, isPresented: $showResultAlert, actions: alertActions, message: { Text(resultAlertMessage) })
+        .onChange(of: stage) { newValue in
+            if newValue == .quiz {
+                OrientationManager.forceLandscape()
+            } else {
+                OrientationManager.restorePortrait()
+            }
+        }
+        .onDisappear {
+            OrientationManager.restorePortrait()
+        }
+    }
+
+    private var introView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Build the basic strategy chart from scratch.")
+                        .font(.title3.weight(.semibold))
+                    Text("Pick which parts of the chart you want to practice, then recreate the actions by tapping cells. You can drag to paint multiple cells at once.")
+                        .foregroundColor(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Choose sections to include:")
+                        .font(.headline)
+                    Toggle("Hard Totals", isOn: $includeHard)
+                    Toggle("Soft Totals", isOn: $includeSoft)
+                    Toggle("Pair Splitting", isOn: $includePairs)
+                    Toggle("Surrender", isOn: $includeSurrender)
+                }
+                .toggleStyle(.switch)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Completion stats")
+                        .font(.headline)
+                    statRow(title: "Hard", value: hardCompletions)
+                    statRow(title: "Soft", value: softCompletions)
+                    statRow(title: "Pairs", value: pairCompletions)
+                    statRow(title: "Surrender", value: surrenderCompletions)
+                    statRow(title: "Full chart", value: fullChartCompletions)
+                }
+
+                HStack {
+                    Spacer()
+                    Button(action: startQuiz) {
+                        Text("Start")
+                            .font(.headline)
+                            .frame(maxWidth: 220)
+                            .padding()
+                            .background(includeSomething ? Color.accentColor : Color.secondary.opacity(0.3))
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .disabled(!includeSomething)
+                    Spacer()
+                }
+            }
+            .padding()
+        }
+    }
+
+    private var quizBoard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Tap to cycle: blank → Hit → Double → Stand → Split → blank. Long press a cell to mark surrender. Drag across cells to apply the same choice while your finger is down.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
+
+            StrategyQuizGrid(
+                sections: sections,
+                dealerValues: dealerValues,
+                selections: $selections
+            )
+            .id(quizID)
+        }
+        .padding(.bottom)
+    }
+
+    private var includeSomething: Bool {
+        includeHard || includeSoft || includePairs || includeSurrender
+    }
+
+    private func statRow(title: String, value: Int) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text("\(value)")
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func startQuiz() {
+        guard includeSomething else { return }
+
+        let builder = BasicStrategyChartBuilder(rules: rules)
+        sections = builder.sections(
+            includeHard: includeHard,
+            includeSoft: includeSoft,
+            includePairs: includePairs,
+            includeSurrender: includeSurrender
+        )
+        resetSelections()
+        stage = .quiz
+        result = nil
+        quizID = UUID()
+    }
+
+    private func resetSelections() {
+        var newSelections: [UUID: PlayerAction?] = [:]
+        for section in sections {
+            for row in section.rows {
+                for cell in row.cells {
+                    newSelections[cell.id] = nil
+                }
+            }
+        }
+        selections = newSelections
+    }
+
+    private func submitQuiz() {
+        let evaluation = evaluateSelections()
+        result = evaluation
+        if evaluation.isPerfect {
+            recordSuccess(for: evaluation)
+        }
+        showResultAlert = true
+    }
+
+    private func evaluateSelections() -> StrategyQuizResult {
+        var incorrect = 0
+        var sectionStatus: [StrategyChartSectionType: Bool] = [:]
+
+        for section in sections {
+            var allCorrect = true
+            for row in section.rows {
+                for cell in row.cells {
+                    let guess = selections[cell.id] ?? nil
+                    if guess != cell.baseAction {
+                        incorrect += 1
+                        allCorrect = false
+                    }
+                }
+            }
+            sectionStatus[section.type] = allCorrect
+        }
+
+        return StrategyQuizResult(
+            incorrectCount: incorrect,
+            includedSections: sections.map { $0.type },
+            sectionStatus: sectionStatus
+        )
+    }
+
+    private func recordSuccess(for result: StrategyQuizResult) {
+        for section in result.includedSections {
+            guard result.sectionStatus[section] == true else { continue }
+            switch section {
+            case .hardTotals: hardCompletions += 1
+            case .softTotals: softCompletions += 1
+            case .pairSplitting: pairCompletions += 1
+            case .surrender: surrenderCompletions += 1
+            }
+        }
+
+        if result.includesAllSections && result.isPerfect {
+            fullChartCompletions += 1
+        }
+    }
+
+    private var resultAlertTitle: String {
+        guard let result else { return "" }
+        return result.isPerfect ? "Perfect!" : "Keep Going"
+    }
+
+    private var resultAlertMessage: String {
+        guard let result else { return "" }
+        if result.isPerfect {
+            return "Everything matched the basic strategy chart."
+        }
+        return "You have \(result.incorrectCount) cell(s) incorrect. Adjust the chart and try again."
+    }
+
+    @ViewBuilder
+    private func alertActions() -> some View {
+        guard let result else {
+            Button("OK", role: .cancel) { }
+            return
+        }
+
+        if result.isPerfect {
+            Button("Back to Start") {
+                stage = .intro
+                OrientationManager.restorePortrait()
+            }
+        } else {
+            Button("Keep Practicing", role: .cancel) { }
+        }
+    }
+}
+
+struct StrategyQuizGrid: View {
+    let sections: [StrategyChartSectionData]
+    let dealerValues: [Int]
+    @Binding var selections: [UUID: PlayerAction?]
+
+    @State private var cellFrames: [UUID: CGRect] = [:]
+    @State private var dragAction: PlayerAction?
+    @State private var draggedCellIDs: Set<UUID> = []
+
+    private var columns: [GridItem] {
+        [GridItem(.fixed(90))] + Array(repeating: GridItem(.flexible(minimum: 30)), count: dealerValues.count)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(sections) { section in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(section.title)
+                            .font(.headline)
+                        LazyVGrid(columns: columns, spacing: 6) {
+                            Text("")
+                            ForEach(dealerValues, id: \.self) { value in
+                                Text(value == 11 ? "A" : "\(value)")
+                                    .font(.caption.bold())
+                                    .frame(maxWidth: .infinity)
+                            }
+
+                            ForEach(section.rows) { row in
+                                Text(row.label)
+                                    .font(.caption)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 2)
+                                ForEach(row.cells) { cell in
+                                    quizCell(for: cell)
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color.secondary.opacity(0.06))
+                    .cornerRadius(12)
+                }
+            }
+            .padding()
+        }
+        .coordinateSpace(name: "quizGrid")
+        .onPreferenceChange(QuizCellFramePreferenceKey.self) { cellFrames = $0 }
+        .simultaneousGesture(dragGesture)
+        .onDisappear {
+            dragAction = nil
+            draggedCellIDs.removeAll()
+        }
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("quizGrid"))
+            .onChanged { value in
+                handleDrag(at: value.location)
+            }
+            .onEnded { _ in
+                dragAction = nil
+                draggedCellIDs.removeAll()
+            }
+    }
+
+    private func handleDrag(at location: CGPoint) {
+        guard let targetID = cellFrames.first(where: { $0.value.contains(location) })?.key else { return }
+
+        if dragAction == nil {
+            draggedCellIDs.removeAll()
+        }
+
+        guard !draggedCellIDs.contains(targetID) else { return }
+
+        if let dragAction {
+            selections[targetID] = dragAction
+        } else {
+            let next = nextSelection(from: selections[targetID] ?? nil)
+            selections[targetID] = next
+            dragAction = next
+        }
+
+        draggedCellIDs.insert(targetID)
+    }
+
+    private func quizCell(for cell: ChartCellData) -> some View {
+        let selection = selections[cell.id] ?? nil
+        return StrategyQuizCellView(selection: selection)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                let next = nextSelection(from: selection)
+                selections[cell.id] = next
+                dragAction = next
+            }
+            .onLongPressGesture {
+                selections[cell.id] = .surrender
+                dragAction = .surrender
+            }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: QuizCellFramePreferenceKey.self,
+                        value: [cell.id: proxy.frame(in: .named("quizGrid"))]
+                    )
+                }
+            )
+    }
+
+    private func nextSelection(from current: PlayerAction?) -> PlayerAction? {
+        let cycle: [PlayerAction] = [.hit, .double, .stand, .split]
+
+        guard let current else { return cycle.first }
+
+        if let index = cycle.firstIndex(of: current) {
+            let nextIndex = cycle.index(after: index)
+            return nextIndex < cycle.count ? cycle[nextIndex] : nil
+        }
+
+        // If the current value is surrender, restart the cycle at hit
+        return cycle.first
+    }
+}
+
+struct StrategyQuizCellView: View {
+    let selection: PlayerAction?
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(cellColor)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if let selection {
+                Text(label(for: selection))
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(.primary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .aspectRatio(1, contentMode: .fit)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    private var cellColor: Color {
+        guard let selection else { return Color.secondary.opacity(0.1) }
+        return chartActionColor(selection).opacity(0.35)
+    }
+
+    private func label(for action: PlayerAction) -> String {
+        switch action {
+        case .hit: return "H"
+        case .double: return "D"
+        case .stand: return "S"
+        case .split: return "P"
+        case .surrender: return "R"
+        }
+    }
+}
+
 // MARK: - Training Suite
 
 struct TrainingOption: Identifiable {
@@ -3722,7 +4300,7 @@ struct TrainingSuiteView: View {
         TrainingOption(
             title: "Strategy Quiz",
             icon: "questionmark.square.dashed",
-            destination: AnyView(PlaceholderFeatureView(title: "Strategy Quiz"))
+            destination: AnyView(StrategyQuizView(rules: GameRules.defaultStrategyRules))
         ),
         TrainingOption(
             title: "Hand Simulation",
@@ -6085,6 +6663,11 @@ struct TrainingStatsView: View {
     @AppStorage("deckCountThroughSessions") private var storedSessions: Data = Data()
     @AppStorage("cardSortingAttempts") private var storedCardSorting: Data = Data()
     @AppStorage("speedCounterSessions") private var storedSpeedCounter: Data = Data()
+    @AppStorage("strategyQuizHardCompletions") private var quizHardCompletions: Int = 0
+    @AppStorage("strategyQuizSoftCompletions") private var quizSoftCompletions: Int = 0
+    @AppStorage("strategyQuizPairCompletions") private var quizPairCompletions: Int = 0
+    @AppStorage("strategyQuizSurrenderCompletions") private var quizSurrenderCompletions: Int = 0
+    @AppStorage("strategyQuizFullCompletions") private var quizFullCompletions: Int = 0
 
     private var sessions: [DeckCountThroughSession] {
         (try? JSONDecoder().decode([DeckCountThroughSession].self, from: storedSessions)) ?? []
@@ -6160,8 +6743,16 @@ struct TrainingStatsView: View {
                 statRow(title: "% Perfect Shoes", overall: speedCounterOverall.perfectPercentage, weekly: speedCounterWeekly.perfectPercentage, formatter: percentLabel)
             }
 
+            Section("Strategy Quiz") {
+                statSummaryRow(title: "Hard completions", value: quizHardCompletions)
+                statSummaryRow(title: "Soft completions", value: quizSoftCompletions)
+                statSummaryRow(title: "Pair completions", value: quizPairCompletions)
+                statSummaryRow(title: "Surrender completions", value: quizSurrenderCompletions)
+                statSummaryRow(title: "Full chart completions", value: quizFullCompletions)
+            }
+
             Section("More Training Stats") {
-                Text("Strategy Quiz, Hand Simulation, Deck Estimation and Bet Sizing, and Test Out stats will appear here once those drills are available.")
+                Text("Hand Simulation, Deck Estimation and Bet Sizing, and Test Out stats will appear here once those drills are available.")
                     .foregroundColor(.secondary)
                     .font(.subheadline)
                     .padding(.vertical, 4)
@@ -6177,6 +6768,15 @@ struct TrainingStatsView: View {
                 .font(.headline)
             Text("All-time: \(formatter(overall))")
             Text("Last 7 days: \(formatter(weekly))")
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func statSummaryRow(title: String, value: Int) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text("\(value)")
                 .foregroundColor(.secondary)
         }
     }
@@ -6205,14 +6805,7 @@ struct TrainingStatsView: View {
 }
 
 struct HomeView: View {
-    private let defaultRules = GameRules(
-        decks: 6,
-        dealerHitsSoft17: true,
-        doubleAfterSplit: true,
-        surrenderAllowed: true,
-        blackjackPayout: 1.5,
-        penetration: 0.75
-    )
+    private let defaultRules = GameRules.defaultStrategyRules
 
     var body: some View {
         NavigationStack {
