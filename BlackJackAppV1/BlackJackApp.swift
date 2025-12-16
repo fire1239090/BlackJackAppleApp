@@ -4163,8 +4163,9 @@ struct StrategyQuizGrid: View {
     }
 
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named("quizGrid"))
+        DragGesture(minimumDistance: 8, coordinateSpace: .named("quizGrid"))
             .onChanged { value in
+                guard abs(value.translation.width) + abs(value.translation.height) > 2 else { return }
                 handleDrag(at: value.location)
             }
             .onEnded { _ in
