@@ -3879,6 +3879,7 @@ struct StrategyQuizView: View {
     @State private var stage: Stage = .intro
     @State private var sections: [StrategyChartSectionData] = []
     @State private var selections: [UUID: PlayerAction?] = [:]
+    @State private var selectedAction: PlayerAction? = .hit
     @State private var result: StrategyQuizResult?
     @State private var showResultAlert: Bool = false
     @State private var quizID = UUID()
@@ -3971,15 +3972,20 @@ struct StrategyQuizView: View {
 
     private var quizBoard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Tap to cycle: blank → Hit → Double → Stand → Split → blank. Long press a cell to mark surrender. Drag across cells to apply the same choice while your finger is down.")
+            Text("Choose an action from the legend and tap or drag across cells to paint that action onto the chart.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .padding(.horizontal)
 
+            actionLegend
+
+            dealerHeaderRow
+
             StrategyQuizGrid(
                 sections: sections,
                 dealerValues: dealerValues,
-                selections: $selections
+                selections: $selections,
+                selectedAction: $selectedAction
             )
             .id(quizID)
         }
@@ -3990,12 +3996,87 @@ struct StrategyQuizView: View {
         includeHard || includeSoft || includePairs || includeSurrender
     }
 
+    private var actionLegend: some View {
+        let actions: [(PlayerAction?, String)] = [
+            (.hit, "Hit"),
+            (.double, "Double"),
+            (.stand, "Stand"),
+            (.split, "Split"),
+            (.surrender, "Surrender"),
+            (nil, "Blank")
+        ]
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(actions, id: \.0) { action, label in
+                    Button {
+                        selectedAction = action
+                    } label: {
+                        HStack(spacing: 8) {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(legendColor(for: action))
+                                .frame(width: 28, height: 20)
+                                .overlay(
+                                    Text(actionLabel(for: action))
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.primary)
+                                )
+                            Text(label)
+                                .font(.subheadline)
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(selectedAction == action ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(selectedAction == action ? Color.accentColor : Color.clear, lineWidth: 1.5)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    private var dealerHeaderRow: some View {
+        LazyVGrid(columns: quizColumns, spacing: 6) {
+            Text("")
+            ForEach(dealerValues, id: \.self) { value in
+                Text(value == 11 ? "A" : "\(value)")
+                    .font(.caption.bold())
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.horizontal)
+    }
+
     private func statRow(title: String, value: Int) -> some View {
         HStack {
             Text(title)
             Spacer()
             Text("\(value)")
                 .foregroundColor(.secondary)
+        }
+    }
+
+    private var quizColumns: [GridItem] {
+        [GridItem(.fixed(90))] + Array(repeating: GridItem(.flexible(minimum: 30)), count: dealerValues.count)
+    }
+
+    private func legendColor(for action: PlayerAction?) -> Color {
+        guard let action else { return Color.secondary.opacity(0.15) }
+        return chartActionColor(action).opacity(0.35)
+    }
+
+    private func actionLabel(for action: PlayerAction?) -> String {
+        guard let action else { return "" }
+        switch action {
+        case .hit: return "H"
+        case .double: return "D"
+        case .stand: return "S"
+        case .split: return "P"
+        case .surrender: return "R"
         }
     }
 
@@ -4111,6 +4192,7 @@ struct StrategyQuizGrid: View {
     let sections: [StrategyChartSectionData]
     let dealerValues: [Int]
     @Binding var selections: [UUID: PlayerAction?]
+    @Binding var selectedAction: PlayerAction?
 
     @State private var cellFrames: [UUID: CGRect] = [:]
     @State private var dragAction: PlayerAction?
@@ -4128,13 +4210,6 @@ struct StrategyQuizGrid: View {
                         Text(section.title)
                             .font(.headline)
                         LazyVGrid(columns: columns, spacing: 6) {
-                            Text("")
-                            ForEach(dealerValues, id: \.self) { value in
-                                Text(value == 11 ? "A" : "\(value)")
-                                    .font(.caption.bold())
-                                    .frame(maxWidth: .infinity)
-                            }
-
                             ForEach(section.rows) { row in
                                 Text(row.label)
                                     .font(.caption)
@@ -4183,14 +4258,8 @@ struct StrategyQuizGrid: View {
 
         guard !draggedCellIDs.contains(targetID) else { return }
 
-        if let dragAction {
-            selections[targetID] = dragAction
-        } else {
-            let next = nextSelection(from: selections[targetID] ?? nil)
-            selections[targetID] = next
-            dragAction = next
-        }
-
+        selections[targetID] = selectedAction
+        dragAction = selectedAction
         draggedCellIDs.insert(targetID)
     }
 
@@ -4199,13 +4268,8 @@ struct StrategyQuizGrid: View {
         return StrategyQuizCellView(selection: selection)
             .contentShape(Rectangle())
             .onTapGesture {
-                let next = nextSelection(from: selection)
-                selections[cell.id] = next
-                dragAction = next
-            }
-            .onLongPressGesture {
-                selections[cell.id] = .surrender
-                dragAction = .surrender
+                selections[cell.id] = selectedAction
+                dragAction = selectedAction
             }
             .background(
                 GeometryReader { proxy in
@@ -4215,20 +4279,6 @@ struct StrategyQuizGrid: View {
                     )
                 }
             )
-    }
-
-    private func nextSelection(from current: PlayerAction?) -> PlayerAction? {
-        let cycle: [PlayerAction] = [.hit, .double, .stand, .split]
-
-        guard let current else { return cycle.first }
-
-        if let index = cycle.firstIndex(of: current) {
-            let nextIndex = cycle.index(after: index)
-            return nextIndex < cycle.count ? cycle[nextIndex] : nil
-        }
-
-        // If the current value is surrender, restart the cycle at hit
-        return cycle.first
     }
 }
 
