@@ -2314,7 +2314,7 @@ struct StrategyAdvisor {
         case 10:
             return (2...9).contains(dealerUp.value) ? .double : .hit
         case 11:
-            return dealerUp.rank == 1 ? .hit : .double
+            return .double
         case 12:
             return (4...6).contains(dealerUp.value) ? .stand : .hit
         case 13...16:
