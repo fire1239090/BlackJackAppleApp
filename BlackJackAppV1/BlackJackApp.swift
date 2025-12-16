@@ -4092,18 +4092,17 @@ struct StrategyQuizView: View {
 
     @ViewBuilder
     private func alertActions() -> some View {
-        guard let result else {
-            Button("OK", role: .cancel) { }
-            return
-        }
-
-        if result.isPerfect {
-            Button("Back to Start") {
-                stage = .intro
-                OrientationManager.restorePortrait()
+        if let result {
+            if result.isPerfect {
+                Button("Back to Start") {
+                    stage = .intro
+                    OrientationManager.restorePortrait()
+                }
+            } else {
+                Button("Keep Practicing", role: .cancel) { }
             }
         } else {
-            Button("Keep Practicing", role: .cancel) { }
+            EmptyView()
         }
     }
 }
