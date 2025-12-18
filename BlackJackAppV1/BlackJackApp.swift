@@ -4862,7 +4862,7 @@ struct BetSizingTrainingView: View {
         )) {
             Button("Got it", role: .cancel) { guidanceMessage = nil }
         }
-        .onAppear(perform: generateScenario)
+        .onAppear { generateScenario() }
     }
 
     private var statRow: some View {
@@ -5026,7 +5026,7 @@ struct CombinedTrainingView: View {
         )) {
             Button("Understood", role: .cancel) { guidanceMessage = nil }
         }
-        .onAppear(perform: generateScenario)
+        .onAppear { generateScenario() }
     }
 
     private func statTile(title: String, value: String) -> some View {
