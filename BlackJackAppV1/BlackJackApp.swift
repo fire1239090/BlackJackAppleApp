@@ -4741,7 +4741,7 @@ struct DeckEstimationTrainingView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: .infinity)
-                    .frame(height: 320)
+                    .frame(height: 640)
                     .background(Color.secondary.opacity(0.05))
                     .cornerRadius(16)
 
@@ -5029,7 +5029,7 @@ struct CombinedTrainingView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: .infinity)
-                    .frame(height: 300)
+                    .frame(height: 600)
                     .background(Color.secondary.opacity(0.05))
                     .cornerRadius(16)
 
