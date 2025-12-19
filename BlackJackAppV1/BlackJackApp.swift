@@ -4428,6 +4428,11 @@ private enum DeckBetTrainingConstants {
     }
 }
 
+private struct TrainingAlert: Identifiable {
+    let id = UUID()
+    let message: String
+}
+
 enum DeckBetTrainingMode: String, Identifiable, CaseIterable, Codable, Hashable {
     case deckEstimation = "Deck Estimation Only"
     case betSizing = "Bet Sizing Only"
@@ -4722,6 +4727,8 @@ struct DeckEstimationTrainingView: View {
     @State private var currentDecks: Double = DeckBetTrainingConstants.deckCounts.randomElement() ?? 0.25
     @State private var selectedGuess: Double = DeckBetTrainingConstants.deckCounts.first ?? 0.25
     @State private var feedback: String?
+    @State private var correctionAlert: TrainingAlert?
+    @State private var pendingDecks: Double?
 
     var body: some View {
         ScrollView {
@@ -4734,7 +4741,7 @@ struct DeckEstimationTrainingView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: .infinity)
-                    .frame(height: 240)
+                    .frame(height: 320)
                     .background(Color.secondary.opacity(0.05))
                     .cornerRadius(16)
 
@@ -4772,6 +4779,19 @@ struct DeckEstimationTrainingView: View {
         }
         .navigationTitle("Deck Estimation")
         .navigationBarTitleDisplayMode(.inline)
+        .alert(item: $correctionAlert) { alert in
+            Alert(
+                title: Text("Correction"),
+                message: Text(alert.message),
+                dismissButton: .default(Text("Got it")) {
+                    if let next = pendingDecks {
+                        currentDecks = next
+                        selectedGuess = DeckBetTrainingConstants.deckCounts.first ?? 0.25
+                        pendingDecks = nil
+                    }
+                }
+            )
+        }
     }
 
     private var accuracySummary: some View {
@@ -4791,14 +4811,25 @@ struct DeckEstimationTrainingView: View {
     }
 
     private func submitGuess() {
-        let correct = abs(selectedGuess - currentDecks) < 0.001
+        let difference = abs(selectedGuess - currentDecks)
+        let correct = difference <= 0.25 + 0.0001
         stats.deckEstimationTotal += 1
         if correct { stats.deckEstimationCorrect += 1 }
 
-        feedback = correct ? "Correct! Nice read on the discard tray." : "Not quite. It was \(DeckBetTrainingConstants.deckLabel(currentDecks)) decks."
+        let correctLabel = DeckBetTrainingConstants.deckLabel(currentDecks)
+        feedback = correct
+            ? "Within the margin! The discard tray showed \(correctLabel) decks."
+            : "Not quite. It was \(correctLabel) decks."
 
-        currentDecks = DeckBetTrainingConstants.deckCounts.randomElement() ?? currentDecks
-        selectedGuess = DeckBetTrainingConstants.deckCounts.first ?? 0.25
+        let nextDecks = DeckBetTrainingConstants.deckCounts.randomElement() ?? currentDecks
+
+        if correct {
+            currentDecks = nextDecks
+            selectedGuess = DeckBetTrainingConstants.deckCounts.first ?? 0.25
+        } else {
+            pendingDecks = nextDecks
+            correctionAlert = TrainingAlert(message: "The tray held \(correctLabel) decks.")
+        }
     }
 
     private func formattedPercent(_ value: Double?) -> String {
@@ -4816,7 +4847,8 @@ struct BetSizingTrainingView: View {
     @State private var decksInDiscard: Double = 0.5
     @State private var betInput: String = ""
     @State private var resultMessage: String?
-    @State private var guidanceMessage: String?
+    @State private var activeAlert: TrainingAlert?
+    @State private var pendingScenarioAfterAlert: Bool = false
 
     var body: some View {
         ScrollView {
@@ -4856,11 +4888,17 @@ struct BetSizingTrainingView: View {
         }
         .navigationTitle("Bet Sizing")
         .navigationBarTitleDisplayMode(.inline)
-        .alert(guidanceMessage ?? "", isPresented: Binding<Bool>(
-            get: { guidanceMessage != nil },
-            set: { newValue in if !newValue { guidanceMessage = nil } }
-        )) {
-            Button("Got it", role: .cancel) { guidanceMessage = nil }
+        .alert(item: $activeAlert) { alert in
+            Alert(
+                title: Text("Note"),
+                message: Text(alert.message),
+                dismissButton: .default(Text("Got it")) {
+                    if pendingScenarioAfterAlert {
+                        pendingScenarioAfterAlert = false
+                        generateScenario(resetFeedback: false)
+                    }
+                }
+            )
         }
         .onAppear { generateScenario() }
     }
@@ -4896,7 +4934,6 @@ struct BetSizingTrainingView: View {
         betInput = ""
         if resetFeedback {
             resultMessage = nil
-            guidanceMessage = nil
         }
     }
 
@@ -4922,9 +4959,15 @@ struct BetSizingTrainingView: View {
         if evaluation.isCorrect { stats.betSizingCorrect += 1 }
 
         resultMessage = evaluation.feedback
-        guidanceMessage = evaluation.guidance
-
-        generateScenario(resetFeedback: false)
+        if let guidance = evaluation.guidance {
+            activeAlert = TrainingAlert(message: guidance)
+            pendingScenarioAfterAlert = true
+        } else if !evaluation.isCorrect {
+            activeAlert = TrainingAlert(message: evaluation.feedback)
+            pendingScenarioAfterAlert = true
+        } else {
+            generateScenario(resetFeedback: false)
+        }
     }
 
     private func evaluateBet(_ bet: Double, trueCount: Double) -> (isCorrect: Bool, feedback: String, guidance: String?) {
@@ -4969,7 +5012,8 @@ struct CombinedTrainingView: View {
     @State private var decksInDiscard: Double = 0.5
     @State private var betInput: String = ""
     @State private var resultMessage: String?
-    @State private var guidanceMessage: String?
+    @State private var activeAlert: TrainingAlert?
+    @State private var pendingScenarioAfterAlert: Bool = false
 
     var body: some View {
         ScrollView {
@@ -4985,7 +5029,7 @@ struct CombinedTrainingView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: .infinity)
-                    .frame(height: 220)
+                    .frame(height: 300)
                     .background(Color.secondary.opacity(0.05))
                     .cornerRadius(16)
 
@@ -5020,11 +5064,17 @@ struct CombinedTrainingView: View {
         }
         .navigationTitle("Combined Training")
         .navigationBarTitleDisplayMode(.inline)
-        .alert(guidanceMessage ?? "", isPresented: Binding<Bool>(
-            get: { guidanceMessage != nil },
-            set: { newValue in if !newValue { guidanceMessage = nil } }
-        )) {
-            Button("Understood", role: .cancel) { guidanceMessage = nil }
+        .alert(item: $activeAlert) { alert in
+            Alert(
+                title: Text("Note"),
+                message: Text(alert.message),
+                dismissButton: .default(Text("Understood")) {
+                    if pendingScenarioAfterAlert {
+                        pendingScenarioAfterAlert = false
+                        generateScenario(resetFeedback: false)
+                    }
+                }
+            )
         }
         .onAppear { generateScenario() }
     }
@@ -5055,7 +5105,6 @@ struct CombinedTrainingView: View {
         betInput = ""
         if resetFeedback {
             resultMessage = nil
-            guidanceMessage = nil
         }
     }
 
@@ -5073,9 +5122,15 @@ struct CombinedTrainingView: View {
         if evaluation.isCorrect { stats.combinedCorrect += 1 }
 
         resultMessage = evaluation.feedback
-        guidanceMessage = evaluation.guidance
-
-        generateScenario(resetFeedback: false)
+        if let guidance = evaluation.guidance {
+            activeAlert = TrainingAlert(message: guidance)
+            pendingScenarioAfterAlert = true
+        } else if !evaluation.isCorrect {
+            activeAlert = TrainingAlert(message: evaluation.feedback)
+            pendingScenarioAfterAlert = true
+        } else {
+            generateScenario(resetFeedback: false)
+        }
     }
 
     private func evaluateBet(_ bet: Double, trueCount: Double) -> (isCorrect: Bool, feedback: String, guidance: String?) {
