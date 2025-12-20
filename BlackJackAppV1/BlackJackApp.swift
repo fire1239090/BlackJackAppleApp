@@ -4360,7 +4360,7 @@ struct TrainingSuiteView: View {
         TrainingOption(
             title: "Deck Estimation and Bet Sizing",
             icon: "scalemass",
-            destination: AnyView(PlaceholderFeatureView(title: "Deck Estimation and Bet Sizing"))
+            destination: AnyView(DeckEstimationBetSizingView())
         ),
         TrainingOption(
             title: "Test Out",
@@ -4408,6 +4408,761 @@ struct TrainingSuiteView: View {
             }
             .padding()
         }
+    }
+}
+
+private enum DeckBetTrainingConstants {
+    static let deckCounts: [Double] = stride(from: 0.25, through: 6.0, by: 0.25).map { value in
+        Double(round(value * 100) / 100)
+    }
+    static let trueCountRange = 0...7
+
+    static func deckLabel(_ value: Double) -> String {
+        let formatted = String(format: "%.2f", value)
+        return formatted.replacingOccurrences(of: ".00", with: "").replacingOccurrences(of: "0$", with: "", options: .regularExpression)
+    }
+
+    static func deckAssetName(for value: Double, showDividers: Bool) -> String {
+        let label = deckLabel(value)
+        return "\(label)_decks_\(showDividers ? "with_dividers" : "without_dividers")"
+    }
+}
+
+private struct TrainingAlert: Identifiable {
+    let id = UUID()
+    let message: String
+}
+
+enum DeckBetTrainingMode: String, Identifiable, CaseIterable, Codable, Hashable {
+    case deckEstimation = "Deck Estimation Only"
+    case betSizing = "Bet Sizing Only"
+    case combined = "Combined Training"
+
+    var id: String { rawValue }
+}
+
+struct BetSizingTable: Codable, Hashable {
+    private(set) var bets: [Int: Double]
+
+    init(bets: [Int: Double]) {
+        var normalized: [Int: Double] = [:]
+        for tc in DeckBetTrainingConstants.trueCountRange {
+            normalized[tc] = bets[tc] ?? 0
+        }
+        self.bets = normalized
+    }
+
+    static var `default`: BetSizingTable {
+        let pairs = DeckBetTrainingConstants.trueCountRange.map { trueCount in
+            (trueCount, Double(trueCount) * 100)
+        }
+        return BetSizingTable(bets: Dictionary(uniqueKeysWithValues: pairs))
+    }
+
+    static var defaultInputs: [Int: String] {
+        Dictionary(uniqueKeysWithValues: DeckBetTrainingConstants.trueCountRange.map { trueCount in
+            (trueCount, String(Int(Double(trueCount) * 100)))
+        })
+    }
+
+    mutating func update(trueCount: Int, value: Double) {
+        let clamped = min(max(trueCount, DeckBetTrainingConstants.trueCountRange.lowerBound), DeckBetTrainingConstants.trueCountRange.upperBound)
+        bets[clamped] = value
+    }
+
+    func value(for trueCount: Int) -> Double {
+        let clamped = min(max(trueCount, DeckBetTrainingConstants.trueCountRange.lowerBound), DeckBetTrainingConstants.trueCountRange.upperBound)
+        return bets[clamped, default: 0]
+    }
+
+    func formattedValue(for trueCount: Int) -> String {
+        let value = value(for: trueCount)
+        if value.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(Int(value))
+        }
+        return String(format: "%.2f", value)
+    }
+
+    func hash(into hasher: inout Hasher) {
+        for key in DeckBetTrainingConstants.trueCountRange {
+            hasher.combine(bets[key, default: 0])
+        }
+    }
+
+    static func == (lhs: BetSizingTable, rhs: BetSizingTable) -> Bool {
+        DeckBetTrainingConstants.trueCountRange.allSatisfy { key in
+            lhs.bets[key, default: 0] == rhs.bets[key, default: 0]
+        }
+    }
+}
+
+struct DeckBetTrainingStats: Codable, Hashable {
+    var deckEstimationCorrect: Int = 0
+    var deckEstimationTotal: Int = 0
+    var betSizingCorrect: Int = 0
+    var betSizingTotal: Int = 0
+    var combinedCorrect: Int = 0
+    var combinedTotal: Int = 0
+
+    static var empty: DeckBetTrainingStats { DeckBetTrainingStats() }
+
+    var deckEstimationAccuracy: Double? {
+        guard deckEstimationTotal > 0 else { return nil }
+        return Double(deckEstimationCorrect) / Double(deckEstimationTotal)
+    }
+
+    var betSizingAccuracy: Double? {
+        guard betSizingTotal > 0 else { return nil }
+        return Double(betSizingCorrect) / Double(betSizingTotal)
+    }
+
+    var combinedAccuracy: Double? {
+        guard combinedTotal > 0 else { return nil }
+        return Double(combinedCorrect) / Double(combinedTotal)
+    }
+
+    func encoded() -> Data {
+        (try? JSONEncoder().encode(self)) ?? Data()
+    }
+
+    static func decode(from data: Data) -> DeckBetTrainingStats {
+        (try? JSONDecoder().decode(DeckBetTrainingStats.self, from: data)) ?? .empty
+    }
+}
+
+struct DeckBetTrainingConfig: Hashable {
+    let mode: DeckBetTrainingMode
+    let showDividers: Bool
+    var betTable: BetSizingTable
+}
+
+struct DeckEstimationBetSizingView: View {
+    @State private var selectedMode: DeckBetTrainingMode?
+    @State private var showDividers: Bool = true
+    @State private var betTable: BetSizingTable = .default
+    @State private var betInputs: [Int: String] = BetSizingTable.defaultInputs
+    @State private var path = NavigationPath()
+
+    @AppStorage("deckBetTrainingStats") private var storedStats: Data = Data()
+    @State private var stats: DeckBetTrainingStats = .empty
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Build your deck estimation and bet sizing intuition. Choose a mode, adjust your bet ramp if desired, then start training.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    modeSelection
+
+                    if selectedMode == .deckEstimation || selectedMode == .combined {
+                        Toggle("Show Deck Dividers", isOn: $showDividers)
+                            .toggleStyle(.switch)
+                    }
+
+                    if selectedMode == .betSizing || selectedMode == .combined {
+                        BetSizingTableView(
+                            betTable: betTable,
+                            isEditable: true,
+                            betInputs: betInputs,
+                            title: "True Count Bet Table",
+                            onUpdate: updateBet(for:newValue:)
+                        )
+                    }
+
+                    Button(action: startTraining) {
+                        Text("Start Training")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(selectedMode == nil ? Color.secondary.opacity(0.2) : Color.accentColor)
+                            .foregroundColor(selectedMode == nil ? .secondary : .white)
+                            .cornerRadius(12)
+                    }
+                    .disabled(selectedMode == nil)
+                }
+                .padding()
+            }
+            .navigationTitle("Deck Estimation & Bet Sizing")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: DeckBetTrainingConfig.self) { config in
+                switch config.mode {
+                case .deckEstimation:
+                    DeckEstimationTrainingView(showDividers: config.showDividers, stats: $stats)
+                case .betSizing:
+                    BetSizingTrainingView(config: config, stats: $stats)
+                case .combined:
+                    CombinedTrainingView(config: config, stats: $stats)
+                }
+            }
+        }
+        .onAppear {
+            stats = DeckBetTrainingStats.decode(from: storedStats)
+        }
+        .onChange(of: stats) { newValue in
+            storedStats = newValue.encoded()
+        }
+    }
+
+    private var modeSelection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Mode")
+                .font(.headline)
+            ForEach(DeckBetTrainingMode.allCases) { mode in
+                Button {
+                    withAnimation { selectedMode = mode }
+                } label: {
+                    HStack {
+                        Image(systemName: selectedMode == mode ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(selectedMode == mode ? .accentColor : .secondary)
+                        Text(mode.rawValue)
+                            .foregroundColor(.primary)
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                    .background(Color.secondary.opacity(0.08))
+                    .cornerRadius(10)
+                }
+            }
+        }
+    }
+
+    private func updateBet(for trueCount: Int, newValue: String) {
+        betInputs[trueCount] = newValue
+        if let parsed = Double(newValue) {
+            betTable.update(trueCount: trueCount, value: parsed)
+        }
+    }
+
+    private func startTraining() {
+        guard let mode = selectedMode else { return }
+        let config = DeckBetTrainingConfig(mode: mode, showDividers: showDividers, betTable: betTable)
+        path.append(config)
+    }
+}
+
+struct BetSizingTableView: View {
+    let betTable: BetSizingTable
+    var isEditable: Bool = false
+    var betInputs: [Int: String] = [:]
+    var title: String = "True Count Table"
+    var onUpdate: ((Int, String) -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+
+            Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+                GridRow {
+                    Text("True Counts")
+                        .font(.caption.bold())
+                        .frame(maxWidth: .infinity)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    ForEach(DeckBetTrainingConstants.trueCountRange, id: \.self) { trueCount in
+                        Text(trueCountLabel(trueCount))
+                            .font(.caption)
+                            .frame(maxWidth: .infinity)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                }
+
+                GridRow {
+                    Text("Bet Sizes")
+                        .font(.caption.bold())
+                        .frame(maxWidth: .infinity)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    ForEach(DeckBetTrainingConstants.trueCountRange, id: \.self) { trueCount in
+                        betCell(for: trueCount)
+                    }
+                }
+            }
+            .padding(12)
+            .background(Color.secondary.opacity(0.08))
+            .cornerRadius(10)
+        }
+    }
+
+    private func betCell(for trueCount: Int) -> some View {
+        Group {
+            if isEditable, let onUpdate {
+                TextField("0", text: Binding(
+                    get: { betInputs[trueCount] ?? betTable.formattedValue(for: trueCount) },
+                    set: { newValue in onUpdate(trueCount, newValue) }
+                ))
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.center)
+                .font(.caption)
+            } else {
+                Text(betTable.formattedValue(for: trueCount))
+                    .font(.caption)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .padding(6)
+        .background(Color.white.opacity(0.6))
+        .cornerRadius(8)
+    }
+
+    private func trueCountLabel(_ value: Int) -> String {
+        if value == 0 { return "0" }
+        if value == DeckBetTrainingConstants.trueCountRange.upperBound {
+            return "+\(value) and above"
+        }
+        return "+\(value)"
+    }
+}
+
+struct DeckEstimationTrainingView: View {
+    let showDividers: Bool
+    @Binding var stats: DeckBetTrainingStats
+
+    @State private var currentDecks: Double = DeckBetTrainingConstants.deckCounts.randomElement() ?? 0.25
+    @State private var selectedGuess: Double = DeckBetTrainingConstants.deckCounts.first ?? 0.25
+    @State private var feedback: String?
+    @State private var correctionAlert: TrainingAlert?
+    @State private var pendingDecks: Double?
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                Text("Estimate the number of decks in the discard tray.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Image(DeckBetTrainingConstants.deckAssetName(for: currentDecks, showDividers: showDividers))
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 320)
+                    .background(Color.secondary.opacity(0.05))
+                    .cornerRadius(16)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("How many decks are present?")
+                        .font(.headline)
+                    Picker("Decks", selection: $selectedGuess) {
+                        ForEach(DeckBetTrainingConstants.deckCounts, id: \.self) { value in
+                            Text(DeckBetTrainingConstants.deckLabel(value)).tag(value)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                Button(action: submitGuess) {
+                    Text("Submit Guess")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+
+                if let feedback {
+                    Text(feedback)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                accuracySummary
+            }
+            .padding()
+        }
+        .navigationTitle("Deck Estimation")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert(item: $correctionAlert) { alert in
+            Alert(
+                title: Text("Correction"),
+                message: Text(alert.message),
+                dismissButton: .default(Text("Got it")) {
+                    if let next = pendingDecks {
+                        currentDecks = next
+                        selectedGuess = DeckBetTrainingConstants.deckCounts.first ?? 0.25
+                        pendingDecks = nil
+                    }
+                }
+            )
+        }
+    }
+
+    private var accuracySummary: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Deck Estimation Correctness")
+                .font(.headline)
+            Text("Correct: \(stats.deckEstimationCorrect) / \(stats.deckEstimationTotal)")
+                .font(.subheadline)
+            Text("Accuracy: \(formattedPercent(stats.deckEstimationAccuracy))")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(12)
+    }
+
+    private func submitGuess() {
+        let difference = abs(selectedGuess - currentDecks)
+        let correct = difference <= 0.25 + 0.0001
+        stats.deckEstimationTotal += 1
+        if correct { stats.deckEstimationCorrect += 1 }
+
+        let correctLabel = DeckBetTrainingConstants.deckLabel(currentDecks)
+        feedback = correct
+            ? "Within the margin! The discard tray showed \(correctLabel) decks."
+            : "Not quite. It was \(correctLabel) decks."
+
+        let nextDecks = DeckBetTrainingConstants.deckCounts.randomElement() ?? currentDecks
+
+        if correct {
+            currentDecks = nextDecks
+            selectedGuess = DeckBetTrainingConstants.deckCounts.first ?? 0.25
+        } else {
+            pendingDecks = nextDecks
+            correctionAlert = TrainingAlert(message: "The tray held \(correctLabel) decks.")
+        }
+    }
+
+    private func formattedPercent(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.0f%%", value * 100)
+    }
+}
+
+struct BetSizingTrainingView: View {
+    let config: DeckBetTrainingConfig
+    @Binding var stats: DeckBetTrainingStats
+
+    @State private var runningCount: Int = 1
+    @State private var decksInPlay: Int = 2
+    @State private var decksInDiscard: Double = 0.5
+    @State private var betInput: String = ""
+    @State private var resultMessage: String?
+    @State private var activeAlert: TrainingAlert?
+    @State private var pendingScenarioAfterAlert: Bool = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                BetSizingTableView(betTable: config.betTable, title: "Your True Count Table")
+
+                statRow
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("What is your bet?")
+                        .font(.headline)
+                    TextField("Enter bet", text: $betInput)
+                        .keyboardType(.numberPad)
+                        .padding()
+                        .background(Color.secondary.opacity(0.08))
+                        .cornerRadius(10)
+                }
+
+                Button(action: gradeBet) {
+                    Text("Submit Bet")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+
+                if let resultMessage {
+                    Text(resultMessage)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Bet Sizing")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert(item: $activeAlert) { alert in
+            Alert(
+                title: Text("Note"),
+                message: Text(alert.message),
+                dismissButton: .default(Text("Got it")) {
+                    if pendingScenarioAfterAlert {
+                        pendingScenarioAfterAlert = false
+                        generateScenario(resetFeedback: false)
+                    }
+                }
+            )
+        }
+        .onAppear { generateScenario() }
+    }
+
+    private var statRow: some View {
+        HStack(spacing: 12) {
+            statTile(title: "Running Count", value: "\(runningCount)")
+            statTile(title: "Decks in Play", value: DeckBetTrainingConstants.deckLabel(Double(decksInPlay)))
+            statTile(title: "Decks in Discard", value: DeckBetTrainingConstants.deckLabel(decksInDiscard))
+        }
+    }
+
+    private func statTile(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(12)
+    }
+
+    private func generateScenario(resetFeedback: Bool = true) {
+        runningCount = Int.random(in: 1...20)
+        decksInPlay = [2, 6, 8].randomElement() ?? 6
+        decksInDiscard = randomDiscard(for: decksInPlay)
+        betInput = ""
+        if resetFeedback {
+            resultMessage = nil
+        }
+    }
+
+    private func randomDiscard(for decksInPlay: Int) -> Double {
+        let cappedPlay = Double(decksInPlay)
+        let upperBound = max(0.5, min(cappedPlay - 0.25, cappedPlay))
+        let raw = Double.random(in: 0.5...upperBound)
+        let truncated = floor(raw * 4) / 4
+        return max(0.5, truncated)
+    }
+
+    private func gradeBet() {
+        guard let betValue = Double(betInput) else {
+            resultMessage = "Please enter a valid number."
+            return
+        }
+
+        let decksRemaining = Double(decksInPlay) - decksInDiscard
+        let trueCount = Double(runningCount) / max(0.25, decksRemaining)
+        let evaluation = evaluateBet(betValue, trueCount: trueCount)
+
+        stats.betSizingTotal += 1
+        if evaluation.isCorrect { stats.betSizingCorrect += 1 }
+
+        resultMessage = evaluation.feedback
+        if let guidance = evaluation.guidance {
+            activeAlert = TrainingAlert(message: guidance)
+            pendingScenarioAfterAlert = true
+        } else if !evaluation.isCorrect {
+            activeAlert = TrainingAlert(message: evaluation.feedback)
+            pendingScenarioAfterAlert = true
+        } else {
+            generateScenario(resetFeedback: false)
+        }
+    }
+
+    private func evaluateBet(_ bet: Double, trueCount: Double) -> (isCorrect: Bool, feedback: String, guidance: String?) {
+        let cappedTrueCount = min(trueCount, Double(DeckBetTrainingConstants.trueCountRange.upperBound))
+        let lower = Int(floor(cappedTrueCount))
+        let upper = Int(ceil(cappedTrueCount))
+        let lowerBet = config.betTable.value(for: lower)
+        let upperBet = config.betTable.value(for: upper)
+
+        if lower == upper {
+            let isCorrect = abs(bet - lowerBet) <= 0.01
+            let feedback = isCorrect ? "Correct! True count +\(lower) maps to $\(Int(lowerBet))." : "True count +\(lower) maps to $\(Int(lowerBet))."
+            return (isCorrect, feedback, nil)
+        }
+
+        let minAccepted = min(lowerBet, upperBet)
+        let maxAccepted = max(lowerBet, upperBet)
+        let isCorrect = bet >= minAccepted && bet <= maxAccepted
+        let fraction = cappedTrueCount - Double(lower)
+        let interpolated = lowerBet + fraction * (upperBet - lowerBet)
+        let guidanceNeeded = isCorrect && interpolated > 0 && abs(bet - interpolated) > interpolated * 0.25
+
+        let feedback: String
+        if isCorrect {
+            feedback = "Nice work. True count +\(String(format: "%.2f", cappedTrueCount)) supports between $\(Int(minAccepted)) and $\(Int(maxAccepted))."
+        } else {
+            feedback = "True count +\(String(format: "%.2f", cappedTrueCount)) calls for $\(Int(minAccepted))–$\(Int(maxAccepted))."
+        }
+
+        let guidance = guidanceNeeded ? "Your answer was acceptable, but an interpolated bet is about $\(Int(interpolated))." : nil
+
+        return (isCorrect, feedback, guidance)
+    }
+}
+
+struct CombinedTrainingView: View {
+    let config: DeckBetTrainingConfig
+    @Binding var stats: DeckBetTrainingStats
+
+    @State private var runningCount: Int = 1
+    @State private var decksInPlay: Int = 2
+    @State private var decksInDiscard: Double = 0.5
+    @State private var betInput: String = ""
+    @State private var resultMessage: String?
+    @State private var activeAlert: TrainingAlert?
+    @State private var pendingScenarioAfterAlert: Bool = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                BetSizingTableView(betTable: config.betTable, title: "Your True Count Table")
+
+                HStack(spacing: 12) {
+                    statTile(title: "Running Count", value: "\(runningCount)")
+                    statTile(title: "Decks in Play", value: DeckBetTrainingConstants.deckLabel(Double(decksInPlay)))
+                }
+
+                Image(DeckBetTrainingConstants.deckAssetName(for: decksInDiscard, showDividers: config.showDividers))
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 300)
+                    .background(Color.secondary.opacity(0.05))
+                    .cornerRadius(16)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("What is your bet?")
+                        .font(.headline)
+                    TextField("Enter bet", text: $betInput)
+                        .keyboardType(.numberPad)
+                        .padding()
+                        .background(Color.secondary.opacity(0.08))
+                        .cornerRadius(10)
+                }
+
+                Button(action: gradeBet) {
+                    Text("Submit Bet")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+
+                if let resultMessage {
+                    Text(resultMessage)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Combined Training")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert(item: $activeAlert) { alert in
+            Alert(
+                title: Text("Note"),
+                message: Text(alert.message),
+                dismissButton: .default(Text("Understood")) {
+                    if pendingScenarioAfterAlert {
+                        pendingScenarioAfterAlert = false
+                        generateScenario(resetFeedback: false)
+                    }
+                }
+            )
+        }
+        .onAppear { generateScenario() }
+    }
+
+    private func statTile(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(12)
+    }
+
+    private func generateScenario(resetFeedback: Bool = true) {
+        runningCount = Int.random(in: 1...20)
+        decksInPlay = [2, 6, 8].randomElement() ?? 6
+        let cappedDiscardMax = min(Double(decksInPlay), 6.0)
+        let upperBound = max(0.5, cappedDiscardMax - 0.25)
+        let raw = Double.random(in: 0.5...upperBound)
+        decksInDiscard = max(0.5, floor(raw * 4) / 4)
+        betInput = ""
+        if resetFeedback {
+            resultMessage = nil
+        }
+    }
+
+    private func gradeBet() {
+        guard let betValue = Double(betInput) else {
+            resultMessage = "Please enter a valid number."
+            return
+        }
+
+        let decksRemaining = Double(decksInPlay) - decksInDiscard
+        let trueCount = Double(runningCount) / max(0.25, decksRemaining)
+        let evaluation = evaluateBet(betValue, trueCount: trueCount)
+
+        stats.combinedTotal += 1
+        if evaluation.isCorrect { stats.combinedCorrect += 1 }
+
+        resultMessage = evaluation.feedback
+        if let guidance = evaluation.guidance {
+            activeAlert = TrainingAlert(message: guidance)
+            pendingScenarioAfterAlert = true
+        } else if !evaluation.isCorrect {
+            activeAlert = TrainingAlert(message: evaluation.feedback)
+            pendingScenarioAfterAlert = true
+        } else {
+            generateScenario(resetFeedback: false)
+        }
+    }
+
+    private func evaluateBet(_ bet: Double, trueCount: Double) -> (isCorrect: Bool, feedback: String, guidance: String?) {
+        let cappedTrueCount = min(trueCount, Double(DeckBetTrainingConstants.trueCountRange.upperBound))
+        let lower = Int(floor(cappedTrueCount))
+        let upper = Int(ceil(cappedTrueCount))
+        let lowerBet = config.betTable.value(for: lower)
+        let upperBet = config.betTable.value(for: upper)
+
+        if lower == upper {
+            let isCorrect = abs(bet - lowerBet) <= 0.01
+            let feedback = isCorrect ? "Correct! True count +\(lower) maps to $\(Int(lowerBet))." : "True count +\(lower) maps to $\(Int(lowerBet))."
+            return (isCorrect, feedback, nil)
+        }
+
+        let minAccepted = min(lowerBet, upperBet)
+        let maxAccepted = max(lowerBet, upperBet)
+        let isCorrect = bet >= minAccepted && bet <= maxAccepted
+        let fraction = cappedTrueCount - Double(lower)
+        let interpolated = lowerBet + fraction * (upperBet - lowerBet)
+        let guidanceNeeded = isCorrect && interpolated > 0 && abs(bet - interpolated) > interpolated * 0.25
+
+        let feedback: String
+        if isCorrect {
+            feedback = "Nice work. True count +\(String(format: "%.2f", cappedTrueCount)) supports between $\(Int(minAccepted)) and $\(Int(maxAccepted))."
+        } else {
+            feedback = "True count +\(String(format: "%.2f", cappedTrueCount)) calls for $\(Int(minAccepted))–$\(Int(maxAccepted))."
+        }
+
+        let guidance = guidanceNeeded ? "Your answer was acceptable, but an interpolated bet is about $\(Int(interpolated))." : nil
+
+        return (isCorrect, feedback, guidance)
     }
 }
 
@@ -6718,6 +7473,7 @@ struct TrainingStatsView: View {
     @AppStorage("strategyQuizPairCompletions") private var quizPairCompletions: Int = 0
     @AppStorage("strategyQuizSurrenderCompletions") private var quizSurrenderCompletions: Int = 0
     @AppStorage("strategyQuizFullCompletions") private var quizFullCompletions: Int = 0
+    @AppStorage("deckBetTrainingStats") private var deckBetStatsData: Data = Data()
 
     private var sessions: [DeckCountThroughSession] {
         (try? JSONDecoder().decode([DeckCountThroughSession].self, from: storedSessions)) ?? []
@@ -6750,6 +7506,7 @@ struct TrainingStatsView: View {
     private var cardSortingWeekly: CardSortingStats { .make(for: lastWeekCardSortingAttempts) }
     private var speedCounterOverall: SpeedCounterStats { .make(for: speedCounterSessions) }
     private var speedCounterWeekly: SpeedCounterStats { .make(for: lastWeekSpeedCounterSessions) }
+    private var deckBetStats: DeckBetTrainingStats { DeckBetTrainingStats.decode(from: deckBetStatsData) }
 
     var body: some View {
         List {
@@ -6801,8 +7558,14 @@ struct TrainingStatsView: View {
                 statSummaryRow(title: "Full chart completions", value: quizFullCompletions)
             }
 
+            Section("Deck Estimation & Bet Sizing") {
+                singleStatRow(title: "Deck Estimation Correctness", value: percentLabel(deckBetStats.deckEstimationAccuracy))
+                singleStatRow(title: "Bet Sizing Correctness", value: percentLabel(deckBetStats.betSizingAccuracy))
+                singleStatRow(title: "Combined Decision Correctness", value: percentLabel(deckBetStats.combinedAccuracy))
+            }
+
             Section("More Training Stats") {
-                Text("Hand Simulation, Deck Estimation and Bet Sizing, and Test Out stats will appear here once those drills are available.")
+                Text("Hand Simulation and Test Out stats will appear here once those drills are available.")
                     .foregroundColor(.secondary)
                     .font(.subheadline)
                     .padding(.vertical, 4)
@@ -6827,6 +7590,15 @@ struct TrainingStatsView: View {
             Text(title)
             Spacer()
             Text("\(value)")
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func singleStatRow(title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
                 .foregroundColor(.secondary)
         }
     }
