@@ -1,15 +1,15 @@
 {
-  "images": [
+  "images" : [
     {
-      "filename": "5.75_decks_without_dividers.svg",
-      "idiom": "universal"
+      "filename" : "5.75DecksWithoutDivider (1).png",
+      "idiom" : "universal"
     }
   ],
-  "info": {
-    "author": "xcode",
-    "version": 1
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
   },
-  "properties": {
-    "template-rendering-intent": "original"
+  "properties" : {
+    "template-rendering-intent" : "original"
   }
 }
