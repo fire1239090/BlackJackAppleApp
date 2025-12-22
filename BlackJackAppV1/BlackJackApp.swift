@@ -5726,30 +5726,30 @@ struct HandSimulationRunView: View {
     }
 
     private var betControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
+        VStack(alignment: .center, spacing: 12) {
+            VStack(spacing: 2) {
                 Text("Bet Size:")
                     .font(.headline)
-                Spacer()
+                    .frame(maxWidth: .infinity, alignment: .center)
                 Text("$\(Int(currentBet))")
                     .font(.title3.weight(.semibold))
                     .monospacedDigit()
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
 
             if awaitingBet {
                 Text("Tap Chips to Enter Bet")
                     .font(.title3.weight(.bold))
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
 
-            ZStack(alignment: .topTrailing) {
-                HStack(spacing: 12) {
-                    ForEach(chipOptions) { chip in
-                        Button(action: { applyChip(chip) }) {
-                            VStack(spacing: 4) {
-                                Text(chipLabel(for: chip))
-                                    .font(.headline.weight(.semibold))
-                                    .foregroundColor(.white)
-                            }
+            HStack(spacing: 14) {
+                Spacer()
+                ForEach(chipOptions) { chip in
+                    Button(action: { applyChip(chip) }) {
+                        Text(chipLabel(for: chip))
+                            .font(.headline.weight(.semibold))
+                            .foregroundColor(.white)
                             .frame(width: 70, height: 70)
                             .background(chip.color)
                             .clipShape(Circle())
@@ -5757,20 +5757,20 @@ struct HandSimulationRunView: View {
                                 Circle()
                                     .stroke(Color.white.opacity(0.6), lineWidth: 2)
                             )
-                        }
-                        .disabled(!chipsEnabled)
-                        .opacity(chipsEnabled ? 1 : 0.35)
                     }
+                    .disabled(!chipsEnabled)
+                    .opacity(chipsEnabled ? 1 : 0.35)
                 }
+
                 Button(action: { negativeChipMode.toggle() }) {
-                    Image(systemName: negativeChipMode ? "minus.circle.fill" : "minus.circle")
-                        .font(.title3)
+                    Image(systemName: negativeChipMode ? "plus.circle.fill" : "minus.circle.fill")
+                        .font(.title)
                         .foregroundColor(negativeChipMode ? .orange : .secondary)
                         .padding(6)
                 }
                 .background(.ultraThinMaterial)
                 .clipShape(Circle())
-                .offset(x: 8, y: -8)
+                Spacer()
             }
 
             if let betFeedback {
@@ -5781,6 +5781,7 @@ struct HandSimulationRunView: View {
                         .font(.caption)
                         .foregroundColor(betFeedback.isError ? .primary : .green)
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
         .padding(.horizontal, 6)
