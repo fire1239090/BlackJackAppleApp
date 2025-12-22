@@ -5489,8 +5489,7 @@ struct HandSimulationRunView: View {
     @State private var sessionLogged: Bool = false
     @State private var showTrayExpanded: Bool = false
     @State private var showCounts: Bool = false
-    @State private var pendingRecommendedAction: PlayerAction?
-    @State private var pendingUserAction: PlayerAction?
+    @State private var awaitingNextHand: Bool = false
 
     private struct BetFeedback: Identifiable {
         let id = UUID()
@@ -5585,16 +5584,11 @@ struct HandSimulationRunView: View {
             }
         }
         .alert(item: $actionAlert) { alert in
-            Alert(title: Text("Strategy Correction"), message: Text(alert.message), dismissButton: .default(Text("Continue")) {
-                let actionToApply = pendingUserAction ?? recommendedAction ?? .stand
-                pendingUserAction = nil
-                resolveCurrentHand(with: actionToApply)
-            })
+            Alert(title: Text("Strategy Correction"), message: Text(alert.message), dismissButton: .default(Text("Continue")))
         }
         .alert(item: $countAlert) { alert in
-            Alert(title: Text("Running Count"), message: Text(alert.message), dismissButton: .default(Text("Next Hand")) {
+            Alert(title: Text("Running Count"), message: Text(alert.message), dismissButton: .default(Text("Continue")) {
                 showRunningCountPrompt = false
-                advanceHand()
             })
         }
         .alert(item: $betCorrectionAlert) { alert in
@@ -5691,6 +5685,24 @@ struct HandSimulationRunView: View {
                             .frame(maxWidth: 220)
                     }
                     .buttonStyle(.borderedProminent)
+                }
+                .padding()
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else if awaitingNextHand {
+                VStack(spacing: 14) {
+                    Text("Hand Complete")
+                        .font(.title3.weight(.bold))
+                        .multilineTextAlignment(.center)
+                    Button(action: proceedToNextHand) {
+                        Text(showRunningCountPrompt ? "Answer count to continue" : "Next Hand")
+                            .font(.headline)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: 220)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(showRunningCountPrompt)
                 }
                 .padding()
                 .background(.ultraThinMaterial)
@@ -5800,7 +5812,7 @@ struct HandSimulationRunView: View {
                 .background(buttonEnabled(action) ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.1))
                 .foregroundColor(buttonEnabled(action) ? .primary : .secondary)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .disabled(!buttonEnabled(action) || awaitingBet || showRunningCountPrompt)
+                .disabled(!buttonEnabled(action) || awaitingBet || awaitingNextHand || showRunningCountPrompt)
             }
         }
         .padding(.horizontal, 6)
@@ -5955,6 +5967,7 @@ struct HandSimulationRunView: View {
         currentShoePerfect = true
         shoesPlayed += 1
         awaitingBet = true
+        awaitingNextHand = false
     }
 
     private func advanceHand() {
@@ -5964,7 +5977,13 @@ struct HandSimulationRunView: View {
         betFeedback = nil
         negativeChipMode = false
         awaitingBet = true
+        awaitingNextHand = false
         checkForReshuffle()
+    }
+
+    private func proceedToNextHand() {
+        guard awaitingNextHand, !showRunningCountPrompt else { return }
+        advanceHand()
     }
 
     private func checkForReshuffle() {
@@ -6073,38 +6092,36 @@ struct HandSimulationRunView: View {
     }
 
     private func handleAction(_ action: PlayerAction) {
-        guard !awaitingBet else { return }
+        guard !awaitingBet, !awaitingNextHand else { return }
         guard let recommended = recommendedAction else {
             actionAlert = TrainingAlert(message: "Finish dealing the hand before choosing an action.")
-            pendingRecommendedAction = nil
-            pendingUserAction = nil
             return
         }
-        pendingRecommendedAction = recommended
-        pendingUserAction = action
         let correct = action == recommended
         recordDecision(correct: correct)
         if !correct {
             currentShoePerfect = false
-            actionAlert = TrainingAlert(message: "Optimal play is \(actionTitle(for: recommended)).")
-            return
         }
-        resolveCurrentHand(with: action)
+        let correctionMessage = correct ? nil : "Optimal play is \(actionTitle(for: recommended))."
+        resolveCurrentHand(with: action, correctionMessage: correctionMessage)
     }
 
-    private func resolveCurrentHand(with action: PlayerAction) {
+    private func resolveCurrentHand(with action: PlayerAction, correctionMessage: String? = nil) {
         guard var handState = playerHands.first, let dealerUp = dealerUpCard else { return }
         var dealerHand = dealerHandModel()
         var profit: Double = 0
+        var handFinished = false
 
         switch action {
         case .surrender:
             dealerHand = revealDealerHand()
             profit = -currentBet / 2.0
+            handFinished = true
         case .stand:
             dealerHand = revealDealerHand()
             dealerPlay(&dealerHand)
             profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet)
+            handFinished = true
         case .double:
             if let newCard = drawCard() {
                 withAnimation(.easeInOut(duration: animationSpeed)) {
@@ -6115,6 +6132,7 @@ struct HandSimulationRunView: View {
             dealerHand = revealDealerHand()
             dealerPlay(&dealerHand)
             profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet * 2)
+            handFinished = true
         case .hit:
             if let newCard = drawCard() {
                 withAnimation(.easeInOut(duration: animationSpeed)) {
@@ -6126,19 +6144,25 @@ struct HandSimulationRunView: View {
             if model.isBusted {
                 revealHoleCardIfNeeded()
                 profit = -currentBet
+                handFinished = true
             } else if model.bestValue >= 21 {
                 dealerHand = revealDealerHand()
                 dealerPlay(&dealerHand)
                 profit = settle(hand: model, dealerHand: dealerHand, bet: currentBet)
-            } else {
-                pendingRecommendedAction = advisedAction(for: model, dealerUp: dealerUp)
-                return
+                handFinished = true
             }
         case .split:
             profit = resolveSplitHands(initial: handState, dealerUp: dealerUp)
+            handFinished = true
         }
 
-        finishHand(with: profit)
+        if let correctionMessage {
+            actionAlert = TrainingAlert(message: correctionMessage)
+        }
+
+        if handFinished {
+            finishHand(with: profit)
+        }
     }
 
     private func resolveSplitHands(initial: SpeedCounterHandState, dealerUp: Card) -> Double {
@@ -6235,17 +6259,14 @@ struct HandSimulationRunView: View {
         sessionProfit += profit
         handsCompleted += 1
         handsSinceCountPrompt += 1
-        pendingRecommendedAction = nil
-        pendingUserAction = nil
 
         if settings.askRunningCount && handsSinceCountPrompt >= settings.runningCountCadence {
             showRunningCountPrompt = true
             runningCountGuess = ""
             handsSinceCountPrompt = 0
-            return
         }
 
-        advanceHand()
+        awaitingNextHand = true
     }
 
     private func revealHoleCardIfNeeded() {
