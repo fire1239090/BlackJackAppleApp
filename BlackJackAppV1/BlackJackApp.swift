@@ -5468,7 +5468,8 @@ struct HandSimulationRunView: View {
     @State private var awaitingBet: Bool = true
     @State private var betInput: String = ""
     @State private var currentBet: Double = 0
-    @State private var betAlert: TrainingAlert?
+    @State private var betFeedback: BetFeedback?
+    @FocusState private var betFieldFocused: Bool
     @State private var actionAlert: TrainingAlert?
     @State private var countAlert: TrainingAlert?
     @State private var showRunningCountPrompt: Bool = false
@@ -5487,10 +5488,15 @@ struct HandSimulationRunView: View {
     @State private var handsSinceCountPrompt: Int = 0
     @State private var sessionLogged: Bool = false
     @State private var showTrayExpanded: Bool = false
-    @State private var advanceAfterBetAlert: Bool = false
     @State private var showCounts: Bool = false
     @State private var pendingRecommendedAction: PlayerAction?
     @State private var pendingUserAction: PlayerAction?
+
+    private struct BetFeedback: Identifiable {
+        let id = UUID()
+        let message: String
+        let isError: Bool
+    }
 
     private var decksRemaining: Double {
         let remaining = Double(shoe.count) / 52.0
@@ -5562,13 +5568,6 @@ struct HandSimulationRunView: View {
             if showRunningCountPrompt {
                 modalOverlay { runningCountPrompt }
             }
-        }
-        .alert(item: $betAlert) { alert in
-            Alert(title: Text("Bet Correction"), message: Text(alert.message), dismissButton: .default(Text("Got it")) {
-                if advanceAfterBetAlert {
-                    proceedAfterBet()
-                }
-            })
         }
         .alert(item: $actionAlert) { alert in
             Alert(title: Text("Strategy Correction"), message: Text(alert.message), dismissButton: .default(Text("Continue")) {
@@ -5791,7 +5790,18 @@ struct HandSimulationRunView: View {
                 .keyboardType(.numberPad)
                 .textFieldStyle(.roundedBorder)
                 .textInputAutocapitalization(.never)
+                .focused($betFieldFocused)
+                .onSubmit(gradeBet)
                 .padding(.bottom, 4)
+            if let betFeedback {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: betFeedback.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundColor(betFeedback.isError ? .orange : .green)
+                    Text(betFeedback.message)
+                        .font(.caption)
+                        .foregroundColor(betFeedback.isError ? .primary : .green)
+                }
+            }
             Button("Submit Bet") {
                 gradeBet()
             }
@@ -5799,6 +5809,9 @@ struct HandSimulationRunView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 40)
+        .onAppear {
+            betFieldFocused = true
+        }
     }
 
     private var runningCountPrompt: some View {
@@ -5870,6 +5883,7 @@ struct HandSimulationRunView: View {
         runningCount = 0
         dealerCards = []
         playerHands = []
+        betFeedback = nil
         handsSinceCountPrompt = 0
         currentShoePerfect = true
         shoesPlayed += 1
@@ -5881,6 +5895,7 @@ struct HandSimulationRunView: View {
         playerHands = []
         currentBet = 0
         betInput = ""
+        betFeedback = nil
         awaitingBet = true
         checkForReshuffle()
     }
@@ -5943,15 +5958,33 @@ struct HandSimulationRunView: View {
     }
 
     private func gradeBet() {
-        advanceAfterBetAlert = false
-        guard let betValue = Double(betInput) else {
+        let trimmed = betInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let betValue = Double(trimmed) else {
             currentShoePerfect = false
             recordDecision(correct: false)
-            advanceAfterBetAlert = false
-            betAlert = TrainingAlert(message: "Please enter a numeric bet.")
+            betFeedback = BetFeedback(message: "Enter a numeric bet amount.", isError: true)
             return
         }
 
+        let evaluation = betEvaluation(for: betValue)
+        recordDecision(correct: evaluation.isWithinRange)
+        currentBet = betValue
+        betFeedback = BetFeedback(message: evaluation.feedback, isError: !evaluation.isWithinRange)
+
+        if !evaluation.isWithinRange {
+            currentShoePerfect = false
+        }
+
+        proceedAfterBet()
+    }
+
+    private func proceedAfterBet() {
+        betFieldFocused = false
+        awaitingBet = false
+        dealInitialCards()
+    }
+
+    private func betEvaluation(for bet: Double) -> (isWithinRange: Bool, feedback: String) {
         let tc = trueCount
         let lower = Int(floor(tc))
         let upper = Int(ceil(tc))
@@ -5959,23 +5992,18 @@ struct HandSimulationRunView: View {
         let upperBet = settings.betTable.value(for: upper)
         let minAccepted = min(lowerBet, upperBet)
         let maxAccepted = max(lowerBet, upperBet)
-        let correctRange = betValue >= minAccepted && betValue <= maxAccepted
+        let correctRange = bet >= minAccepted && bet <= maxAccepted
 
-        recordDecision(correct: correctRange)
-        currentBet = betValue
-
+        let rangeLabel = "$\(Int(minAccepted))–$\(Int(maxAccepted))"
+        let tcLabel = String(format: "%.2f", tc)
+        let feedback: String
         if correctRange {
-            proceedAfterBet()
+            feedback = "Nice bet. True count \(tcLabel) supports \(rangeLabel)."
         } else {
-            currentShoePerfect = false
-            advanceAfterBetAlert = true
-            betAlert = TrainingAlert(message: "Recommended bet is between $\(Int(minAccepted)) and $\(Int(maxAccepted)).")
+            feedback = "Recommended bet for true count \(tcLabel) is \(rangeLabel)."
         }
-    }
 
-    private func proceedAfterBet() {
-        awaitingBet = false
-        dealInitialCards()
+        return (correctRange, feedback)
     }
 
     private func handleAction(_ action: PlayerAction) {
@@ -6000,19 +6028,15 @@ struct HandSimulationRunView: View {
 
     private func resolveCurrentHand(with action: PlayerAction) {
         guard var handState = playerHands.first, let dealerUp = dealerUpCard else { return }
-        var dealerHand = Hand(cards: dealerCards.map { Card(rank: $0.card.rank) })
-
-        revealHoleCard()
-        dealerHand = Hand(cards: dealerCards.map { Card(rank: $0.card.rank) })
-
+        var dealerHand = dealerHandModel()
         var profit: Double = 0
 
         switch action {
         case .surrender:
-            revealHoleCardIfNeeded()
+            dealerHand = revealDealerHand()
             profit = -currentBet / 2.0
         case .stand:
-            revealHoleCardIfNeeded()
+            dealerHand = revealDealerHand()
             dealerPlay(&dealerHand)
             profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet)
         case .double:
@@ -6022,7 +6046,7 @@ struct HandSimulationRunView: View {
                     playerHands[0] = handState
                 }
             }
-            revealHoleCardIfNeeded()
+            dealerHand = revealDealerHand()
             dealerPlay(&dealerHand)
             profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet * 2)
         case .hit:
@@ -6035,6 +6059,9 @@ struct HandSimulationRunView: View {
             let model = convert(hand: handState)
             if model.isBusted {
                 revealHoleCardIfNeeded()
+                profit = -currentBet
+            } else if model.bestValue >= 21 {
+                dealerHand = revealDealerHand()
                 dealerPlay(&dealerHand)
                 profit = settle(hand: model, dealerHand: dealerHand, bet: currentBet)
             } else {
@@ -6042,13 +6069,13 @@ struct HandSimulationRunView: View {
                 return
             }
         case .split:
-            profit = resolveSplitHands(initial: handState, dealerHand: dealerHand, dealerUp: dealerUp)
+            profit = resolveSplitHands(initial: handState, dealerUp: dealerUp)
         }
 
         finishHand(with: profit)
     }
 
-    private func resolveSplitHands(initial: SpeedCounterHandState, dealerHand: Hand, dealerUp: Card) -> Double {
+    private func resolveSplitHands(initial: SpeedCounterHandState, dealerUp: Card) -> Double {
         guard initial.cards.count == 2 else { return 0 }
 
         let first = initial.cards[0]
@@ -6110,14 +6137,31 @@ struct HandSimulationRunView: View {
             outcomes.append((model, bet))
         }
 
-        var dealerHandCopy = dealerHand
-        dealerPlay(&dealerHandCopy)
+        revealHoleCardIfNeeded()
+        var dealerHandCopy = dealerHandModel()
+        let hasLiveHand = outcomes.contains { !$0.0.isBusted }
+        if hasLiveHand {
+            dealerPlay(&dealerHandCopy)
+        }
 
         var profit: Double = 0
         for outcome in outcomes {
-            profit += settle(hand: outcome.0, dealerHand: dealerHandCopy, bet: outcome.1)
+            if outcome.0.isBusted {
+                profit -= outcome.1
+            } else {
+                profit += settle(hand: outcome.0, dealerHand: dealerHandCopy, bet: outcome.1)
+            }
         }
         return profit
+    }
+
+    private func dealerHandModel() -> Hand {
+        Hand(cards: dealerCards.map { Card(rank: $0.card.rank) })
+    }
+
+    private func revealDealerHand() -> Hand {
+        revealHoleCardIfNeeded()
+        return dealerHandModel()
     }
 
     private func finishHand(with profit: Double) {
@@ -6136,10 +6180,6 @@ struct HandSimulationRunView: View {
         }
 
         advanceHand()
-    }
-
-    private func revealHoleCard() {
-        revealHoleCardIfNeeded()
     }
 
     private func revealHoleCardIfNeeded() {
