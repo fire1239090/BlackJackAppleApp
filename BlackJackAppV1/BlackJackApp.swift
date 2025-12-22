@@ -5181,7 +5181,6 @@ struct HandSimulationSettings {
     var askRunningCount: Bool = true
     var runningCountCadence: Int = 3
     var betTable: BetSizingTable = .default
-    var deviations: [DeviationRule] = DeviationRule.defaultRules
 }
 
 struct HandSimulationSession: Identifiable, Codable {
@@ -5272,14 +5271,13 @@ struct HandSimulationView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("Build full-hand intuition by practicing betting, counting, and strategy deviations in one place.")
+                    Text("Build full-hand intuition by practicing betting, counting, and strategy fundamentals in one place.")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
                     ruleSection
                     runningCountSection
                     betSection
-                    deviationSection
                     statsSection
                 }
                 .padding()
@@ -5366,15 +5364,6 @@ struct HandSimulationView: View {
         }
     }
 
-    private var deviationSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Deviations")
-                .font(.headline)
-            DeviationManagerView(deviations: $settings.deviations, currentRules: settings.rules)
-                .frame(maxWidth: .infinity)
-        }
-    }
-
     private var statsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Recent Performance")
@@ -5435,6 +5424,11 @@ struct HandSimulationView: View {
 struct HandSimulationRunView: View {
     private let maxSplitDepth = 3
     private let discardSizes = DeckBetTrainingConstants.deckCounts
+    private let cardWidth: CGFloat = 70
+    private var cardHeight: CGFloat { cardWidth / (2.5/3.5) }
+    private let cardOffsetX: CGFloat = 24
+    private let cardOffsetY: CGFloat = 14
+    private let handSpacing: CGFloat = 16
 
     let settings: HandSimulationSettings
     let onComplete: (HandSimulationSession) -> Void
@@ -5469,6 +5463,7 @@ struct HandSimulationRunView: View {
     @State private var sessionLogged: Bool = false
     @State private var showTrayExpanded: Bool = false
     @State private var advanceAfterBetAlert: Bool = false
+    @State private var showCounts: Bool = false
 
     private var decksRemaining: Double {
         let remaining = Double(shoe.count) / 52.0
@@ -5503,18 +5498,12 @@ struct HandSimulationRunView: View {
         return rules
     }
 
-    private var activeDeviations: [DeviationRule] {
-        settings.deviations.filter { $0.isEnabled }
-    }
-
     var body: some View {
         ZStack {
             Color(uiColor: .systemGroupedBackground)
                 .ignoresSafeArea()
 
             VStack(spacing: 16) {
-                headerArea
-
                 tableArea
 
                 actionButtons
@@ -5578,11 +5567,9 @@ struct HandSimulationRunView: View {
         }
     }
 
-    private var headerArea: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Cards Played: \(cardsPlayed)")
-                    .font(.headline)
+    private var tableArea: some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 Image(discardAssetName)
                     .resizable()
                     .scaledToFit()
@@ -5594,48 +5581,78 @@ struct HandSimulationRunView: View {
                             .scaledToFit()
                             .frame(width: 280)
                     }
-            }
-            Spacer()
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Running Count: \(runningCount)")
-                    .font(.subheadline.monospacedDigit())
-                Text("True Count: \(String(format: "%.2f", trueCount))")
-                    .font(.caption.monospacedDigit())
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
 
-    private var tableArea: some View {
-        VStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Dealer")
-                    .font(.headline)
-                HStack {
-                    ForEach(dealerCards) { card in
-                        SpeedCounterCardView(card: card)
-                            .frame(width: 70)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Dealer")
+                        .font(.headline)
+                    HStack(spacing: 8) {
+                        ForEach(dealerCards) { card in
+                            SpeedCounterCardView(card: card)
+                                .frame(width: cardWidth)
+                        }
                     }
+                    .padding(.leading, 6)
                 }
+
+                Spacer()
+
+                countDisplay
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Player")
                     .font(.headline)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
-                        ForEach(playerHands) { hand in
-                            playerHandView(hand)
+                GeometryReader { proxy in
+                    let contentWidth = totalHandsWidth()
+                    let horizontalPadding = max((proxy.size.width - contentWidth) / 2, 0) + 16
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 16) {
+                            ForEach(playerHands) { hand in
+                                playerHandView(hand)
+                            }
                         }
+                        .padding(.horizontal, horizontalPadding)
+                        .frame(
+                            maxWidth: max(proxy.size.width, contentWidth + (horizontalPadding * 2)),
+                            alignment: .center
+                        )
+                        .frame(height: maxHandHeight + 24, alignment: .bottom)
                     }
-                    .padding(.horizontal, 8)
                 }
+                .frame(height: maxHandHeight + 32)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(Color.secondary.opacity(0.08))
         .cornerRadius(16)
+    }
+
+    private var countDisplay: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            HStack(spacing: 10) {
+                Button(action: { showCounts.toggle() }) {
+                    Image(systemName: showCounts ? "eye.slash.fill" : "eye.fill")
+                        .font(.headline)
+                }
+                .buttonStyle(.plain)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("Running Count")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(showCounts ? "\(runningCount)" : "— —")
+                        .font(.headline.monospacedDigit())
+                    Text("True Count")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(showCounts ? String(format: "%.2f", trueCount) : "— —")
+                        .font(.subheadline.monospacedDigit())
+                }
+            }
+        }
+        .frame(minWidth: 140, alignment: .trailing)
     }
 
     private var actionButtons: some View {
@@ -5762,17 +5779,49 @@ struct HandSimulationRunView: View {
         ZStack(alignment: .bottomLeading) {
             ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
                 SpeedCounterCardView(card: card)
-                    .frame(width: 70)
-                    .offset(x: CGFloat(index) * 24, y: CGFloat(-index) * 14)
+                    .frame(width: cardWidth)
+                    .offset(x: CGFloat(index) * cardOffsetX, y: CGFloat(-index) * cardOffsetY)
             }
 
             if let doubleCard = hand.doubleCard {
                 SpeedCounterCardView(card: doubleCard)
-                    .frame(width: 70)
+                    .frame(width: cardWidth)
                     .rotationEffect(.degrees(90))
-                    .offset(x: CGFloat(hand.cards.count) * 24 + 6, y: CGFloat(-hand.cards.count) * 14)
+                    .offset(x: CGFloat(hand.cards.count) * cardOffsetX + 6, y: CGFloat(-hand.cards.count) * cardOffsetY)
             }
         }
+    }
+
+    private func totalHandsWidth() -> CGFloat {
+        guard !playerHands.isEmpty else { return cardWidth }
+        let width = playerHands.reduce(0) { partial, hand in
+            partial + handWidth(hand)
+        }
+        let spacingWidth = handSpacing * CGFloat(max(playerHands.count - 1, 0))
+        return width + spacingWidth
+    }
+
+    private func handWidth(_ hand: SpeedCounterHandState) -> CGFloat {
+        let count = max(hand.cards.count, 1)
+        var width = cardWidth + CGFloat(max(0, count - 1)) * cardOffsetX
+        if hand.doubleCard != nil {
+            width += cardWidth * 0.6
+        }
+        return width
+    }
+
+    private var maxHandHeight: CGFloat {
+        guard !playerHands.isEmpty else { return cardHeight }
+        return playerHands.map(handHeight).max() ?? cardHeight
+    }
+
+    private func handHeight(_ hand: SpeedCounterHandState) -> CGFloat {
+        let count = max(hand.cards.count, 1)
+        var height = cardHeight + CGFloat(max(0, count - 1)) * cardOffsetY
+        if hand.doubleCard != nil {
+            height = max(height, cardWidth + cardOffsetY)
+        }
+        return height
     }
 
     private func startShoe() {
@@ -5848,63 +5897,7 @@ struct HandSimulationRunView: View {
     }
 
     private func advisedAction(for hand: Hand, dealerUp: Card) -> PlayerAction {
-        var base = StrategyAdvisor.baseAction(for: hand, dealerUp: dealerUp, rules: rules)
-        for deviation in activeDeviations where deviationMatches(deviation, hand: hand, dealerUp: dealerUp) {
-            base = deviation.action
-        }
-        return base
-    }
-
-    private func deviationMatches(_ deviation: DeviationRule, hand: Hand, dealerUp: Card) -> Bool {
-        switch deviation.category {
-        case .all:
-            break
-        case .hit17:
-            guard rules.dealerHitsSoft17 else { return false }
-        case .stand17:
-            guard !rules.dealerHitsSoft17 else { return false }
-        }
-
-        let total = hand.bestValue
-        guard total == deviation.playerTotal else { return false }
-        guard hand.isSoft == deviation.isSoft else { return false }
-
-        if let pairRank = deviation.pairRank {
-            guard hand.canSplit, hand.cards.first?.rank == pairRank else { return false }
-        }
-
-        if deviation.action == .split && !hand.canSplit {
-            return false
-        }
-
-        if deviation.action == .surrender && !rules.surrenderAllowed {
-            return false
-        }
-
-        if deviation.action == .double && hand.cards.count > 2 {
-            return false
-        }
-
-        if deviation.action == .surrender && hand.cards.count > 2 {
-            return false
-        }
-
-        let dealerValue = dealerUp.value
-        guard dealerValue == deviation.dealerValue else { return false }
-
-        let tc = Int(floor(trueCount))
-        switch deviation.countCondition {
-        case .trueCountAtLeast(let threshold):
-            guard tc >= threshold else { return false }
-        case .trueCountAtMost(let threshold):
-            guard tc <= threshold else { return false }
-        case .runningPositive:
-            guard runningCount > 0 else { return false }
-        case .runningNegative:
-            guard runningCount < 0 else { return false }
-        }
-
-        return true
+        StrategyAdvisor.baseAction(for: hand, dealerUp: dealerUp, rules: rules)
     }
 
     private func gradeBet() {
