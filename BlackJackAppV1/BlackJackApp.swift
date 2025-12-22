@@ -5466,12 +5466,12 @@ struct HandSimulationRunView: View {
     @State private var cardsPlayed: Int = 0
     @State private var runningCount: Int = 0
     @State private var awaitingBet: Bool = true
-    @State private var betInput: String = ""
+    @State private var negativeChipMode: Bool = false
     @State private var currentBet: Double = 0
     @State private var betFeedback: BetFeedback?
-    @FocusState private var betFieldFocused: Bool
     @State private var actionAlert: TrainingAlert?
     @State private var countAlert: TrainingAlert?
+    @State private var betCorrectionAlert: TrainingAlert?
     @State private var showRunningCountPrompt: Bool = false
     @State private var runningCountGuess: String = ""
     @State private var sessionProfit: Double = 0
@@ -5496,6 +5496,23 @@ struct HandSimulationRunView: View {
         let id = UUID()
         let message: String
         let isError: Bool
+    }
+
+    private struct ChipOption: Identifiable {
+        let id = UUID()
+        let value: Int
+        let color: Color
+    }
+
+    private let chipOptions: [ChipOption] = [
+        ChipOption(value: 5, color: .red),
+        ChipOption(value: 25, color: .green),
+        ChipOption(value: 100, color: .black),
+        ChipOption(value: 500, color: .purple)
+    ]
+
+    private var chipsEnabled: Bool {
+        awaitingBet && !showRunningCountPrompt
     }
 
     private var decksRemaining: Double {
@@ -5540,6 +5557,8 @@ struct HandSimulationRunView: View {
             VStack(spacing: 16) {
                 tableArea
 
+                betControls
+
                 actionButtons
 
                 sessionProfitView
@@ -5561,10 +5580,6 @@ struct HandSimulationRunView: View {
                 }
             }
 
-            if awaitingBet {
-                modalOverlay { betPrompt }
-            }
-
             if showRunningCountPrompt {
                 modalOverlay { runningCountPrompt }
             }
@@ -5581,6 +5596,9 @@ struct HandSimulationRunView: View {
                 showRunningCountPrompt = false
                 advanceHand()
             })
+        }
+        .alert(item: $betCorrectionAlert) { alert in
+            Alert(title: Text("Bet Correction"), message: Text(alert.message), dismissButton: .default(Text("Continue")))
         }
         .sheet(isPresented: $showTrayExpanded) {
             VStack {
@@ -5659,6 +5677,26 @@ struct HandSimulationRunView: View {
         .background(Color.secondary.opacity(0.08))
         .cornerRadius(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .overlay {
+            if awaitingBet {
+                VStack(spacing: 14) {
+                    Text("Tap Chips to Enter Bet")
+                        .font(.title3.weight(.bold))
+                        .multilineTextAlignment(.center)
+                    Button(action: submitBetAndDeal) {
+                        Text("Deal Next Hand")
+                            .font(.headline)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: 220)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding()
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
     }
 
     private var countDisplay: some View {
@@ -5685,6 +5723,68 @@ struct HandSimulationRunView: View {
             }
         }
         .frame(minWidth: 140, alignment: .trailing)
+    }
+
+    private var betControls: some View {
+        VStack(alignment: .center, spacing: 12) {
+            VStack(spacing: 2) {
+                Text("Bet Size:")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                Text("$\(Int(currentBet))")
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+
+            if awaitingBet {
+                Text("Tap Chips to Enter Bet")
+                    .font(.title3.weight(.bold))
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+
+            HStack(spacing: 14) {
+                Spacer()
+                ForEach(chipOptions) { chip in
+                    Button(action: { applyChip(chip) }) {
+                        Text(chipLabel(for: chip))
+                            .font(.headline.weight(.semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 70, height: 70)
+                            .background(chip.color)
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.6), lineWidth: 2)
+                            )
+                    }
+                    .disabled(!chipsEnabled)
+                    .opacity(chipsEnabled ? 1 : 0.35)
+                }
+
+                Button(action: { negativeChipMode.toggle() }) {
+                    Image(systemName: negativeChipMode ? "plus.circle.fill" : "minus.circle.fill")
+                        .font(.title)
+                        .foregroundColor(negativeChipMode ? .orange : .secondary)
+                        .padding(6)
+                }
+                .background(.ultraThinMaterial)
+                .clipShape(Circle())
+                Spacer()
+            }
+
+            if let betFeedback {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: betFeedback.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundColor(betFeedback.isError ? .orange : .green)
+                    Text(betFeedback.message)
+                        .font(.caption)
+                        .foregroundColor(betFeedback.isError ? .primary : .green)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .padding(.horizontal, 6)
     }
 
     private var actionButtons: some View {
@@ -5779,41 +5879,6 @@ struct HandSimulationRunView: View {
             )
     }
 
-    private var betPrompt: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Place your bet")
-                .font(.headline)
-            Text("True count: \(String(format: "%.2f", trueCount))")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            TextField("Enter bet", text: $betInput)
-                .keyboardType(.numberPad)
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .focused($betFieldFocused)
-                .onSubmit(gradeBet)
-                .padding(.bottom, 4)
-            if let betFeedback {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: betFeedback.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                        .foregroundColor(betFeedback.isError ? .orange : .green)
-                    Text(betFeedback.message)
-                        .font(.caption)
-                        .foregroundColor(betFeedback.isError ? .primary : .green)
-                }
-            }
-            Button("Submit Bet") {
-                gradeBet()
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 40)
-        .onAppear {
-            betFieldFocused = true
-        }
-    }
-
     private var runningCountPrompt: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("What's the running count?")
@@ -5883,7 +5948,9 @@ struct HandSimulationRunView: View {
         runningCount = 0
         dealerCards = []
         playerHands = []
+        currentBet = 0
         betFeedback = nil
+        negativeChipMode = false
         handsSinceCountPrompt = 0
         currentShoePerfect = true
         shoesPlayed += 1
@@ -5894,8 +5961,8 @@ struct HandSimulationRunView: View {
         dealerCards = []
         playerHands = []
         currentBet = 0
-        betInput = ""
         betFeedback = nil
+        negativeChipMode = false
         awaitingBet = true
         checkForReshuffle()
     }
@@ -5957,29 +6024,28 @@ struct HandSimulationRunView: View {
         StrategyAdvisor.baseAction(for: hand, dealerUp: dealerUp, rules: rules)
     }
 
-    private func gradeBet() {
-        let trimmed = betInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let betValue = Double(trimmed) else {
-            currentShoePerfect = false
-            recordDecision(correct: false)
-            betFeedback = BetFeedback(message: "Enter a numeric bet amount.", isError: true)
-            return
-        }
+    private func applyChip(_ chip: ChipOption) {
+        guard chipsEnabled else { return }
+        let delta = Double(chip.value) * (negativeChipMode ? -1 : 1)
+        currentBet = max(0, currentBet + delta)
+    }
 
-        let evaluation = betEvaluation(for: betValue)
+    private func chipLabel(for chip: ChipOption) -> String {
+        let sign = negativeChipMode ? "-" : ""
+        return "\(sign)$\(chip.value)"
+    }
+
+    private func submitBetAndDeal() {
+        guard awaitingBet else { return }
+        let evaluation = betEvaluation(for: currentBet)
         recordDecision(correct: evaluation.isWithinRange)
-        currentBet = betValue
-        betFeedback = BetFeedback(message: evaluation.feedback, isError: !evaluation.isWithinRange)
+        betFeedback = evaluation.isWithinRange ? nil : BetFeedback(message: evaluation.feedback, isError: true)
 
         if !evaluation.isWithinRange {
             currentShoePerfect = false
+            betCorrectionAlert = TrainingAlert(message: evaluation.feedback)
         }
 
-        proceedAfterBet()
-    }
-
-    private func proceedAfterBet() {
-        betFieldFocused = false
         awaitingBet = false
         dealInitialCards()
     }
