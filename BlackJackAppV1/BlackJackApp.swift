@@ -5469,9 +5469,7 @@ struct HandSimulationRunView: View {
     @State private var negativeChipMode: Bool = false
     @State private var currentBet: Double = 0
     @State private var betFeedback: BetFeedback?
-    @State private var actionAlert: TrainingAlert?
-    @State private var countAlert: TrainingAlert?
-    @State private var betCorrectionAlert: TrainingAlert?
+    @State private var activeAlert: SimulationAlert?
     @State private var showRunningCountPrompt: Bool = false
     @State private var runningCountGuess: String = ""
     @State private var sessionProfit: Double = 0
@@ -5495,6 +5493,13 @@ struct HandSimulationRunView: View {
         let id = UUID()
         let message: String
         let isError: Bool
+    }
+
+    private struct SimulationAlert: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+        let onDismiss: (() -> Void)?
     }
 
     private struct ChipOption: Identifiable {
@@ -5583,16 +5588,14 @@ struct HandSimulationRunView: View {
                 modalOverlay { runningCountPrompt }
             }
         }
-        .alert(item: $actionAlert) { alert in
-            Alert(title: Text("Strategy Correction"), message: Text(alert.message), dismissButton: .default(Text("Continue")))
-        }
-        .alert(item: $countAlert) { alert in
-            Alert(title: Text("Running Count"), message: Text(alert.message), dismissButton: .default(Text("Continue")) {
-                showRunningCountPrompt = false
-            })
-        }
-        .alert(item: $betCorrectionAlert) { alert in
-            Alert(title: Text("Bet Correction"), message: Text(alert.message), dismissButton: .default(Text("Continue")))
+        .alert(item: $activeAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("Continue")) {
+                    alert.onDismiss?()
+                }
+            )
         }
         .sheet(isPresented: $showTrayExpanded) {
             VStack {
@@ -5896,7 +5899,7 @@ struct HandSimulationRunView: View {
             Text("What's the running count?")
                 .font(.headline)
             TextField("Enter count", text: $runningCountGuess)
-                .keyboardType(.numberPad)
+                .keyboardType(.numbersAndPunctuation)
                 .textFieldStyle(.roundedBorder)
             Button("Submit") {
                 submitRunningCount()
@@ -6062,7 +6065,11 @@ struct HandSimulationRunView: View {
 
         if !evaluation.isWithinRange {
             currentShoePerfect = false
-            betCorrectionAlert = TrainingAlert(message: evaluation.feedback)
+            activeAlert = SimulationAlert(
+                title: "Bet Correction",
+                message: evaluation.feedback,
+                onDismiss: nil
+            )
         }
 
         awaitingBet = false
@@ -6094,7 +6101,11 @@ struct HandSimulationRunView: View {
     private func handleAction(_ action: PlayerAction) {
         guard !awaitingBet, !awaitingNextHand else { return }
         guard let recommended = recommendedAction else {
-            actionAlert = TrainingAlert(message: "Finish dealing the hand before choosing an action.")
+            activeAlert = SimulationAlert(
+                title: "Strategy Correction",
+                message: "Finish dealing the hand before choosing an action.",
+                onDismiss: nil
+            )
             return
         }
         let correct = action == recommended
@@ -6102,7 +6113,7 @@ struct HandSimulationRunView: View {
         if !correct {
             currentShoePerfect = false
         }
-        let correctionMessage = correct ? nil : "Optimal play is \(actionTitle(for: recommended))."
+        let correctionMessage = correct ? nil : "Basic strategy recommends \(actionTitle(for: recommended))."
         resolveCurrentHand(with: action, correctionMessage: correctionMessage)
     }
 
@@ -6157,7 +6168,11 @@ struct HandSimulationRunView: View {
         }
 
         if let correctionMessage {
-            actionAlert = TrainingAlert(message: correctionMessage)
+            activeAlert = SimulationAlert(
+                title: "Strategy Correction",
+                message: correctionMessage,
+                onDismiss: nil
+            )
         }
 
         if handFinished {
@@ -6322,15 +6337,30 @@ struct HandSimulationRunView: View {
     }
 
     private func submitRunningCount() {
-        let guess = Int(runningCountGuess.trimmingCharacters(in: .whitespacesAndNewlines))
+        let trimmedGuess = runningCountGuess.trimmingCharacters(in: .whitespacesAndNewlines)
+        let guess = Int(trimmedGuess)
         let correct = guess == runningCount
         recordDecision(correct: correct)
+
+        let message: String
         if correct {
-            countAlert = TrainingAlert(message: "Correct! Running count is \(runningCount).")
+            message = "Correct! Running count is \(runningCount)."
         } else {
             currentShoePerfect = false
-            countAlert = TrainingAlert(message: "Running count is \(runningCount).")
+            if let guess {
+                message = "You answered \(guess). Running count is \(runningCount)."
+            } else if trimmedGuess.isEmpty {
+                message = "Running count is \(runningCount)."
+            } else {
+                message = "\"\(trimmedGuess)\" isn't a valid number. Running count is \(runningCount)."
+            }
         }
+
+        activeAlert = SimulationAlert(
+            title: "Running Count",
+            message: message,
+            onDismiss: { showRunningCountPrompt = false }
+        )
     }
 
     private func completeSession() {
