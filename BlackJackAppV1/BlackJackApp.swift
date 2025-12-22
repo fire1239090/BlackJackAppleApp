@@ -5178,6 +5178,7 @@ struct HandSimulationSettings {
         penetration: 0.75
     )
     var resplitAces: Bool = true
+    var bettingEnabled: Bool = true
     var askRunningCount: Bool = true
     var runningCountCadence: Int = 3
     var betTable: BetSizingTable = .default
@@ -5376,15 +5377,18 @@ struct HandSimulationView: View {
 
     private var betSection: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Toggle("Enable Betting Practice", isOn: $settings.bettingEnabled.animation())
             Text("True Count / Betting Table")
                 .font(.headline)
-            BetSizingTableView(
-                betTable: settings.betTable,
-                isEditable: true,
-                betInputs: betInputs,
-                title: "True Count Bet Table",
-                onUpdate: updateBet(for:newValue:)
-            )
+            if settings.bettingEnabled {
+                BetSizingTableView(
+                    betTable: settings.betTable,
+                    isEditable: true,
+                    betInputs: betInputs,
+                    title: "True Count Bet Table",
+                    onUpdate: updateBet(for:newValue:)
+                )
+            }
         }
     }
 
@@ -5515,8 +5519,12 @@ struct HandSimulationRunView: View {
         ChipOption(value: 500, color: .purple)
     ]
 
+    private var bettingEnabled: Bool {
+        settings.bettingEnabled
+    }
+
     private var chipsEnabled: Bool {
-        awaitingBet && !showRunningCountPrompt
+        awaitingBet && !showRunningCountPrompt && bettingEnabled
     }
 
     private var decksRemaining: Double {
@@ -5756,6 +5764,11 @@ struct HandSimulationRunView: View {
                 Text("Tap Chips to Enter Bet")
                     .font(.title3.weight(.bold))
                     .frame(maxWidth: .infinity, alignment: .center)
+            } else if !bettingEnabled {
+                Text("Betting is disabled for this drill.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
 
             HStack(spacing: 14) {
@@ -5785,6 +5798,8 @@ struct HandSimulationRunView: View {
                 }
                 .background(.ultraThinMaterial)
                 .clipShape(Circle())
+                .disabled(!chipsEnabled)
+                .opacity(chipsEnabled ? 1 : 0.35)
                 Spacer()
             }
 
@@ -5969,8 +5984,8 @@ struct HandSimulationRunView: View {
         handsSinceCountPrompt = 0
         currentShoePerfect = true
         shoesPlayed += 1
-        awaitingBet = true
         awaitingNextHand = false
+        prepareForBettingOrDeal()
     }
 
     private func advanceHand() {
@@ -5979,9 +5994,27 @@ struct HandSimulationRunView: View {
         currentBet = 0
         betFeedback = nil
         negativeChipMode = false
-        awaitingBet = true
         awaitingNextHand = false
-        checkForReshuffle()
+        let reshuffled = checkForReshuffle()
+        if !reshuffled {
+            prepareForBettingOrDeal()
+        }
+    }
+
+    private func prepareForBettingOrDeal() {
+        awaitingBet = bettingEnabled
+        if bettingEnabled {
+            return
+        }
+        autoDealWithoutBetting()
+    }
+
+    private func autoDealWithoutBetting() {
+        currentBet = 0
+        betFeedback = nil
+        negativeChipMode = false
+        awaitingBet = false
+        dealInitialCards()
     }
 
     private func proceedToNextHand() {
@@ -5989,12 +6022,14 @@ struct HandSimulationRunView: View {
         advanceHand()
     }
 
-    private func checkForReshuffle() {
+    private func checkForReshuffle() -> Bool {
         let remainingFraction = Double(shoe.count) / Double(max(rules.decks * 52, 1))
         if remainingFraction < (1 - rules.penetration) || shoe.count < 20 {
             finalizeShoeIfNeeded()
             startShoe()
+            return true
         }
+        return false
     }
 
     private func finalizeShoeIfNeeded() {
