@@ -5429,6 +5429,7 @@ struct HandSimulationRunView: View {
     private let cardOffsetX: CGFloat = 24
     private let cardOffsetY: CGFloat = 14
     private let handSpacing: CGFloat = 16
+    private let dealSpeed: Double = 0.35
 
     let settings: HandSimulationSettings
     let onComplete: (HandSimulationSession) -> Void
@@ -5762,11 +5763,15 @@ struct HandSimulationRunView: View {
             TextField("Enter bet", text: $betInput)
                 .keyboardType(.numberPad)
                 .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .padding(.bottom, 4)
             Button("Submit Bet") {
                 gradeBet()
             }
             .buttonStyle(.borderedProminent)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 20)
     }
 
     private var runningCountPrompt: some View {
@@ -5892,8 +5897,10 @@ struct HandSimulationRunView: View {
             return
         }
 
-        playerHands[0].cards = [p1, p2]
-        dealerCards = [dealerHole, dealerUp]
+        withAnimation(.easeInOut(duration: dealSpeed)) {
+            playerHands[0].cards = [p1, p2]
+            dealerCards = [dealerHole, dealerUp]
+        }
     }
 
     private func convert(hand: SpeedCounterHandState) -> Hand {
@@ -5973,24 +5980,33 @@ struct HandSimulationRunView: View {
 
         switch action {
         case .surrender:
+            revealHoleCardIfNeeded()
             profit = -currentBet / 2.0
         case .stand:
+            revealHoleCardIfNeeded()
             dealerPlay(&dealerHand)
             profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet)
         case .double:
             if let newCard = drawCard() {
-                handState.doubleCard = newCard
-                playerHands[0] = handState
+                withAnimation(.easeInOut(duration: dealSpeed)) {
+                    handState.doubleCard = newCard
+                    playerHands[0] = handState
+                }
             }
+            revealHoleCardIfNeeded()
             dealerPlay(&dealerHand)
             profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet * 2)
         case .hit:
             if let newCard = drawCard() {
-                playerHands[0].cards.append(newCard)
+                withAnimation(.easeInOut(duration: dealSpeed)) {
+                    playerHands[0].cards.append(newCard)
+                }
                 handState = playerHands[0]
             }
             let model = convert(hand: handState)
             if model.isBusted {
+                revealHoleCardIfNeeded()
+                dealerPlay(&dealerHand)
                 profit = settle(hand: model, dealerHand: dealerHand, bet: currentBet)
             } else {
                 pendingRecommendedAction = advisedAction(for: model, dealerUp: dealerUp)
@@ -6020,7 +6036,9 @@ struct HandSimulationRunView: View {
 
         for index in playerHands.indices {
             if let extra = drawCard() {
-                playerHands[index].cards.append(extra)
+                withAnimation(.easeInOut(duration: dealSpeed)) {
+                    playerHands[index].cards.append(extra)
+                }
             }
         }
 
@@ -6038,14 +6056,18 @@ struct HandSimulationRunView: View {
                     let action = advisedAction(for: model, dealerUp: dealerUp)
                     if action == .double && model.cards.count == 2 {
                         if let newCard = drawCard() {
-                            playerHands[index].doubleCard = newCard
+                            withAnimation(.easeInOut(duration: dealSpeed)) {
+                                playerHands[index].doubleCard = newCard
+                            }
                             model.cards.append(Card(rank: newCard.card.rank))
                             bet *= 2
                         }
                         break
                     } else if action == .hit {
                         if let newCard = drawCard() {
-                            playerHands[index].cards.append(newCard)
+                            withAnimation(.easeInOut(duration: dealSpeed)) {
+                                playerHands[index].cards.append(newCard)
+                            }
                             model.cards.append(Card(rank: newCard.card.rank))
                         } else {
                             break
@@ -6070,6 +6092,7 @@ struct HandSimulationRunView: View {
     }
 
     private func finishHand(with profit: Double) {
+        revealHoleCardIfNeeded()
         sessionProfit += profit
         handsCompleted += 1
         handsSinceCountPrompt += 1
@@ -6086,6 +6109,10 @@ struct HandSimulationRunView: View {
     }
 
     private func revealHoleCard() {
+        revealHoleCardIfNeeded()
+    }
+
+    private func revealHoleCardIfNeeded() {
         if let index = dealerCards.firstIndex(where: { $0.isFaceDown }) {
             dealerCards[index].isFaceDown = false
             runningCount += dealerCards[index].card.hiLoValue
@@ -6098,8 +6125,10 @@ struct HandSimulationRunView: View {
             let soft = hand.isSoft
             if value < 17 || (value == 17 && rules.dealerHitsSoft17 && soft) {
                 guard let newCard = drawCard() else { break }
-                hand.cards.append(Card(rank: newCard.card.rank))
-                dealerCards.append(newCard)
+                withAnimation(.easeInOut(duration: dealSpeed)) {
+                    hand.cards.append(Card(rank: newCard.card.rank))
+                    dealerCards.append(newCard)
+                }
             } else {
                 break
             }
@@ -6112,6 +6141,7 @@ struct HandSimulationRunView: View {
             return bet * rules.blackjackPayout
         }
         var dealerHand = dealerHand
+        revealHoleCardIfNeeded()
         if dealerHand.isBlackjack {
             if hand.isBlackjack && !hand.fromSplit { return 0 }
             return -bet
