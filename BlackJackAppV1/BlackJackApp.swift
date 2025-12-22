@@ -5181,6 +5181,7 @@ struct HandSimulationSettings {
     var askRunningCount: Bool = true
     var runningCountCadence: Int = 3
     var betTable: BetSizingTable = .default
+    var dealSpeed: Double = 0.45
 }
 
 struct HandSimulationSession: Identifiable, Codable {
@@ -5276,6 +5277,7 @@ struct HandSimulationView: View {
                         .foregroundColor(.secondary)
 
                     ruleSection
+                    dealingSpeedSection
                     runningCountSection
                     betSection
                     statsSection
@@ -5344,6 +5346,28 @@ struct HandSimulationView: View {
                     Text("Hands Between Prompts: \(settings.runningCountCadence)")
                 }
             }
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(14)
+    }
+
+    private var dealingSpeedSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Dealing Speed")
+                .font(.headline)
+            HStack {
+                Text("Faster")
+                    .font(.caption)
+                Slider(value: $settings.dealSpeed, in: 0.2...1.2, step: 0.05) {
+                    Text("Dealing Speed")
+                }
+                Text("Slower")
+                    .font(.caption)
+            }
+            Text(String(format: "Current: %.2fs", settings.dealSpeed))
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
         .padding()
         .background(Color.secondary.opacity(0.08))
@@ -5429,7 +5453,7 @@ struct HandSimulationRunView: View {
     private let cardOffsetX: CGFloat = 24
     private let cardOffsetY: CGFloat = 14
     private let handSpacing: CGFloat = 16
-    private let dealSpeed: Double = 0.35
+    private var animationSpeed: Double { max(0.05, settings.dealSpeed) }
 
     let settings: HandSimulationSettings
     let onComplete: (HandSimulationSession) -> Void
@@ -5897,7 +5921,7 @@ struct HandSimulationRunView: View {
             return
         }
 
-        withAnimation(.easeInOut(duration: dealSpeed)) {
+        withAnimation(.easeInOut(duration: animationSpeed)) {
             playerHands[0].cards = [p1, p2]
             dealerCards = [dealerHole, dealerUp]
         }
@@ -5988,7 +6012,7 @@ struct HandSimulationRunView: View {
             profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet)
         case .double:
             if let newCard = drawCard() {
-                withAnimation(.easeInOut(duration: dealSpeed)) {
+                withAnimation(.easeInOut(duration: animationSpeed)) {
                     handState.doubleCard = newCard
                     playerHands[0] = handState
                 }
@@ -5998,7 +6022,7 @@ struct HandSimulationRunView: View {
             profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet * 2)
         case .hit:
             if let newCard = drawCard() {
-                withAnimation(.easeInOut(duration: dealSpeed)) {
+                withAnimation(.easeInOut(duration: animationSpeed)) {
                     playerHands[0].cards.append(newCard)
                 }
                 handState = playerHands[0]
@@ -6036,7 +6060,7 @@ struct HandSimulationRunView: View {
 
         for index in playerHands.indices {
             if let extra = drawCard() {
-                withAnimation(.easeInOut(duration: dealSpeed)) {
+                withAnimation(.easeInOut(duration: animationSpeed)) {
                     playerHands[index].cards.append(extra)
                 }
             }
@@ -6056,7 +6080,7 @@ struct HandSimulationRunView: View {
                     let action = advisedAction(for: model, dealerUp: dealerUp)
                     if action == .double && model.cards.count == 2 {
                         if let newCard = drawCard() {
-                            withAnimation(.easeInOut(duration: dealSpeed)) {
+                            withAnimation(.easeInOut(duration: animationSpeed)) {
                                 playerHands[index].doubleCard = newCard
                             }
                             model.cards.append(Card(rank: newCard.card.rank))
@@ -6065,7 +6089,7 @@ struct HandSimulationRunView: View {
                         break
                     } else if action == .hit {
                         if let newCard = drawCard() {
-                            withAnimation(.easeInOut(duration: dealSpeed)) {
+                            withAnimation(.easeInOut(duration: animationSpeed)) {
                                 playerHands[index].cards.append(newCard)
                             }
                             model.cards.append(Card(rank: newCard.card.rank))
@@ -6125,7 +6149,7 @@ struct HandSimulationRunView: View {
             let soft = hand.isSoft
             if value < 17 || (value == 17 && rules.dealerHitsSoft17 && soft) {
                 guard let newCard = drawCard() else { break }
-                withAnimation(.easeInOut(duration: dealSpeed)) {
+                withAnimation(.easeInOut(duration: animationSpeed)) {
                     hand.cards.append(Card(rank: newCard.card.rank))
                     dealerCards.append(newCard)
                 }
