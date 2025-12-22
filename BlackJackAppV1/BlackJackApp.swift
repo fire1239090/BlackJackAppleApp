@@ -5641,9 +5641,10 @@ struct HandSimulationRunView: View {
     private var actionButtons: some View {
         HStack(spacing: 10) {
             ForEach(PlayerAction.allCases, id: \.self) { action in
-                Button(actionLabel(for: action)) {
-                    handleAction(action)
-                }
+                Button(
+                    action: { handleAction(action) },
+                    label: { actionLabel(for: action) }
+                )
                 .frame(maxWidth: .infinity)
                 .padding()
                 .background(buttonEnabled(action) ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.1))
