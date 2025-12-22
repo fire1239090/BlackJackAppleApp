@@ -5464,6 +5464,7 @@ struct HandSimulationRunView: View {
     @State private var showTrayExpanded: Bool = false
     @State private var advanceAfterBetAlert: Bool = false
     @State private var showCounts: Bool = false
+    @State private var pendingRecommendedAction: PlayerAction?
 
     private var decksRemaining: Double {
         let remaining = Double(shoe.count) / 52.0
@@ -5502,6 +5503,7 @@ struct HandSimulationRunView: View {
         ZStack {
             Color(uiColor: .systemGroupedBackground)
                 .ignoresSafeArea()
+                .ignoresSafeArea(.keyboard, edges: .bottom)
 
             VStack(spacing: 16) {
                 tableArea
@@ -5544,7 +5546,7 @@ struct HandSimulationRunView: View {
         }
         .alert(item: $actionAlert) { alert in
             Alert(title: Text("Strategy Correction"), message: Text(alert.message), dismissButton: .default(Text("Continue")) {
-                resolveCurrentHand(with: recommendedAction ?? .stand)
+                resolveCurrentHand(with: pendingRecommendedAction ?? recommendedAction ?? .stand)
             })
         }
         .alert(item: $countAlert) { alert in
@@ -5739,6 +5741,7 @@ struct HandSimulationRunView: View {
     private func modalOverlay<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         Color.black.opacity(0.35)
             .ignoresSafeArea()
+            .ignoresSafeArea(.keyboard, edges: .bottom)
             .overlay(
                 content()
                     .frame(maxWidth: 360)
@@ -5943,7 +5946,12 @@ struct HandSimulationRunView: View {
 
     private func handleAction(_ action: PlayerAction) {
         guard !awaitingBet else { return }
-        guard let recommended = recommendedAction else { return }
+        guard let recommended = recommendedAction else {
+            actionAlert = TrainingAlert(message: "Finish dealing the hand before choosing an action.")
+            pendingRecommendedAction = nil
+            return
+        }
+        pendingRecommendedAction = recommended
         let correct = action == recommended
         recordDecision(correct: correct)
         if !correct {
