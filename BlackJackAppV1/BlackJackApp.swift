@@ -4355,7 +4355,7 @@ struct TrainingSuiteView: View {
         TrainingOption(
             title: "Hand Simulation",
             icon: "hands.clap",
-            destination: AnyView(PlaceholderFeatureView(title: "Hand Simulation"))
+            destination: AnyView(HandSimulationView())
         ),
         TrainingOption(
             title: "Deck Estimation and Bet Sizing",
@@ -5163,6 +5163,1034 @@ struct CombinedTrainingView: View {
         let guidance = guidanceNeeded ? "Your answer was acceptable, but an interpolated bet is about $\(Int(interpolated))." : nil
 
         return (isCorrect, feedback, guidance)
+    }
+}
+
+// MARK: - Hand Simulation
+
+struct HandSimulationSettings {
+    var rules: GameRules = GameRules(
+        decks: 6,
+        dealerHitsSoft17: true,
+        doubleAfterSplit: true,
+        surrenderAllowed: true,
+        blackjackPayout: 1.5,
+        penetration: 0.75
+    )
+    var resplitAces: Bool = true
+    var askRunningCount: Bool = true
+    var runningCountCadence: Int = 3
+    var betTable: BetSizingTable = .default
+}
+
+struct HandSimulationSession: Identifiable, Codable {
+    let id: UUID
+    let date: Date
+    let correctDecisions: Int
+    let totalDecisions: Int
+    let longestStreak: Int
+    let shoesPlayed: Int
+    let perfectShoes: Int
+    let longestPerfectShoeStreak: Int
+
+    init(date: Date, correctDecisions: Int, totalDecisions: Int, longestStreak: Int, shoesPlayed: Int, perfectShoes: Int, longestPerfectShoeStreak: Int) {
+        id = UUID()
+        self.date = date
+        self.correctDecisions = correctDecisions
+        self.totalDecisions = totalDecisions
+        self.longestStreak = longestStreak
+        self.shoesPlayed = shoesPlayed
+        self.perfectShoes = perfectShoes
+        self.longestPerfectShoeStreak = longestPerfectShoeStreak
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, date, correctDecisions, totalDecisions, longestStreak, shoesPlayed, perfectShoes, longestPerfectShoeStreak
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        date = try container.decode(Date.self, forKey: .date)
+        correctDecisions = try container.decode(Int.self, forKey: .correctDecisions)
+        totalDecisions = try container.decode(Int.self, forKey: .totalDecisions)
+        longestStreak = try container.decode(Int.self, forKey: .longestStreak)
+        shoesPlayed = try container.decode(Int.self, forKey: .shoesPlayed)
+        perfectShoes = try container.decode(Int.self, forKey: .perfectShoes)
+        longestPerfectShoeStreak = try container.decode(Int.self, forKey: .longestPerfectShoeStreak)
+    }
+}
+
+struct HandSimulationStats {
+    let correctDecisions: Int
+    let totalDecisions: Int
+    let accuracy: Double?
+    let longestStreak: Int
+    let perfectShoes: Int
+    let longestPerfectStreak: Int
+
+    static func make(for sessions: [HandSimulationSession]) -> HandSimulationStats {
+        let correct = sessions.reduce(0) { $0 + $1.correctDecisions }
+        let total = sessions.reduce(0) { $0 + $1.totalDecisions }
+        let accuracy = total > 0 ? Double(correct) / Double(total) : nil
+        let longest = sessions.map(\.longestStreak).max() ?? 0
+        let perfectShoes = sessions.reduce(0) { $0 + $1.perfectShoes }
+        let longestPerfect = sessions.map(\.longestPerfectShoeStreak).max() ?? 0
+
+        return HandSimulationStats(
+            correctDecisions: correct,
+            totalDecisions: total,
+            accuracy: accuracy,
+            longestStreak: longest,
+            perfectShoes: perfectShoes,
+            longestPerfectStreak: longestPerfect
+        )
+    }
+}
+
+struct HandSimulationView: View {
+    @AppStorage("handSimulationSessions") private var storedSessions: Data = Data()
+
+    @State private var settings = HandSimulationSettings()
+    @State private var betInputs: [Int: String] = BetSizingTable.defaultInputs
+    @State private var sessions: [HandSimulationSession] = []
+    @State private var startRun: Bool = false
+    @State private var activeSettings: HandSimulationSettings?
+
+    private var overallStats: HandSimulationStats {
+        HandSimulationStats.make(for: sessions)
+    }
+
+    private var weeklyStats: HandSimulationStats {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return overallStats }
+        let recent = sessions.filter { $0.date >= weekAgo }
+        return HandSimulationStats.make(for: recent)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Build full-hand intuition by practicing betting, counting, and strategy fundamentals in one place.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    ruleSection
+                    runningCountSection
+                    betSection
+                    statsSection
+                }
+                .padding()
+            }
+            .navigationTitle("Hand Simulation")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Start Drill", action: beginRun)
+                        .fontWeight(.semibold)
+                }
+            }
+
+            NavigationLink(isActive: $startRun) {
+                if let activeSettings {
+                    HandSimulationRunView(settings: activeSettings) { session in
+                        sessions.insert(session, at: 0)
+                        persistSessions()
+                    }
+                } else {
+                    EmptyView()
+                }
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+        }
+        .onAppear(perform: loadSessions)
+    }
+
+    private var ruleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Game Rules")
+                .font(.headline)
+            Stepper(value: $settings.rules.decks, in: 1...8) {
+                Text("Number of Decks: \(settings.rules.decks)")
+            }
+            Toggle("Dealer Hits Soft 17", isOn: $settings.rules.dealerHitsSoft17)
+            Toggle("Surrender Allowed", isOn: $settings.rules.surrenderAllowed)
+            Toggle("Re-split Aces", isOn: $settings.resplitAces)
+            VStack(alignment: .leading) {
+                HStack {
+                    Text("Penetration")
+                    Spacer()
+                    Text(String(format: "%.0f%%", settings.rules.penetration * 100))
+                        .foregroundColor(.secondary)
+                }
+                Slider(value: $settings.rules.penetration, in: 0.5...0.95, step: 0.05)
+            }
+            Text("Double after split is always enabled for this drill.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(14)
+    }
+
+    private var runningCountSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Ask Running Count", isOn: $settings.askRunningCount.animation())
+            if settings.askRunningCount {
+                Stepper(value: $settings.runningCountCadence, in: 1...10) {
+                    Text("Hands Between Prompts: \(settings.runningCountCadence)")
+                }
+            }
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(14)
+    }
+
+    private var betSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("True Count / Betting Table")
+                .font(.headline)
+            BetSizingTableView(
+                betTable: settings.betTable,
+                isEditable: true,
+                betInputs: betInputs,
+                title: "True Count Bet Table",
+                onUpdate: updateBet(for:newValue:)
+            )
+        }
+    }
+
+    private var statsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Recent Performance")
+                .font(.headline)
+            statRow(title: "Accurate Decisions", overall: overallStats.accuracy, weekly: weeklyStats.accuracy, formatter: percentLabel)
+            statRow(title: "Longest Decision Streak", overall: Double(overallStats.longestStreak), weekly: Double(weeklyStats.longestStreak), formatter: countLabel)
+            statRow(title: "Perfect Shoes", overall: Double(overallStats.perfectShoes), weekly: Double(weeklyStats.perfectShoes), formatter: countLabel)
+            statRow(title: "Longest Perfect Shoe Streak", overall: Double(overallStats.longestPerfectStreak), weekly: Double(weeklyStats.longestPerfectStreak), formatter: countLabel)
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(14)
+    }
+
+    private func statRow(title: String, overall: Double?, weekly: Double?, formatter: (Double?) -> String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.headline)
+            Text("All-time: \(formatter(overall))")
+            Text("Last 7 days: \(formatter(weekly))")
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func percentLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.0f%%", value * 100)
+    }
+
+    private func countLabel(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(Int(value))
+    }
+
+    private func updateBet(for trueCount: Int, newValue: String) {
+        betInputs[trueCount] = newValue
+        if let parsed = Double(newValue) {
+            settings.betTable.update(trueCount: trueCount, value: parsed)
+        }
+    }
+
+    private func beginRun() {
+        activeSettings = settings
+        startRun = true
+    }
+
+    private func loadSessions() {
+        guard let decoded = try? JSONDecoder().decode([HandSimulationSession].self, from: storedSessions) else { return }
+        sessions = decoded
+    }
+
+    private func persistSessions() {
+        guard let data = try? JSONEncoder().encode(sessions) else { return }
+        storedSessions = data
+    }
+}
+
+struct HandSimulationRunView: View {
+    private let maxSplitDepth = 3
+    private let discardSizes = DeckBetTrainingConstants.deckCounts
+    private let cardWidth: CGFloat = 70
+    private var cardHeight: CGFloat { cardWidth / (2.5/3.5) }
+    private let cardOffsetX: CGFloat = 24
+    private let cardOffsetY: CGFloat = 14
+    private let handSpacing: CGFloat = 16
+    private let dealSpeed: Double = 0.35
+
+    let settings: HandSimulationSettings
+    let onComplete: (HandSimulationSession) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var shoe: [SpeedCounterCard] = []
+    @State private var dealerCards: [SpeedCounterDealtCard] = []
+    @State private var playerHands: [SpeedCounterHandState] = []
+    @State private var cardsPlayed: Int = 0
+    @State private var runningCount: Int = 0
+    @State private var awaitingBet: Bool = true
+    @State private var betInput: String = ""
+    @State private var currentBet: Double = 0
+    @State private var betAlert: TrainingAlert?
+    @State private var actionAlert: TrainingAlert?
+    @State private var countAlert: TrainingAlert?
+    @State private var showRunningCountPrompt: Bool = false
+    @State private var runningCountGuess: String = ""
+    @State private var sessionProfit: Double = 0
+    @State private var decisions: Int = 0
+    @State private var correctDecisions: Int = 0
+    @State private var currentStreak: Int = 0
+    @State private var longestStreak: Int = 0
+    @State private var shoesPlayed: Int = 0
+    @State private var currentShoePerfect: Bool = true
+    @State private var perfectShoes: Int = 0
+    @State private var perfectStreak: Int = 0
+    @State private var longestPerfectStreak: Int = 0
+    @State private var handsCompleted: Int = 0
+    @State private var handsSinceCountPrompt: Int = 0
+    @State private var sessionLogged: Bool = false
+    @State private var showTrayExpanded: Bool = false
+    @State private var advanceAfterBetAlert: Bool = false
+    @State private var showCounts: Bool = false
+    @State private var pendingRecommendedAction: PlayerAction?
+
+    private var decksRemaining: Double {
+        let remaining = Double(shoe.count) / 52.0
+        return max(remaining, 0.25)
+    }
+
+    private var trueCount: Double {
+        Double(runningCount) / decksRemaining
+    }
+
+    private var dealerUpCard: Card? {
+        guard let up = dealerCards.last(where: { !$0.isFaceDown }) else { return nil }
+        return Card(rank: up.card.rank)
+    }
+
+    private var recommendedAction: PlayerAction? {
+        guard let hand = playerHands.first else { return nil }
+        guard let dealerUp = dealerUpCard else { return nil }
+        let handModel = convert(hand: hand)
+        return advisedAction(for: handModel, dealerUp: dealerUp)
+    }
+
+    private var discardAssetName: String {
+        let decksDiscarded = max(0.25, min(Double(cardsPlayed) / 52.0, Double(settings.rules.decks)))
+        let closest = discardSizes.min(by: { abs($0 - decksDiscarded) < abs($1 - decksDiscarded) }) ?? 0.25
+        return DeckBetTrainingConstants.deckAssetName(for: closest, showDividers: true)
+    }
+
+    private var rules: GameRules {
+        var rules = settings.rules
+        rules.doubleAfterSplit = true
+        return rules
+    }
+
+    var body: some View {
+        ZStack {
+            Color(uiColor: .systemGroupedBackground)
+                .ignoresSafeArea()
+                .ignoresSafeArea(.keyboard, edges: .bottom)
+
+            VStack(spacing: 16) {
+                tableArea
+
+                actionButtons
+
+                sessionProfitView
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .onAppear(perform: startShoe)
+            .onDisappear {
+                if !sessionLogged {
+                    completeSession()
+                }
+            }
+            .navigationTitle("Hand Simulation")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("End Drill", action: completeSession)
+                        .fontWeight(.semibold)
+                }
+            }
+
+            if awaitingBet {
+                modalOverlay { betPrompt }
+            }
+
+            if showRunningCountPrompt {
+                modalOverlay { runningCountPrompt }
+            }
+        }
+        .alert(item: $betAlert) { alert in
+            Alert(title: Text("Bet Correction"), message: Text(alert.message), dismissButton: .default(Text("Got it")) {
+                if advanceAfterBetAlert {
+                    proceedAfterBet()
+                }
+            })
+        }
+        .alert(item: $actionAlert) { alert in
+            Alert(title: Text("Strategy Correction"), message: Text(alert.message), dismissButton: .default(Text("Continue")) {
+                resolveCurrentHand(with: pendingRecommendedAction ?? recommendedAction ?? .stand)
+            })
+        }
+        .alert(item: $countAlert) { alert in
+            Alert(title: Text("Running Count"), message: Text(alert.message), dismissButton: .default(Text("Next Hand")) {
+                showRunningCountPrompt = false
+                advanceHand()
+            })
+        }
+        .sheet(isPresented: $showTrayExpanded) {
+            VStack {
+                Image(discardAssetName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                Button("Close") { showTrayExpanded = false }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.bottom)
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private var tableArea: some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(discardAssetName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 90)
+                    .onTapGesture { showTrayExpanded = true }
+                    .contextMenu {
+                        Image(discardAssetName)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 280)
+                    }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Dealer")
+                        .font(.headline)
+                    HStack(spacing: 8) {
+                        ForEach(dealerCards) { card in
+                            SpeedCounterCardView(card: card)
+                                .frame(width: cardWidth)
+                        }
+                    }
+                    .padding(.leading, 6)
+                }
+
+                Spacer()
+
+                countDisplay
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Player")
+                    .font(.headline)
+                GeometryReader { proxy in
+                    let contentWidth = totalHandsWidth()
+                    let horizontalPadding = max((proxy.size.width - contentWidth) / 2, 0) + 16
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 16) {
+                            ForEach(playerHands) { hand in
+                                playerHandView(hand)
+                            }
+                        }
+                        .padding(.horizontal, horizontalPadding)
+                        .frame(
+                            maxWidth: max(proxy.size.width, contentWidth + (horizontalPadding * 2)),
+                            alignment: .center
+                        )
+                        .frame(height: maxHandHeight + 24, alignment: .bottom)
+                    }
+                }
+                .frame(height: maxHandHeight + 32)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 20)
+        .padding(.horizontal, 12)
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var countDisplay: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            HStack(spacing: 10) {
+                Button(action: { showCounts.toggle() }) {
+                    Image(systemName: showCounts ? "eye.slash.fill" : "eye.fill")
+                        .font(.headline)
+                }
+                .buttonStyle(.plain)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("Running Count")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(showCounts ? "\(runningCount)" : "— —")
+                        .font(.headline.monospacedDigit())
+                    Text("True Count")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(showCounts ? String(format: "%.2f", trueCount) : "— —")
+                        .font(.subheadline.monospacedDigit())
+                }
+            }
+        }
+        .frame(minWidth: 140, alignment: .trailing)
+    }
+
+    private var actionButtons: some View {
+        HStack(spacing: 10) {
+            ForEach(PlayerAction.allCases, id: \.self) { action in
+                Button(
+                    action: { handleAction(action) },
+                    label: { actionLabel(for: action) }
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .padding(.horizontal, 8)
+                .background(buttonEnabled(action) ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.1))
+                .foregroundColor(buttonEnabled(action) ? .primary : .secondary)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .disabled(!buttonEnabled(action) || awaitingBet || showRunningCountPrompt)
+            }
+        }
+        .padding(.horizontal, 6)
+    }
+
+    private func actionLabel(for action: PlayerAction) -> some View {
+        VStack {
+            Text(label(for: action))
+                .font(.subheadline.weight(.semibold))
+            Text(actionTitle(for: action))
+                .font(.caption2)
+        }
+    }
+
+    private func buttonEnabled(_ action: PlayerAction) -> Bool {
+        guard let handState = playerHands.first else { return false }
+        let hand = convert(hand: handState)
+        switch action {
+        case .double:
+            return hand.cards.count == 2
+        case .split:
+            if !hand.canSplit { return false }
+            if handState.splitDepth >= maxSplitDepth { return false }
+            if hand.isSplitAce && !settings.resplitAces && handState.splitDepth > 0 { return false }
+            return true
+        case .surrender:
+            return rules.surrenderAllowed && hand.cards.count == 2
+        case .hit, .stand:
+            return true
+        }
+    }
+
+    private func label(for action: PlayerAction) -> String {
+        switch action {
+        case .hit: return "H"
+        case .stand: return "S"
+        case .double: return "D"
+        case .split: return "P"
+        case .surrender: return "R"
+        }
+    }
+
+    private func actionTitle(for action: PlayerAction) -> String {
+        switch action {
+        case .hit: return "Hit"
+        case .stand: return "Stand"
+        case .double: return "Double"
+        case .split: return "Split"
+        case .surrender: return "Surrender"
+        }
+    }
+
+    private var sessionProfitView: some View {
+        VStack(spacing: 6) {
+            Text("Session Profit")
+                .font(.headline)
+            Text(String(format: "$%.2f", sessionProfit))
+                .font(.title2.weight(.semibold))
+                .foregroundColor(sessionProfit >= 0 ? .green : .red)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.top, 4)
+    }
+
+    private func modalOverlay<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        Color.black.opacity(0.35)
+            .ignoresSafeArea()
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+            .overlay(
+                content()
+                    .frame(maxWidth: 360)
+                    .padding()
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .padding()
+            )
+    }
+
+    private var betPrompt: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Place your bet")
+                .font(.headline)
+            Text("True count: \(String(format: "%.2f", trueCount))")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            TextField("Enter bet", text: $betInput)
+                .keyboardType(.numberPad)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .padding(.bottom, 4)
+            Button("Submit Bet") {
+                gradeBet()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 20)
+    }
+
+    private var runningCountPrompt: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("What's the running count?")
+                .font(.headline)
+            TextField("Enter count", text: $runningCountGuess)
+                .keyboardType(.numberPad)
+                .textFieldStyle(.roundedBorder)
+            Button("Submit") {
+                submitRunningCount()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private func playerHandView(_ hand: SpeedCounterHandState) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
+                SpeedCounterCardView(card: card)
+                    .frame(width: cardWidth)
+                    .offset(x: CGFloat(index) * cardOffsetX, y: CGFloat(-index) * cardOffsetY)
+            }
+
+            if let doubleCard = hand.doubleCard {
+                SpeedCounterCardView(card: doubleCard)
+                    .frame(width: cardWidth)
+                    .rotationEffect(.degrees(90))
+                    .offset(x: CGFloat(hand.cards.count) * cardOffsetX + 6, y: CGFloat(-hand.cards.count) * cardOffsetY)
+            }
+        }
+    }
+
+    private func totalHandsWidth() -> CGFloat {
+        guard !playerHands.isEmpty else { return cardWidth }
+        let width = playerHands.reduce(0) { partial, hand in
+            partial + handWidth(hand)
+        }
+        let spacingWidth = handSpacing * CGFloat(max(playerHands.count - 1, 0))
+        return width + spacingWidth
+    }
+
+    private func handWidth(_ hand: SpeedCounterHandState) -> CGFloat {
+        let count = max(hand.cards.count, 1)
+        var width = cardWidth + CGFloat(max(0, count - 1)) * cardOffsetX
+        if hand.doubleCard != nil {
+            width += cardWidth * 0.6
+        }
+        return width
+    }
+
+    private var maxHandHeight: CGFloat {
+        guard !playerHands.isEmpty else { return cardHeight }
+        return playerHands.map(handHeight).max() ?? cardHeight
+    }
+
+    private func handHeight(_ hand: SpeedCounterHandState) -> CGFloat {
+        let count = max(hand.cards.count, 1)
+        var height = cardHeight + CGFloat(max(0, count - 1)) * cardOffsetY
+        if hand.doubleCard != nil {
+            height = max(height, cardWidth + cardOffsetY)
+        }
+        return height
+    }
+
+    private func startShoe() {
+        shoe = SpeedCounterCard.shoe(decks: rules.decks)
+        cardsPlayed = 0
+        runningCount = 0
+        dealerCards = []
+        playerHands = []
+        handsSinceCountPrompt = 0
+        currentShoePerfect = true
+        shoesPlayed += 1
+        awaitingBet = true
+    }
+
+    private func advanceHand() {
+        dealerCards = []
+        playerHands = []
+        currentBet = 0
+        betInput = ""
+        awaitingBet = true
+        checkForReshuffle()
+    }
+
+    private func checkForReshuffle() {
+        let remainingFraction = Double(shoe.count) / Double(max(rules.decks * 52, 1))
+        if remainingFraction < (1 - rules.penetration) || shoe.count < 20 {
+            finalizeShoeIfNeeded()
+            startShoe()
+        }
+    }
+
+    private func finalizeShoeIfNeeded() {
+        guard cardsPlayed > 0 else { return }
+        if currentShoePerfect {
+            perfectShoes += 1
+            perfectStreak += 1
+            longestPerfectStreak = max(longestPerfectStreak, perfectStreak)
+        } else {
+            perfectStreak = 0
+        }
+        currentShoePerfect = true
+    }
+
+    private func drawCard(faceDown: Bool = false) -> SpeedCounterDealtCard? {
+        guard !shoe.isEmpty else { return nil }
+        let next = shoe.removeLast()
+        cardsPlayed += 1
+        if !faceDown {
+            runningCount += next.hiLoValue
+        }
+        return SpeedCounterDealtCard(card: next, isFaceDown: faceDown, isPerpendicular: false)
+    }
+
+    private func dealInitialCards() {
+        dealerCards = []
+        playerHands = [SpeedCounterHandState(cards: [], doubleCard: nil, isSplitAce: false, splitDepth: 0)]
+
+        guard let p1 = drawCard(), let dealerHole = drawCard(faceDown: true), let p2 = drawCard(), let dealerUp = drawCard() else {
+            startShoe()
+            return
+        }
+
+        withAnimation(.easeInOut(duration: dealSpeed)) {
+            playerHands[0].cards = [p1, p2]
+            dealerCards = [dealerHole, dealerUp]
+        }
+    }
+
+    private func convert(hand: SpeedCounterHandState) -> Hand {
+        var cards = hand.cards.map { Card(rank: $0.card.rank) }
+        if let double = hand.doubleCard {
+            cards.append(Card(rank: double.card.rank))
+        }
+        return Hand(cards: cards, isSplitAce: hand.isSplitAce, fromSplit: hand.splitDepth > 0)
+    }
+
+    private func advisedAction(for hand: Hand, dealerUp: Card) -> PlayerAction {
+        StrategyAdvisor.baseAction(for: hand, dealerUp: dealerUp, rules: rules)
+    }
+
+    private func gradeBet() {
+        advanceAfterBetAlert = false
+        guard let betValue = Double(betInput) else {
+            currentShoePerfect = false
+            recordDecision(correct: false)
+            advanceAfterBetAlert = false
+            betAlert = TrainingAlert(message: "Please enter a numeric bet.")
+            return
+        }
+
+        let tc = trueCount
+        let lower = Int(floor(tc))
+        let upper = Int(ceil(tc))
+        let lowerBet = settings.betTable.value(for: lower)
+        let upperBet = settings.betTable.value(for: upper)
+        let minAccepted = min(lowerBet, upperBet)
+        let maxAccepted = max(lowerBet, upperBet)
+        let correctRange = betValue >= minAccepted && betValue <= maxAccepted
+
+        recordDecision(correct: correctRange)
+        currentBet = correctRange ? betValue : minAccepted
+
+        if correctRange {
+            proceedAfterBet()
+        } else {
+            currentShoePerfect = false
+            advanceAfterBetAlert = true
+            betAlert = TrainingAlert(message: "Recommended bet is between $\(Int(minAccepted)) and $\(Int(maxAccepted)).")
+        }
+    }
+
+    private func proceedAfterBet() {
+        awaitingBet = false
+        dealInitialCards()
+    }
+
+    private func handleAction(_ action: PlayerAction) {
+        guard !awaitingBet else { return }
+        guard let recommended = recommendedAction else {
+            actionAlert = TrainingAlert(message: "Finish dealing the hand before choosing an action.")
+            pendingRecommendedAction = nil
+            return
+        }
+        pendingRecommendedAction = recommended
+        let correct = action == recommended
+        recordDecision(correct: correct)
+        if !correct {
+            currentShoePerfect = false
+            actionAlert = TrainingAlert(message: "Optimal play is \(actionTitle(for: recommended)).")
+            return
+        }
+        resolveCurrentHand(with: action)
+    }
+
+    private func resolveCurrentHand(with action: PlayerAction) {
+        guard var handState = playerHands.first, let dealerUp = dealerUpCard else { return }
+        var dealerHand = Hand(cards: dealerCards.map { Card(rank: $0.card.rank) })
+
+        revealHoleCard()
+        dealerHand = Hand(cards: dealerCards.map { Card(rank: $0.card.rank) })
+
+        var profit: Double = 0
+
+        switch action {
+        case .surrender:
+            revealHoleCardIfNeeded()
+            profit = -currentBet / 2.0
+        case .stand:
+            revealHoleCardIfNeeded()
+            dealerPlay(&dealerHand)
+            profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet)
+        case .double:
+            if let newCard = drawCard() {
+                withAnimation(.easeInOut(duration: dealSpeed)) {
+                    handState.doubleCard = newCard
+                    playerHands[0] = handState
+                }
+            }
+            revealHoleCardIfNeeded()
+            dealerPlay(&dealerHand)
+            profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet * 2)
+        case .hit:
+            if let newCard = drawCard() {
+                withAnimation(.easeInOut(duration: dealSpeed)) {
+                    playerHands[0].cards.append(newCard)
+                }
+                handState = playerHands[0]
+            }
+            let model = convert(hand: handState)
+            if model.isBusted {
+                revealHoleCardIfNeeded()
+                dealerPlay(&dealerHand)
+                profit = settle(hand: model, dealerHand: dealerHand, bet: currentBet)
+            } else {
+                pendingRecommendedAction = advisedAction(for: model, dealerUp: dealerUp)
+                return
+            }
+        case .split:
+            profit = resolveSplitHands(initial: handState, dealerHand: dealerHand, dealerUp: dealerUp)
+        }
+
+        finishHand(with: profit)
+    }
+
+    private func resolveSplitHands(initial: SpeedCounterHandState, dealerHand: Hand, dealerUp: Card) -> Double {
+        guard initial.cards.count == 2 else { return 0 }
+
+        let first = initial.cards[0]
+        let second = initial.cards[1]
+
+        var handsToPlay: [SpeedCounterHandState] = []
+
+        let left = SpeedCounterHandState(cards: [first], doubleCard: nil, isSplitAce: first.card.rank == 1, splitDepth: initial.splitDepth + 1)
+        let right = SpeedCounterHandState(cards: [second], doubleCard: nil, isSplitAce: second.card.rank == 1, splitDepth: initial.splitDepth + 1)
+        handsToPlay.append(left)
+        handsToPlay.append(right)
+
+        playerHands = handsToPlay
+
+        for index in playerHands.indices {
+            if let extra = drawCard() {
+                withAnimation(.easeInOut(duration: dealSpeed)) {
+                    playerHands[index].cards.append(extra)
+                }
+            }
+        }
+
+        var outcomes: [(Hand, Double)] = []
+
+        for index in playerHands.indices {
+            var model = convert(hand: playerHands[index])
+            var bet = currentBet
+
+            if model.isSplitAce {
+                // One card only on split aces
+            } else {
+                while true {
+                    if model.isBusted { break }
+                    let action = advisedAction(for: model, dealerUp: dealerUp)
+                    if action == .double && model.cards.count == 2 {
+                        if let newCard = drawCard() {
+                            withAnimation(.easeInOut(duration: dealSpeed)) {
+                                playerHands[index].doubleCard = newCard
+                            }
+                            model.cards.append(Card(rank: newCard.card.rank))
+                            bet *= 2
+                        }
+                        break
+                    } else if action == .hit {
+                        if let newCard = drawCard() {
+                            withAnimation(.easeInOut(duration: dealSpeed)) {
+                                playerHands[index].cards.append(newCard)
+                            }
+                            model.cards.append(Card(rank: newCard.card.rank))
+                        } else {
+                            break
+                        }
+                    } else {
+                        break
+                    }
+                }
+            }
+
+            outcomes.append((model, bet))
+        }
+
+        var dealerHandCopy = dealerHand
+        dealerPlay(&dealerHandCopy)
+
+        var profit: Double = 0
+        for outcome in outcomes {
+            profit += settle(hand: outcome.0, dealerHand: dealerHandCopy, bet: outcome.1)
+        }
+        return profit
+    }
+
+    private func finishHand(with profit: Double) {
+        revealHoleCardIfNeeded()
+        sessionProfit += profit
+        handsCompleted += 1
+        handsSinceCountPrompt += 1
+        pendingRecommendedAction = nil
+
+        if settings.askRunningCount && handsSinceCountPrompt >= settings.runningCountCadence {
+            showRunningCountPrompt = true
+            runningCountGuess = ""
+            handsSinceCountPrompt = 0
+            return
+        }
+
+        advanceHand()
+    }
+
+    private func revealHoleCard() {
+        revealHoleCardIfNeeded()
+    }
+
+    private func revealHoleCardIfNeeded() {
+        if let index = dealerCards.firstIndex(where: { $0.isFaceDown }) {
+            dealerCards[index].isFaceDown = false
+            runningCount += dealerCards[index].card.hiLoValue
+        }
+    }
+
+    private func dealerPlay(_ hand: inout Hand) {
+        while true {
+            let value = hand.bestValue
+            let soft = hand.isSoft
+            if value < 17 || (value == 17 && rules.dealerHitsSoft17 && soft) {
+                guard let newCard = drawCard() else { break }
+                withAnimation(.easeInOut(duration: dealSpeed)) {
+                    hand.cards.append(Card(rank: newCard.card.rank))
+                    dealerCards.append(newCard)
+                }
+            } else {
+                break
+            }
+        }
+    }
+
+    private func settle(hand: Hand, dealerHand: Hand, bet: Double) -> Double {
+        if hand.isBusted { return -bet }
+        if hand.cards.count == 2 && hand.isBlackjack && !hand.fromSplit {
+            return bet * rules.blackjackPayout
+        }
+        var dealerHand = dealerHand
+        revealHoleCardIfNeeded()
+        if dealerHand.isBlackjack {
+            if hand.isBlackjack && !hand.fromSplit { return 0 }
+            return -bet
+        }
+        if dealerHand.isBusted { return bet }
+        if hand.bestValue > dealerHand.bestValue { return bet }
+        if hand.bestValue < dealerHand.bestValue { return -bet }
+        return 0
+    }
+
+    private func recordDecision(correct: Bool) {
+        decisions += 1
+        if correct {
+            correctDecisions += 1
+            currentStreak += 1
+            longestStreak = max(longestStreak, currentStreak)
+        } else {
+            currentShoePerfect = false
+            currentStreak = 0
+        }
+    }
+
+    private func submitRunningCount() {
+        let guess = Int(runningCountGuess.trimmingCharacters(in: .whitespacesAndNewlines))
+        let correct = guess == runningCount
+        recordDecision(correct: correct)
+        if correct {
+            countAlert = TrainingAlert(message: "Correct! Running count is \(runningCount).")
+        } else {
+            currentShoePerfect = false
+            countAlert = TrainingAlert(message: "Running count is \(runningCount).")
+        }
+    }
+
+    private func completeSession() {
+        finalizeShoeIfNeeded()
+        guard !sessionLogged else { dismiss(); return }
+        let session = HandSimulationSession(
+            date: Date(),
+            correctDecisions: correctDecisions,
+            totalDecisions: decisions,
+            longestStreak: longestStreak,
+            shoesPlayed: shoesPlayed,
+            perfectShoes: perfectShoes,
+            longestPerfectShoeStreak: longestPerfectStreak
+        )
+        sessionLogged = true
+        onComplete(session)
+        dismiss()
     }
 }
 
@@ -7474,6 +8502,7 @@ struct TrainingStatsView: View {
     @AppStorage("strategyQuizSurrenderCompletions") private var quizSurrenderCompletions: Int = 0
     @AppStorage("strategyQuizFullCompletions") private var quizFullCompletions: Int = 0
     @AppStorage("deckBetTrainingStats") private var deckBetStatsData: Data = Data()
+    @AppStorage("handSimulationSessions") private var storedHandSimulation: Data = Data()
 
     private var sessions: [DeckCountThroughSession] {
         (try? JSONDecoder().decode([DeckCountThroughSession].self, from: storedSessions)) ?? []
@@ -7507,6 +8536,15 @@ struct TrainingStatsView: View {
     private var speedCounterOverall: SpeedCounterStats { .make(for: speedCounterSessions) }
     private var speedCounterWeekly: SpeedCounterStats { .make(for: lastWeekSpeedCounterSessions) }
     private var deckBetStats: DeckBetTrainingStats { DeckBetTrainingStats.decode(from: deckBetStatsData) }
+    private var handSimulationSessions: [HandSimulationSession] {
+        (try? JSONDecoder().decode([HandSimulationSession].self, from: storedHandSimulation)) ?? []
+    }
+    private var lastWeekHandSimulation: [HandSimulationSession] {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return [] }
+        return handSimulationSessions.filter { $0.date >= weekAgo }
+    }
+    private var handSimulationOverall: HandSimulationStats { .make(for: handSimulationSessions) }
+    private var handSimulationWeekly: HandSimulationStats { .make(for: lastWeekHandSimulation) }
 
     var body: some View {
         List {
@@ -7564,8 +8602,15 @@ struct TrainingStatsView: View {
                 singleStatRow(title: "Combined Decision Correctness", value: percentLabel(deckBetStats.combinedAccuracy))
             }
 
+            Section("Hand Simulation") {
+                statRow(title: "Accurate Decisions", overall: handSimulationOverall.accuracy, weekly: handSimulationWeekly.accuracy, formatter: percentLabel)
+                statRow(title: "Longest Correct Streak", overall: Double(handSimulationOverall.longestStreak), weekly: Double(handSimulationWeekly.longestStreak), formatter: countLabel)
+                statRow(title: "Perfect Shoes", overall: Double(handSimulationOverall.perfectShoes), weekly: Double(handSimulationWeekly.perfectShoes), formatter: countLabel)
+                statRow(title: "Longest Perfect Shoe Streak", overall: Double(handSimulationOverall.longestPerfectStreak), weekly: Double(handSimulationWeekly.longestPerfectStreak), formatter: countLabel)
+            }
+
             Section("More Training Stats") {
-                Text("Hand Simulation and Test Out stats will appear here once those drills are available.")
+                Text("Test Out stats will appear here once that drill is available.")
                     .foregroundColor(.secondary)
                     .font(.subheadline)
                     .padding(.vertical, 4)
