@@ -5985,39 +5985,22 @@ struct HandSimulationRunView: View {
             dealerPlay(&dealerHand)
             profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet * 2)
         case .hit:
-            var model = convert(hand: handState)
-            while true {
-                if let newCard = drawCard() {
-                    playerHands[0].cards.append(newCard)
-                    model.cards.append(Card(rank: newCard.card.rank))
-                    handState = playerHands[0]
-                }
-                if model.isBusted { break }
-                let nextAction = advisedAction(for: model, dealerUp: dealerUp)
-                if nextAction == .hit {
-                    continue
-                } else {
-                    break
-                }
+            if let newCard = drawCard() {
+                playerHands[0].cards.append(newCard)
+                handState = playerHands[0]
             }
-            dealerPlay(&dealerHand)
-            profit = settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet)
+            let model = convert(hand: handState)
+            if model.isBusted {
+                profit = settle(hand: model, dealerHand: dealerHand, bet: currentBet)
+            } else {
+                pendingRecommendedAction = advisedAction(for: model, dealerUp: dealerUp)
+                return
+            }
         case .split:
             profit = resolveSplitHands(initial: handState, dealerHand: dealerHand, dealerUp: dealerUp)
         }
 
-        sessionProfit += profit
-        handsCompleted += 1
-        handsSinceCountPrompt += 1
-
-        if settings.askRunningCount && handsSinceCountPrompt >= settings.runningCountCadence {
-            showRunningCountPrompt = true
-            runningCountGuess = ""
-            handsSinceCountPrompt = 0
-            return
-        }
-
-        advanceHand()
+        finishHand(with: profit)
     }
 
     private func resolveSplitHands(initial: SpeedCounterHandState, dealerHand: Hand, dealerUp: Card) -> Double {
@@ -6084,6 +6067,22 @@ struct HandSimulationRunView: View {
             profit += settle(hand: outcome.0, dealerHand: dealerHandCopy, bet: outcome.1)
         }
         return profit
+    }
+
+    private func finishHand(with profit: Double) {
+        sessionProfit += profit
+        handsCompleted += 1
+        handsSinceCountPrompt += 1
+        pendingRecommendedAction = nil
+
+        if settings.askRunningCount && handsSinceCountPrompt >= settings.runningCountCadence {
+            showRunningCountPrompt = true
+            runningCountGuess = ""
+            handsSinceCountPrompt = 0
+            return
+        }
+
+        advanceHand()
     }
 
     private func revealHoleCard() {
