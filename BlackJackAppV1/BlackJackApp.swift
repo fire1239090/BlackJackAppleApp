@@ -5511,6 +5511,7 @@ struct HandSimulationRunView: View {
                 sessionProfitView
             }
             .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear(perform: startShoe)
             .onDisappear {
                 if !sessionLogged {
@@ -5624,9 +5625,11 @@ struct HandSimulationRunView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
+        .padding(.vertical, 20)
+        .padding(.horizontal, 12)
         .background(Color.secondary.opacity(0.08))
         .cornerRadius(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var countDisplay: some View {
@@ -5663,21 +5666,23 @@ struct HandSimulationRunView: View {
                     label: { actionLabel(for: action) }
                 )
                 .frame(maxWidth: .infinity)
-                .padding()
+                .padding(.vertical, 10)
+                .padding(.horizontal, 8)
                 .background(buttonEnabled(action) ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.1))
                 .foregroundColor(buttonEnabled(action) ? .primary : .secondary)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .disabled(!buttonEnabled(action) || awaitingBet || showRunningCountPrompt)
             }
         }
+        .padding(.horizontal, 6)
     }
 
     private func actionLabel(for action: PlayerAction) -> some View {
         VStack {
             Text(label(for: action))
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
             Text(actionTitle(for: action))
-                .font(.caption)
+                .font(.caption2)
         }
     }
 
