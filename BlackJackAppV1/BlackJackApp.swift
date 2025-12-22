@@ -5490,6 +5490,7 @@ struct HandSimulationRunView: View {
     @State private var advanceAfterBetAlert: Bool = false
     @State private var showCounts: Bool = false
     @State private var pendingRecommendedAction: PlayerAction?
+    @State private var pendingUserAction: PlayerAction?
 
     private var decksRemaining: Double {
         let remaining = Double(shoe.count) / 52.0
@@ -5571,7 +5572,9 @@ struct HandSimulationRunView: View {
         }
         .alert(item: $actionAlert) { alert in
             Alert(title: Text("Strategy Correction"), message: Text(alert.message), dismissButton: .default(Text("Continue")) {
-                resolveCurrentHand(with: pendingRecommendedAction ?? recommendedAction ?? .stand)
+                let actionToApply = pendingUserAction ?? recommendedAction ?? .stand
+                pendingUserAction = nil
+                resolveCurrentHand(with: actionToApply)
             })
         }
         .alert(item: $countAlert) { alert in
@@ -5795,7 +5798,7 @@ struct HandSimulationRunView: View {
             .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 20)
+        .padding(.bottom, 40)
     }
 
     private var runningCountPrompt: some View {
@@ -5959,7 +5962,7 @@ struct HandSimulationRunView: View {
         let correctRange = betValue >= minAccepted && betValue <= maxAccepted
 
         recordDecision(correct: correctRange)
-        currentBet = correctRange ? betValue : minAccepted
+        currentBet = betValue
 
         if correctRange {
             proceedAfterBet()
@@ -5980,9 +5983,11 @@ struct HandSimulationRunView: View {
         guard let recommended = recommendedAction else {
             actionAlert = TrainingAlert(message: "Finish dealing the hand before choosing an action.")
             pendingRecommendedAction = nil
+            pendingUserAction = nil
             return
         }
         pendingRecommendedAction = recommended
+        pendingUserAction = action
         let correct = action == recommended
         recordDecision(correct: correct)
         if !correct {
@@ -6121,6 +6126,7 @@ struct HandSimulationRunView: View {
         handsCompleted += 1
         handsSinceCountPrompt += 1
         pendingRecommendedAction = nil
+        pendingUserAction = nil
 
         if settings.askRunningCount && handsSinceCountPrompt >= settings.runningCountCadence {
             showRunningCountPrompt = true
