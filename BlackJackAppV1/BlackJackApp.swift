@@ -6630,7 +6630,7 @@ struct TestOutView: View {
                 case .run(let surrenderAllowed):
                     TestOutRunView(
                         surrenderAllowed: surrenderAllowed,
-                        onFailure: { reason in path.append(.failure(reason)) }
+                        onFailure: { reason in path = [.failure(reason)] }
                     )
                 case .failure(let reason):
                     TestOutFailureView(
