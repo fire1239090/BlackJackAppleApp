@@ -4365,7 +4365,7 @@ struct TrainingSuiteView: View {
         TrainingOption(
             title: "Test Out",
             icon: "checkmark.seal",
-            destination: AnyView(PlaceholderFeatureView(title: "Test Out"))
+            destination: AnyView(TestOutView())
         ),
         TrainingOption(
             title: "Stats",
@@ -4456,6 +4456,14 @@ struct BetSizingTable: Codable, Hashable {
         let pairs = DeckBetTrainingConstants.trueCountRange.map { trueCount in
             (trueCount, Double(trueCount) * 100)
         }
+        return BetSizingTable(bets: Dictionary(uniqueKeysWithValues: pairs))
+    }
+
+    static var testOutDefault: BetSizingTable {
+        var pairs: [(Int, Double)] = [(0, 25)]
+        pairs.append(contentsOf: DeckBetTrainingConstants.trueCountRange.dropFirst().map { trueCount in
+            (trueCount, Double(trueCount) * 100)
+        })
         return BetSizingTable(bets: Dictionary(uniqueKeysWithValues: pairs))
     }
 
@@ -5223,6 +5231,35 @@ struct HandSimulationSession: Identifiable, Codable {
     }
 }
 
+struct TestOutConfiguration {
+    let onFailure: (TestOutFailureReason) -> Void
+}
+
+enum TestOutFailureReason: Hashable {
+    case basicStrategy(expected: String)
+    case betting(expectedRange: String, trueCountLabel: String, actualBet: Int)
+    case runningCount(expected: Int, guess: String)
+
+    var title: String {
+        switch self {
+        case .basicStrategy: return "Basic Strategy Error"
+        case .betting: return "Incorrect Bet"
+        case .runningCount: return "Running Count Miss"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .basicStrategy(let expected):
+            return "The test ends immediately when you deviate from basic strategy. The correct play was \(expected)."
+        case .betting(let expectedRange, let trueCountLabel, let actualBet):
+            return "Bets must stay within the accepted range for each true count. At true count \(trueCountLabel), the correct bet was \(expectedRange); you bet $\(actualBet)."
+        case .runningCount(let expected, let guess):
+            return "Running count prompts must be within 1. You answered \(guess); the running count was \(expected)."
+        }
+    }
+}
+
 struct HandSimulationStats {
     let correctDecisions: Int
     let totalDecisions: Int
@@ -5461,6 +5498,9 @@ struct HandSimulationRunView: View {
 
     let settings: HandSimulationSettings
     let onComplete: (HandSimulationSession) -> Void
+    var navigationTitle: String = "Hand Simulation"
+    var endActionLabel: String = "End Drill"
+    var testOutConfig: TestOutConfiguration? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -5493,6 +5533,7 @@ struct HandSimulationRunView: View {
     @State private var showCounts: Bool = false
     @State private var awaitingNextHand: Bool = false
     @State private var initialDealTask: Task<Void, Never>?
+    @State private var testOutTerminated: Bool = false
 
     private struct BetFeedback: Identifiable {
         let id = UUID()
@@ -5520,12 +5561,16 @@ struct HandSimulationRunView: View {
         ChipOption(value: 500, color: .purple)
     ]
 
+    private var isTestOutMode: Bool {
+        testOutConfig != nil
+    }
+
     private var bettingEnabled: Bool {
-        settings.bettingEnabled
+        settings.bettingEnabled && !testOutTerminated
     }
 
     private var chipsEnabled: Bool {
-        awaitingBet && !showRunningCountPrompt && bettingEnabled
+        awaitingBet && !showRunningCountPrompt && bettingEnabled && !testOutTerminated
     }
 
     private var decksRemaining: Double {
@@ -5584,11 +5629,11 @@ struct HandSimulationRunView: View {
                     completeSession()
                 }
             }
-            .navigationTitle("Hand Simulation")
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("End Drill", action: completeSession)
+                    Button(endActionLabel, action: completeSession)
                         .fontWeight(.semibold)
                 }
             }
@@ -5847,6 +5892,7 @@ struct HandSimulationRunView: View {
     }
 
     private func buttonEnabled(_ action: PlayerAction) -> Bool {
+        if testOutTerminated { return false }
         guard let handState = playerHands.first else { return false }
         let hand = convert(hand: handState)
         switch action {
@@ -5973,7 +6019,20 @@ struct HandSimulationRunView: View {
         return height
     }
 
+    private func triggerFailure(_ reason: TestOutFailureReason) {
+        guard isTestOutMode, !testOutTerminated else { return }
+        testOutTerminated = true
+        sessionLogged = true
+        initialDealTask?.cancel()
+        activeAlert = nil
+        showRunningCountPrompt = false
+        awaitingBet = false
+        awaitingNextHand = false
+        testOutConfig?.onFailure(reason)
+    }
+
     private func startShoe() {
+        guard !testOutTerminated else { return }
         shoe = SpeedCounterCard.shoe(decks: rules.decks)
         cardsPlayed = 0
         runningCount = 0
@@ -5990,6 +6049,7 @@ struct HandSimulationRunView: View {
     }
 
     private func advanceHand() {
+        guard !testOutTerminated else { return }
         dealerCards = []
         playerHands = []
         currentBet = 0
@@ -6003,6 +6063,7 @@ struct HandSimulationRunView: View {
     }
 
     private func prepareForBettingOrDeal() {
+        guard !testOutTerminated else { return }
         awaitingBet = bettingEnabled
         if bettingEnabled {
             return
@@ -6011,6 +6072,7 @@ struct HandSimulationRunView: View {
     }
 
     private func autoDealWithoutBetting() {
+        guard !testOutTerminated else { return }
         currentBet = 0
         betFeedback = nil
         negativeChipMode = false
@@ -6019,7 +6081,7 @@ struct HandSimulationRunView: View {
     }
 
     private func proceedToNextHand() {
-        guard awaitingNextHand, !showRunningCountPrompt else { return }
+        guard awaitingNextHand, !showRunningCountPrompt, !testOutTerminated else { return }
         advanceHand()
     }
 
@@ -6046,7 +6108,7 @@ struct HandSimulationRunView: View {
     }
 
     private func drawCard(faceDown: Bool = false) -> SpeedCounterDealtCard? {
-        guard !shoe.isEmpty else { return nil }
+        guard !shoe.isEmpty, !testOutTerminated else { return nil }
         let next = shoe.removeLast()
         cardsPlayed += 1
         if !faceDown {
@@ -6056,6 +6118,7 @@ struct HandSimulationRunView: View {
     }
 
     private func dealInitialCards() {
+        guard !testOutTerminated else { return }
         initialDealTask?.cancel()
         dealerCards = []
         playerHands = [SpeedCounterHandState(cards: [], doubleCard: nil, isSplitAce: false, splitDepth: 0)]
@@ -6081,6 +6144,7 @@ struct HandSimulationRunView: View {
     }
 
     private func dealCardToPlayerHand(_ index: Int) async -> SpeedCounterDealtCard? {
+        guard !testOutTerminated else { return nil }
         guard let next = await MainActor.run(body: { drawCard() }) else { return nil }
         await MainActor.run {
             withAnimation(.easeInOut(duration: animationSpeed)) {
@@ -6092,6 +6156,7 @@ struct HandSimulationRunView: View {
     }
 
     private func dealCardToDealer(faceDown: Bool) async -> SpeedCounterDealtCard? {
+        guard !testOutTerminated else { return nil }
         guard let next = await MainActor.run(body: { drawCard(faceDown: faceDown) }) else { return nil }
         await MainActor.run {
             withAnimation(.easeInOut(duration: animationSpeed)) {
@@ -6132,8 +6197,18 @@ struct HandSimulationRunView: View {
     }
 
     private func submitBetAndDeal() {
-        guard awaitingBet else { return }
+        guard awaitingBet, !testOutTerminated else { return }
         let evaluation = betEvaluation(for: currentBet)
+        if isTestOutMode && !evaluation.isWithinRange {
+            triggerFailure(
+                .betting(
+                    expectedRange: evaluation.rangeLabel,
+                    trueCountLabel: evaluation.tcLabel,
+                    actualBet: Int(currentBet)
+                )
+            )
+            return
+        }
         recordDecision(correct: evaluation.isWithinRange)
         betFeedback = evaluation.isWithinRange ? nil : BetFeedback(message: evaluation.feedback, isError: true)
 
@@ -6150,7 +6225,7 @@ struct HandSimulationRunView: View {
         dealInitialCards()
     }
 
-    private func betEvaluation(for bet: Double) -> (isWithinRange: Bool, feedback: String) {
+    private func betEvaluation(for bet: Double) -> (isWithinRange: Bool, feedback: String, rangeLabel: String, tcLabel: String) {
         let tc = trueCount
         let lower = Int(floor(tc))
         let upper = Int(ceil(tc))
@@ -6169,12 +6244,12 @@ struct HandSimulationRunView: View {
             feedback = "Recommended bet for true count \(tcLabel) is \(rangeLabel)."
         }
 
-        return (correctRange, feedback)
+        return (correctRange, feedback, rangeLabel, tcLabel)
     }
 
     private func handleAction(_ action: PlayerAction) {
         Task {
-            guard await MainActor.run(body: { !awaitingBet && !awaitingNextHand }) else { return }
+            guard await MainActor.run(body: { !awaitingBet && !awaitingNextHand && !testOutTerminated }) else { return }
             guard let recommended = await MainActor.run(body: { recommendedAction }) else {
                 await MainActor.run {
                     activeAlert = SimulationAlert(
@@ -6186,6 +6261,12 @@ struct HandSimulationRunView: View {
                 return
             }
             let correct = action == recommended
+            if isTestOutMode && !correct {
+                await MainActor.run {
+                    triggerFailure(.basicStrategy(expected: actionTitle(for: recommended)))
+                }
+                return
+            }
             await MainActor.run {
                 recordDecision(correct: correct)
                 if !correct {
@@ -6198,6 +6279,7 @@ struct HandSimulationRunView: View {
     }
 
     private func resolveCurrentHand(with action: PlayerAction, correctionMessage: String? = nil) async {
+        guard !testOutTerminated else { return }
         guard var handState = await MainActor.run(body: { playerHands.first }),
               let dealerUp = await MainActor.run(body: { dealerUpCard }) else { return }
         var dealerHand = await MainActor.run(body: { dealerHandModel() })
@@ -6274,6 +6356,7 @@ struct HandSimulationRunView: View {
 
     @MainActor
     private func resolveSplitHands(initial: SpeedCounterHandState, dealerUp: Card) async -> Double {
+        guard !testOutTerminated else { return 0 }
         guard initial.cards.count == 2 else { return 0 }
 
         let first = initial.cards[0]
@@ -6394,6 +6477,7 @@ struct HandSimulationRunView: View {
 
     @MainActor
     private func dealerPlay(_ hand: inout Hand) async {
+        guard !testOutTerminated else { return }
         while true {
             let value = hand.bestValue
             let soft = hand.isSoft
@@ -6428,6 +6512,7 @@ struct HandSimulationRunView: View {
     }
 
     private func recordDecision(correct: Bool) {
+        guard !testOutTerminated else { return }
         decisions += 1
         if correct {
             correctDecisions += 1
@@ -6442,6 +6527,11 @@ struct HandSimulationRunView: View {
     private func submitRunningCount() {
         let trimmedGuess = runningCountGuess.trimmingCharacters(in: .whitespacesAndNewlines)
         let guess = Int(trimmedGuess)
+        let difference = guess.map { abs($0 - runningCount) } ?? Int.max
+        if isTestOutMode && difference > 1 {
+            triggerFailure(.runningCount(expected: runningCount, guess: trimmedGuess.isEmpty ? "No answer" : trimmedGuess))
+            return
+        }
         let correct = guess == runningCount
         recordDecision(correct: correct)
 
@@ -6468,7 +6558,12 @@ struct HandSimulationRunView: View {
 
     private func completeSession() {
         finalizeShoeIfNeeded()
-        guard !sessionLogged else { dismiss(); return }
+        guard !sessionLogged else { return }
+        if isTestOutMode {
+            sessionLogged = true
+            dismiss()
+            return
+        }
         let session = HandSimulationSession(
             date: Date(),
             correctDecisions: correctDecisions,
@@ -6481,6 +6576,177 @@ struct HandSimulationRunView: View {
         sessionLogged = true
         onComplete(session)
         dismiss()
+    }
+}
+
+// MARK: - Test Out
+
+private enum TestOutRoute: Hashable {
+    case run(surrenderAllowed: Bool)
+    case failure(TestOutFailureReason)
+}
+
+struct TestOutView: View {
+    @State private var allowSurrender: Bool = true
+    @State private var path = NavigationPath()
+
+    private let betTable = BetSizingTable.testOutDefault
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Put everything together in one high-stakes drill. Any basic strategy mistake, off-target bet, or big counting miss will end the test.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    ruleSummary
+
+                    Toggle("Allow Surrender", isOn: $allowSurrender)
+                        .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+
+                    BetSizingTableView(betTable: betTable, isEditable: false, title: "True Count / Bet Spread")
+
+                    Button(action: {
+                        path = NavigationPath()
+                        path.append(.run(surrenderAllowed: allowSurrender))
+                    }) {
+                        Text("Start Test Out")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 4)
+                }
+                .padding()
+            }
+            .navigationTitle("Test Out")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: TestOutRoute.self) { route in
+                switch route {
+                case .run(let surrenderAllowed):
+                    TestOutRunView(
+                        surrenderAllowed: surrenderAllowed,
+                        onFailure: { reason in path.append(.failure(reason)) }
+                    )
+                case .failure(let reason):
+                    TestOutFailureView(
+                        reason: reason,
+                        onRetry: {
+                            path = NavigationPath()
+                            path.append(.run(surrenderAllowed: allowSurrender))
+                        },
+                        onExit: { path = NavigationPath() }
+                    )
+                }
+            }
+        }
+    }
+
+    private var ruleSummary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Test Settings")
+                .font(.headline)
+            Label("6 decks, dealer hits soft 17", systemImage: "rectangle.stack.badge.person.crop")
+            Label("Penetration set to 80%", systemImage: "slider.horizontal.3")
+            Label("Re-splitting aces disabled", systemImage: "nosign")
+            Label("Running count every 3 hands", systemImage: "number")
+            Label("Random dealing speed each attempt", systemImage: "shuffle")
+            Label("Bet spread: $25 at TC 0, then $100 per TC", systemImage: "dollarsign.arrow.circlepath")
+        }
+        .font(.subheadline)
+        .foregroundColor(.secondary)
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(12)
+    }
+}
+
+struct TestOutRunView: View {
+    let surrenderAllowed: Bool
+    let onFailure: (TestOutFailureReason) -> Void
+
+    @State private var sessionSettings: HandSimulationSettings?
+
+    private var configuredSettings: HandSimulationSettings {
+        var base = HandSimulationSettings()
+        base.rules = GameRules(
+            decks: 6,
+            dealerHitsSoft17: true,
+            doubleAfterSplit: true,
+            surrenderAllowed: surrenderAllowed,
+            blackjackPayout: 1.5,
+            penetration: 0.8
+        )
+        base.resplitAces = false
+        base.bettingEnabled = true
+        base.askRunningCount = true
+        base.runningCountCadence = 3
+        base.betTable = .testOutDefault
+        base.dealSpeed = Double.random(in: 0.25...0.9)
+        return base
+    }
+
+    var body: some View {
+        HandSimulationRunView(
+            settings: sessionSettings ?? configuredSettings,
+            onComplete: { _ in },
+            navigationTitle: "Test Out",
+            endActionLabel: "End Test",
+            testOutConfig: TestOutConfiguration(onFailure: { reason in
+                DispatchQueue.main.async {
+                    onFailure(reason)
+                }
+            })
+        )
+        .navigationBarBackButtonHidden(false)
+        .onAppear {
+            if sessionSettings == nil {
+                sessionSettings = configuredSettings
+            }
+        }
+    }
+}
+
+struct TestOutFailureView: View {
+    let reason: TestOutFailureReason
+    let onRetry: () -> Void
+    let onExit: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "xmark.octagon.fill")
+                .font(.system(size: 56))
+                .foregroundColor(.red)
+            Text(reason.title)
+                .font(.title2.weight(.semibold))
+            Text(reason.message)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
+
+            VStack(spacing: 12) {
+                Button(action: onRetry) {
+                    Text("Retry")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button(action: onExit) {
+                    Text("Back to Training Suite")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(.horizontal)
+            Spacer()
+        }
+        .padding()
+        .navigationBarBackButtonHidden(true)
     }
 }
 
@@ -8900,7 +9166,7 @@ struct TrainingStatsView: View {
             }
 
             Section("More Training Stats") {
-                Text("Test Out stats will appear here once that drill is available.")
+                Text("Attempt the Test Out from the Training Suite. Performance tracking will appear here in a future update.")
                     .foregroundColor(.secondary)
                     .font(.subheadline)
                     .padding(.vertical, 4)
