@@ -6031,6 +6031,7 @@ struct HandSimulationRunView: View {
         return height
     }
 
+    @MainActor
     private func triggerFailure(_ reason: TestOutFailureReason) {
         guard isTestOutMode, !testOutTerminated else { return }
         testOutTerminated = true
@@ -6679,7 +6680,14 @@ struct TestOutView: View {
 
     private func handleFailure(_ reason: TestOutFailureReason) {
         withAnimation {
-            path = [.failure(reason)]
+            if path.isEmpty {
+                path = [
+                    .run(surrenderAllowed: allowSurrender),
+                    .failure(reason)
+                ]
+            } else {
+                path.append(.failure(reason))
+            }
         }
     }
 
