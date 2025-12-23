@@ -5594,6 +5594,10 @@ struct HandSimulationRunView: View {
         return advisedAction(for: handModel, dealerUp: dealerUp)
     }
 
+    private func defaultBet() -> Double {
+        settings.betTable.value(for: 0)
+    }
+
     private var discardAssetName: String {
         let decksDiscarded = max(0.25, min(Double(cardsPlayed) / 52.0, Double(settings.rules.decks)))
         let closest = discardSizes.min(by: { abs($0 - decksDiscarded) < abs($1 - decksDiscarded) }) ?? 0.25
@@ -6038,7 +6042,7 @@ struct HandSimulationRunView: View {
         runningCount = 0
         dealerCards = []
         playerHands = []
-        currentBet = 0
+        currentBet = defaultBet()
         betFeedback = nil
         negativeChipMode = false
         handsSinceCountPrompt = 0
@@ -6052,7 +6056,7 @@ struct HandSimulationRunView: View {
         guard !testOutTerminated else { return }
         dealerCards = []
         playerHands = []
-        currentBet = 0
+        currentBet = defaultBet()
         betFeedback = nil
         negativeChipMode = false
         awaitingNextHand = false
@@ -6231,7 +6235,7 @@ struct HandSimulationRunView: View {
         let upper = Int(ceil(tc))
         let lowerBet = settings.betTable.value(for: lower)
         let upperBet = settings.betTable.value(for: upper)
-        let minAccepted = min(lowerBet, upperBet)
+        let minAccepted = isTestOutMode ? 0 : min(lowerBet, upperBet)
         let maxAccepted = max(lowerBet, upperBet)
         let correctRange = bet >= minAccepted && bet <= maxAccepted
 
