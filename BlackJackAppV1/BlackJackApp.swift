@@ -6607,7 +6607,10 @@ struct TestOutView: View {
 
                     BetSizingTableView(betTable: betTable, isEditable: false, title: "True Count / Bet Spread")
 
-                    Button(action: { path = [.run(surrenderAllowed: allowSurrender)] }) {
+                    Button(action: {
+                        path = NavigationPath()
+                        path.append(.run(surrenderAllowed: allowSurrender))
+                    }) {
                         Text("Start Test Out")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
@@ -6629,8 +6632,11 @@ struct TestOutView: View {
                 case .failure(let reason):
                     TestOutFailureView(
                         reason: reason,
-                        onRetry: { path = [.run(surrenderAllowed: allowSurrender)] },
-                        onExit: { path = [] }
+                        onRetry: {
+                            path = NavigationPath()
+                            path.append(.run(surrenderAllowed: allowSurrender))
+                        },
+                        onExit: { path = NavigationPath() }
                     )
                 }
             }
