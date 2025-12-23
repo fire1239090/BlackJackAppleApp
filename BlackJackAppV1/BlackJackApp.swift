@@ -6686,10 +6686,7 @@ struct TestOutView: View {
 
     private func handleFailure(_ reason: TestOutFailureReason) {
         withAnimation {
-            path = [
-                .run(surrenderAllowed: allowSurrender, sessionID: currentRunID),
-                .failure(reason, sessionID: currentRunID)
-            ]
+            path = []
         }
     }
 
