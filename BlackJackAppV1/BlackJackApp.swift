@@ -6206,6 +6206,7 @@ struct HandSimulationRunView: View {
 
         switch action {
         case .surrender:
+            await pauseBeforeDealerHand()
             dealerHand = await MainActor.run(body: { revealDealerHand() })
             profit = await MainActor.run(body: { -currentBet / 2.0 })
             handFinished = true
@@ -6240,6 +6241,7 @@ struct HandSimulationRunView: View {
             }
             let model = await MainActor.run(body: { convert(hand: handState) })
             if model.isBusted {
+                await pauseBeforeDealerHand()
                 await MainActor.run(body: { revealHoleCardIfNeeded() })
                 profit = -currentBet
                 handFinished = true
@@ -6266,7 +6268,7 @@ struct HandSimulationRunView: View {
         }
 
         if handFinished {
-            await MainActor.run { finishHand(with: profit) }
+            await finishHand(with: profit)
         }
     }
 
@@ -6366,7 +6368,8 @@ struct HandSimulationRunView: View {
         return dealerHandModel()
     }
 
-    private func finishHand(with profit: Double) {
+    @MainActor
+    private func finishHand(with profit: Double) async {
         revealHoleCardIfNeeded()
         sessionProfit += profit
         handsCompleted += 1
@@ -6378,6 +6381,7 @@ struct HandSimulationRunView: View {
             handsSinceCountPrompt = 0
         }
 
+        await pauseBetweenDeals()
         awaitingNextHand = true
     }
 
