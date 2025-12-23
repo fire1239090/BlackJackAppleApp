@@ -5492,6 +5492,7 @@ struct HandSimulationRunView: View {
     @State private var showTrayExpanded: Bool = false
     @State private var showCounts: Bool = false
     @State private var awaitingNextHand: Bool = false
+    @State private var initialDealTask: Task<Void, Never>?
 
     private struct BetFeedback: Identifiable {
         let id = UUID()
@@ -6055,18 +6056,55 @@ struct HandSimulationRunView: View {
     }
 
     private func dealInitialCards() {
+        initialDealTask?.cancel()
         dealerCards = []
         playerHands = [SpeedCounterHandState(cards: [], doubleCard: nil, isSplitAce: false, splitDepth: 0)]
 
-        guard let p1 = drawCard(), let dealerHole = drawCard(faceDown: true), let p2 = drawCard(), let dealerUp = drawCard() else {
-            startShoe()
-            return
+        initialDealTask = Task {
+            await dealInitialCardsSequentially()
+            await MainActor.run { initialDealTask = nil }
         }
+    }
 
-        withAnimation(.easeInOut(duration: animationSpeed)) {
-            playerHands[0].cards = [p1, p2]
-            dealerCards = [dealerHole, dealerUp]
+    private func dealInitialCardsSequentially() async {
+        guard await dealCardToPlayerHand(0) != nil else { await restartAfterFailedDeal(); return }
+        guard await dealCardToDealer(faceDown: true) != nil else { await restartAfterFailedDeal(); return }
+        guard await dealCardToPlayerHand(0) != nil else { await restartAfterFailedDeal(); return }
+        guard await dealCardToDealer(faceDown: false) != nil else { await restartAfterFailedDeal(); return }
+    }
+
+    private func restartAfterFailedDeal() async {
+        await MainActor.run {
+            initialDealTask = nil
+            startShoe()
         }
+    }
+
+    private func dealCardToPlayerHand(_ index: Int) async -> SpeedCounterDealtCard? {
+        guard let next = await MainActor.run(body: { drawCard() }) else { return nil }
+        await MainActor.run {
+            withAnimation(.easeInOut(duration: animationSpeed)) {
+                playerHands[index].cards.append(next)
+            }
+        }
+        await pauseBetweenDeals()
+        return next
+    }
+
+    private func dealCardToDealer(faceDown: Bool) async -> SpeedCounterDealtCard? {
+        guard let next = await MainActor.run(body: { drawCard(faceDown: faceDown) }) else { return nil }
+        await MainActor.run {
+            withAnimation(.easeInOut(duration: animationSpeed)) {
+                dealerCards.append(next)
+            }
+        }
+        await pauseBetweenDeals()
+        return next
+    }
+
+    private func pauseBetweenDeals() async {
+        let delay = await MainActor.run { animationSpeed }
+        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
     }
 
     private func convert(hand: SpeedCounterHandState) -> Hand {
