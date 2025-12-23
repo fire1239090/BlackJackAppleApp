@@ -6047,7 +6047,11 @@ struct HandSimulationRunView: View {
         showRunningCountPrompt = false
         awaitingBet = false
         awaitingNextHand = false
-        testOutConfig?.onFailure(reason)
+        if let onFailure = testOutConfig?.onFailure {
+            DispatchQueue.main.async {
+                onFailure(reason)
+            }
+        }
     }
 
     private func startShoe() {
