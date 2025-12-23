@@ -6031,6 +6031,12 @@ struct HandSimulationRunView: View {
         return height
     }
 
+    private func dispatchFailure(_ reason: TestOutFailureReason) {
+        Task { @MainActor in
+            triggerFailure(reason)
+        }
+    }
+
     @MainActor
     private func triggerFailure(_ reason: TestOutFailureReason) {
         guard isTestOutMode, !testOutTerminated else { return }
@@ -6217,7 +6223,7 @@ struct HandSimulationRunView: View {
         guard awaitingBet, !testOutTerminated else { return }
         let evaluation = betEvaluation(for: currentBet)
         if isTestOutMode && !evaluation.isWithinRange {
-            triggerFailure(
+            dispatchFailure(
                 .betting(
                     expectedRange: evaluation.rangeLabel,
                     trueCountLabel: evaluation.tcLabel,
@@ -6279,9 +6285,7 @@ struct HandSimulationRunView: View {
             }
             let correct = action == recommended
             if isTestOutMode && !correct {
-                await MainActor.run {
-                    triggerFailure(.basicStrategy(expected: actionTitle(for: recommended)))
-                }
+                dispatchFailure(.basicStrategy(expected: actionTitle(for: recommended)))
                 return
             }
             await MainActor.run {
@@ -6546,7 +6550,7 @@ struct HandSimulationRunView: View {
         let guess = Int(trimmedGuess)
         let difference = guess.map { abs($0 - runningCount) } ?? Int.max
         if isTestOutMode && difference > 1 {
-            triggerFailure(.runningCount(expected: runningCount, guess: trimmedGuess.isEmpty ? "No answer" : trimmedGuess))
+            dispatchFailure(.runningCount(expected: runningCount, guess: trimmedGuess.isEmpty ? "No answer" : trimmedGuess))
             return
         }
         let correct = guess == runningCount
