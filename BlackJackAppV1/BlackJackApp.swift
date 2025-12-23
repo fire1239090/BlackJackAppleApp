@@ -6049,8 +6049,14 @@ struct HandSimulationRunView: View {
         activeAlert = SimulationAlert(
             title: reason.title,
             message: reason.message,
-            onDismiss: { testOutConfig?.onFailure(reason) }
+            onDismiss: { handleFailureAcknowledgement(reason) }
         )
+    }
+
+    @MainActor
+    private func handleFailureAcknowledgement(_ reason: TestOutFailureReason) {
+        testOutConfig?.onFailure(reason)
+        dismiss()
     }
 
     private func startShoe() {
