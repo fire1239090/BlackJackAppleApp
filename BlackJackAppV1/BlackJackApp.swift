@@ -6031,6 +6031,7 @@ struct HandSimulationRunView: View {
         return height
     }
 
+    @MainActor
     private func triggerFailure(_ reason: TestOutFailureReason) {
         guard isTestOutMode, !testOutTerminated else { return }
         testOutTerminated = true
@@ -6598,12 +6599,13 @@ struct HandSimulationRunView: View {
 // MARK: - Test Out
 
 private enum TestOutRoute: Hashable {
-    case run(surrenderAllowed: Bool)
-    case failure(TestOutFailureReason)
+    case run(surrenderAllowed: Bool, sessionID: UUID)
+    case failure(TestOutFailureReason, sessionID: UUID)
 }
 
 struct TestOutView: View {
     @State private var allowSurrender: Bool = true
+    @State private var currentRunID: UUID = UUID()
     @State private var path: [TestOutRoute] = []
 
     private let betTable = BetSizingTable.testOutDefault
@@ -6637,12 +6639,13 @@ struct TestOutView: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: TestOutRoute.self) { route in
                 switch route {
-                case .run(let surrenderAllowed):
+                case .run(let surrenderAllowed, let sessionID):
                     TestOutRunView(
                         surrenderAllowed: surrenderAllowed,
+                        runID: sessionID,
                         onFailure: handleFailure
                     )
-                case .failure(let reason):
+                case .failure(let reason, _):
                     TestOutFailureView(
                         reason: reason,
                         onRetry: startTestOut,
@@ -6672,18 +6675,23 @@ struct TestOutView: View {
     }
 
     private func startTestOut() {
+        currentRunID = UUID()
         withAnimation {
-            path = [.run(surrenderAllowed: allowSurrender)]
+            path = [.run(surrenderAllowed: allowSurrender, sessionID: currentRunID)]
         }
     }
 
     private func handleFailure(_ reason: TestOutFailureReason) {
         withAnimation {
-            path = [.failure(reason)]
+            path = [
+                .run(surrenderAllowed: allowSurrender, sessionID: currentRunID),
+                .failure(reason, sessionID: currentRunID)
+            ]
         }
     }
 
     private func resetToStart() {
+        currentRunID = UUID()
         withAnimation {
             path = []
         }
@@ -6692,6 +6700,7 @@ struct TestOutView: View {
 
 struct TestOutRunView: View {
     let surrenderAllowed: Bool
+    let runID: UUID
     let onFailure: (TestOutFailureReason) -> Void
 
     @State private var sessionSettings: HandSimulationSettings?
@@ -6727,6 +6736,7 @@ struct TestOutRunView: View {
                 }
             })
         )
+        .id(runID)
         .navigationBarBackButtonHidden(false)
         .onAppear {
             if sessionSettings == nil {
