@@ -6607,62 +6607,41 @@ struct HandSimulationRunView: View {
 
 // MARK: - Test Out
 
-private enum TestOutRoute: Hashable {
-    case run(surrenderAllowed: Bool, sessionID: UUID)
-    case failure(TestOutFailureReason, sessionID: UUID)
-}
-
 struct TestOutView: View {
     @State private var allowSurrender: Bool = true
     @State private var currentRunID: UUID = UUID()
-    @State private var path: [TestOutRoute] = []
+    @State private var navigateToRun: Bool = false
+    @State private var failureReason: TestOutFailureReason?
 
     private let betTable = BetSizingTable.testOutDefault
 
     var body: some View {
-        NavigationStack(path: $path) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("Put everything together in one high-stakes drill. Any basic strategy mistake, off-target bet, or big counting miss will end the test.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Put everything together in one high-stakes drill. Any basic strategy mistake, off-target bet, or big counting miss will end the test.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
 
-                    ruleSummary
+                ruleSummary
 
-                    Toggle("Allow Surrender", isOn: $allowSurrender)
-                        .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                Toggle("Allow Surrender", isOn: $allowSurrender)
+                    .toggleStyle(SwitchToggleStyle(tint: .accentColor))
 
-                    BetSizingTableView(betTable: betTable, isEditable: false, title: "True Count / Bet Spread")
+                BetSizingTableView(betTable: betTable, isEditable: false, title: "True Count / Bet Spread")
 
-                    Button(action: startTestOut) {
-                        Text("Start Test Out")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 4)
+                Button(action: startTestOut) {
+                    Text("Start Test Out")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
                 }
-                .padding()
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
             }
-            .navigationTitle("Test Out")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: TestOutRoute.self) { route in
-                switch route {
-                case .run(let surrenderAllowed, let sessionID):
-                    TestOutRunView(
-                        surrenderAllowed: surrenderAllowed,
-                        runID: sessionID,
-                        onFailure: handleFailure
-                    )
-                case .failure(let reason, _):
-                    TestOutFailureView(
-                        reason: reason,
-                        onRetry: startTestOut,
-                        onExit: resetToStart
-                    )
-                }
-            }
+            .padding()
         }
+        .navigationTitle("Test Out")
+        .navigationBarTitleDisplayMode(.inline)
+        .background(navigationLinks)
     }
 
     private var ruleSummary: some View {
@@ -6683,24 +6662,58 @@ struct TestOutView: View {
         .cornerRadius(12)
     }
 
-    private func startTestOut() {
-        currentRunID = UUID()
-        withAnimation {
-            path = [.run(surrenderAllowed: allowSurrender, sessionID: currentRunID)]
+    private var navigationLinks: some View {
+        Group {
+            NavigationLink(isActive: $navigateToRun) {
+                TestOutRunView(
+                    surrenderAllowed: allowSurrender,
+                    runID: currentRunID,
+                    onFailure: handleFailure
+                )
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+
+            NavigationLink(
+                isActive: Binding(
+                    get: { failureReason != nil },
+                    set: { isActive in
+                        if !isActive { failureReason = nil }
+                    }
+                )
+            ) {
+                if let reason = failureReason {
+                    TestOutFailureView(
+                        reason: reason,
+                        onRetry: startTestOut,
+                        onExit: resetToStart
+                    )
+                } else {
+                    EmptyView()
+                }
+            } label: {
+                EmptyView()
+            }
+            .hidden()
         }
     }
 
+    private func startTestOut() {
+        currentRunID = UUID()
+        failureReason = nil
+        navigateToRun = true
+    }
+
     private func handleFailure(_ reason: TestOutFailureReason) {
-        withAnimation {
-            path = []
-        }
+        navigateToRun = false
+        failureReason = reason
     }
 
     private func resetToStart() {
         currentRunID = UUID()
-        withAnimation {
-            path = []
-        }
+        failureReason = nil
+        navigateToRun = false
     }
 }
 
