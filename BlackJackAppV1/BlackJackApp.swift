@@ -4324,7 +4324,7 @@ struct StrategyQuizCellView: View {
 // MARK: - Training Suite
 
 struct TrainingOption: Identifiable {
-    let id = UUID()
+    let id: String
     let title: String
     let icon: String
     let destination: AnyView
@@ -4333,41 +4333,49 @@ struct TrainingOption: Identifiable {
 struct TrainingSuiteView: View {
     private let options: [TrainingOption] = [
         TrainingOption(
+            id: "cardSorting",
             title: "Card Sorting",
             icon: "square.grid.2x2",
             destination: AnyView(CardSortingView())
         ),
         TrainingOption(
+            id: "speedCounter",
             title: "Speed Counter",
             icon: "speedometer",
             destination: AnyView(SpeedCounterView())
         ),
         TrainingOption(
+            id: "deckCountThrough",
             title: "Deck Count Through",
             icon: "rectangle.stack",
             destination: AnyView(DeckCountThroughView())
         ),
         TrainingOption(
+            id: "strategyQuiz",
             title: "Strategy Quiz",
             icon: "questionmark.square.dashed",
             destination: AnyView(StrategyQuizView(rules: GameRules.defaultStrategyRules))
         ),
         TrainingOption(
+            id: "handSimulation",
             title: "Hand Simulation",
             icon: "hands.clap",
             destination: AnyView(HandSimulationView())
         ),
         TrainingOption(
+            id: "deckEstimationBetSizing",
             title: "Deck Estimation and Bet Sizing",
             icon: "scalemass",
             destination: AnyView(DeckEstimationBetSizingView())
         ),
         TrainingOption(
+            id: "testOut",
             title: "Test Out",
             icon: "checkmark.seal",
             destination: AnyView(TestOutView())
         ),
         TrainingOption(
+            id: "stats",
             title: "Stats",
             icon: "chart.bar.doc.horizontal",
             destination: AnyView(TrainingStatsView())
@@ -6023,6 +6031,7 @@ struct HandSimulationRunView: View {
         return height
     }
 
+    @MainActor
     private func triggerFailure(_ reason: TestOutFailureReason) {
         guard isTestOutMode, !testOutTerminated else { return }
         testOutTerminated = true
@@ -6586,12 +6595,13 @@ struct HandSimulationRunView: View {
 // MARK: - Test Out
 
 private enum TestOutRoute: Hashable {
-    case run(surrenderAllowed: Bool)
-    case failure(TestOutFailureReason)
+    case run(surrenderAllowed: Bool, sessionID: UUID)
+    case failure(TestOutFailureReason, sessionID: UUID)
 }
 
 struct TestOutView: View {
     @State private var allowSurrender: Bool = true
+    @State private var currentRunID: UUID = UUID()
     @State private var path: [TestOutRoute] = []
 
     private let betTable = BetSizingTable.testOutDefault
@@ -6611,9 +6621,7 @@ struct TestOutView: View {
 
                     BetSizingTableView(betTable: betTable, isEditable: false, title: "True Count / Bet Spread")
 
-                    Button(action: {
-                        path = [.run(surrenderAllowed: allowSurrender)]
-                    }) {
+                    Button(action: startTestOut) {
                         Text("Start Test Out")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
@@ -6627,18 +6635,17 @@ struct TestOutView: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: TestOutRoute.self) { route in
                 switch route {
-                case .run(let surrenderAllowed):
+                case .run(let surrenderAllowed, let sessionID):
                     TestOutRunView(
                         surrenderAllowed: surrenderAllowed,
-                        onFailure: { reason in path = [.failure(reason)] }
+                        runID: sessionID,
+                        onFailure: handleFailure
                     )
-                case .failure(let reason):
+                case .failure(let reason, _):
                     TestOutFailureView(
                         reason: reason,
-                        onRetry: {
-                            path = [.run(surrenderAllowed: allowSurrender)]
-                        },
-                        onExit: { path = [] }
+                        onRetry: startTestOut,
+                        onExit: resetToStart
                     )
                 }
             }
@@ -6662,10 +6669,34 @@ struct TestOutView: View {
         .background(Color.secondary.opacity(0.08))
         .cornerRadius(12)
     }
+
+    private func startTestOut() {
+        currentRunID = UUID()
+        withAnimation {
+            path = [.run(surrenderAllowed: allowSurrender, sessionID: currentRunID)]
+        }
+    }
+
+    private func handleFailure(_ reason: TestOutFailureReason) {
+        withAnimation {
+            path = [
+                .run(surrenderAllowed: allowSurrender, sessionID: currentRunID),
+                .failure(reason, sessionID: currentRunID)
+            ]
+        }
+    }
+
+    private func resetToStart() {
+        currentRunID = UUID()
+        withAnimation {
+            path = []
+        }
+    }
 }
 
 struct TestOutRunView: View {
     let surrenderAllowed: Bool
+    let runID: UUID
     let onFailure: (TestOutFailureReason) -> Void
 
     @State private var sessionSettings: HandSimulationSettings?
@@ -6701,6 +6732,7 @@ struct TestOutRunView: View {
                 }
             })
         )
+        .id(runID)
         .navigationBarBackButtonHidden(false)
         .onAppear {
             if sessionSettings == nil {
