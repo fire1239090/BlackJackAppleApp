@@ -6043,15 +6043,20 @@ struct HandSimulationRunView: View {
         testOutTerminated = true
         sessionLogged = true
         initialDealTask?.cancel()
-        activeAlert = nil
         showRunningCountPrompt = false
         awaitingBet = false
         awaitingNextHand = false
-        if let onFailure = testOutConfig?.onFailure {
-            DispatchQueue.main.async {
-                onFailure(reason)
-            }
-        }
+        activeAlert = SimulationAlert(
+            title: reason.title,
+            message: reason.message,
+            onDismiss: { handleFailureAcknowledgement(reason) }
+        )
+    }
+
+    @MainActor
+    private func handleFailureAcknowledgement(_ reason: TestOutFailureReason) {
+        testOutConfig?.onFailure(reason)
+        dismiss()
     }
 
     private func startShoe() {
@@ -6687,10 +6692,7 @@ struct TestOutView: View {
 
     private func handleFailure(_ reason: TestOutFailureReason) {
         withAnimation {
-            path = [
-                .run(surrenderAllowed: allowSurrender, sessionID: currentRunID),
-                .failure(reason, sessionID: currentRunID)
-            ]
+            path = []
         }
     }
 
