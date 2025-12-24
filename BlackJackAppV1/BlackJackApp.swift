@@ -5544,7 +5544,6 @@ struct HandSimulationRunView: View {
     @State private var showRunningCountPrompt: Bool = false
     @State private var runningCountGuess: String = ""
     @State private var sessionProfit: Double = 0
-    @State private var lastHandProfit: Double?
     @State private var decisions: Int = 0
     @State private var correctDecisions: Int = 0
     @State private var currentStreak: Int = 0
@@ -5783,11 +5782,6 @@ struct HandSimulationRunView: View {
                     Text("Hand Complete")
                         .font(.title3.weight(.bold))
                         .multilineTextAlignment(.center)
-                    if let lastHandProfit {
-                        Text(handResultText(for: lastHandProfit))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(handResultColor(for: lastHandProfit))
-                    }
                     Button(action: proceedToNextHand) {
                         Text(showRunningCountPrompt ? "Answer count to continue" : "Next Hand")
                             .font(.headline)
@@ -6089,7 +6083,6 @@ struct HandSimulationRunView: View {
         shoe = SpeedCounterCard.shoe(decks: rules.decks)
         cardsPlayed = 0
         runningCount = 0
-        lastHandProfit = nil
         dealerCards = []
         playerHands = []
         currentBet = defaultBet()
@@ -6109,7 +6102,6 @@ struct HandSimulationRunView: View {
         currentBet = defaultBet()
         betFeedback = nil
         negativeChipMode = false
-        lastHandProfit = nil
         awaitingNextHand = false
         let reshuffled = checkForReshuffle()
         if !reshuffled {
@@ -6534,7 +6526,6 @@ struct HandSimulationRunView: View {
     private func finishHand(with profit: Double) async {
         revealHoleCardIfNeeded()
         sessionProfit += profit
-        lastHandProfit = profit
         handsCompleted += 1
         handsSinceCountPrompt += 1
 
@@ -6546,27 +6537,6 @@ struct HandSimulationRunView: View {
 
         await pauseBetweenDeals()
         awaitingNextHand = true
-    }
-
-    private func handResultText(for profit: Double) -> String {
-        let amount = String(format: "$%.2f", abs(profit))
-        if profit > 0 {
-            return "Won \(amount)"
-        } else if profit < 0 {
-            return "Lost \(amount)"
-        } else {
-            return "Push \(amount)"
-        }
-    }
-
-    private func handResultColor(for profit: Double) -> Color {
-        if profit > 0 {
-            return .green
-        } else if profit < 0 {
-            return .red
-        } else {
-            return .secondary
-        }
     }
 
     private func revealHoleCardIfNeeded() {
