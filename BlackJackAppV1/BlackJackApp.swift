@@ -8054,6 +8054,7 @@ struct SpeedCounterRunView: View {
             .onAppear(perform: startShoe)
             .onDisappear {
                 runningTask?.cancel()
+                runningTask = nil
                 Task { await logSessionIfNeeded() }
             }
 
@@ -8223,6 +8224,7 @@ struct SpeedCounterRunView: View {
     @MainActor
     private func startShoe() {
         runningTask?.cancel()
+        runningTask = nil
         Task { @MainActor in
             sessionLogged = false
             runningCount = 0
@@ -8254,7 +8256,6 @@ struct SpeedCounterRunView: View {
     @MainActor
     private func scheduleNextHand(delay: Double = 0.5) {
         guard !shoeFinished else { return }
-        runningTask?.cancel()
         runningTask = Task { @MainActor in
             awaitingNextHand = false
             if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
@@ -8318,6 +8319,8 @@ struct SpeedCounterRunView: View {
 
     @MainActor
     private func dealCard(toPlayerHand index: Int, perpendicular: Bool = false) async -> SpeedCounterDealtCard? {
+        guard !Task.isCancelled else { return nil }
+        guard index < playerHands.count else { return nil }
         guard let next = await drawCard(faceDown: false) else { return nil }
         withAnimation(.easeInOut(duration: settings.dealSpeed)) {
             if perpendicular {
@@ -8326,22 +8329,26 @@ struct SpeedCounterRunView: View {
                 playerHands[index].cards.append(next)
             }
         }
+        guard !Task.isCancelled else { return next }
         try? await Task.sleep(nanoseconds: UInt64(settings.dealSpeed * 1_000_000_000))
         return next
     }
 
     @MainActor
     private func dealDealerCard(faceDown: Bool) async -> SpeedCounterDealtCard? {
+        guard !Task.isCancelled else { return nil }
         guard let next = await drawCard(faceDown: faceDown) else { return nil }
         withAnimation(.easeInOut(duration: settings.dealSpeed)) {
             dealerCards.append(next)
         }
+        guard !Task.isCancelled else { return next }
         try? await Task.sleep(nanoseconds: UInt64(settings.dealSpeed * 1_000_000_000))
         return next
     }
 
     @MainActor
     private func drawCard(faceDown: Bool) async -> SpeedCounterDealtCard? {
+        guard !Task.isCancelled else { return nil }
         guard !shoe.isEmpty else { return nil }
         let card = shoe.removeLast()
         if !faceDown {
@@ -8432,10 +8439,12 @@ struct SpeedCounterRunView: View {
 
     @MainActor
     private func revealHoleCard() async {
+        guard !Task.isCancelled else { return }
         if let index = dealerCards.firstIndex(where: { $0.isFaceDown }) {
             dealerCards[index].isFaceDown = false
             runningCount += dealerCards[index].card.hiLoValue
         }
+        guard !Task.isCancelled else { return }
         try? await Task.sleep(nanoseconds: UInt64(settings.dealSpeed * 1_000_000_000))
     }
 
@@ -8467,7 +8476,9 @@ struct SpeedCounterRunView: View {
 
     @MainActor
     private func clearTable() async {
+        guard !Task.isCancelled else { return }
         try? await Task.sleep(nanoseconds: 300_000_000)
+        guard !Task.isCancelled else { return }
         withAnimation(.easeInOut(duration: 0.35)) {
             dealerCards = []
             playerHands = []
