@@ -4557,62 +4557,51 @@ struct DeckEstimationBetSizingView: View {
     @State private var showDividers: Bool = true
     @State private var betTable: BetSizingTable = .default
     @State private var betInputs: [Int: String] = BetSizingTable.defaultInputs
-    @State private var path = NavigationPath()
+    @State private var navigationConfig: DeckBetTrainingConfig?
 
     @AppStorage("deckBetTrainingStats") private var storedStats: Data = Data()
     @State private var stats: DeckBetTrainingStats = .empty
 
     var body: some View {
-        NavigationStack(path: $path) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Build your deck estimation and bet sizing intuition. Choose a mode, adjust your bet ramp if desired, then start training.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Build your deck estimation and bet sizing intuition. Choose a mode, adjust your bet ramp if desired, then start training.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
 
-                    modeSelection
+                modeSelection
 
-                    if selectedMode == .deckEstimation || selectedMode == .combined {
-                        Toggle("Show Deck Dividers", isOn: $showDividers)
-                            .toggleStyle(.switch)
-                    }
-
-                    if selectedMode == .betSizing || selectedMode == .combined {
-                        BetSizingTableView(
-                            betTable: betTable,
-                            isEditable: true,
-                            betInputs: betInputs,
-                            title: "True Count Bet Table",
-                            onUpdate: updateBet(for:newValue:)
-                        )
-                    }
-
-                    Button(action: startTraining) {
-                        Text("Start Training")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(selectedMode == nil ? Color.secondary.opacity(0.2) : Color.accentColor)
-                            .foregroundColor(selectedMode == nil ? .secondary : .white)
-                            .cornerRadius(12)
-                    }
-                    .disabled(selectedMode == nil)
+                if selectedMode == .deckEstimation || selectedMode == .combined {
+                    Toggle("Show Deck Dividers", isOn: $showDividers)
+                        .toggleStyle(.switch)
                 }
-                .padding()
-            }
-            .navigationTitle("Deck Estimation & Bet Sizing")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: DeckBetTrainingConfig.self) { config in
-                switch config.mode {
-                case .deckEstimation:
-                    DeckEstimationTrainingView(showDividers: config.showDividers, stats: $stats)
-                case .betSizing:
-                    BetSizingTrainingView(config: config, stats: $stats)
-                case .combined:
-                    CombinedTrainingView(config: config, stats: $stats)
+
+                if selectedMode == .betSizing || selectedMode == .combined {
+                    BetSizingTableView(
+                        betTable: betTable,
+                        isEditable: true,
+                        betInputs: betInputs,
+                        title: "True Count Bet Table",
+                        onUpdate: updateBet(for:newValue:)
+                    )
                 }
+
+                Button(action: startTraining) {
+                    Text("Start Training")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(selectedMode == nil ? Color.secondary.opacity(0.2) : Color.accentColor)
+                        .foregroundColor(selectedMode == nil ? .secondary : .white)
+                        .cornerRadius(12)
+                }
+                .disabled(selectedMode == nil)
             }
+            .padding()
         }
+        .navigationTitle("Deck Estimation & Bet Sizing")
+        .navigationBarTitleDisplayMode(.inline)
+        .background(navigationLink)
         .onAppear {
             stats = DeckBetTrainingStats.decode(from: storedStats)
         }
@@ -4655,7 +4644,37 @@ struct DeckEstimationBetSizingView: View {
     private func startTraining() {
         guard let mode = selectedMode else { return }
         let config = DeckBetTrainingConfig(mode: mode, showDividers: showDividers, betTable: betTable)
-        path.append(config)
+        navigationConfig = config
+    }
+
+    @ViewBuilder
+    private var navigationLink: some View {
+        NavigationLink(
+            isActive: Binding(
+                get: { navigationConfig != nil },
+                set: { isActive in
+                    if !isActive {
+                        navigationConfig = nil
+                    }
+                }
+            )
+        ) {
+            if let config = navigationConfig {
+                switch config.mode {
+                case .deckEstimation:
+                    DeckEstimationTrainingView(showDividers: config.showDividers, stats: $stats)
+                case .betSizing:
+                    BetSizingTrainingView(config: config, stats: $stats)
+                case .combined:
+                    CombinedTrainingView(config: config, stats: $stats)
+                }
+            } else {
+                EmptyView()
+            }
+        } label: {
+            EmptyView()
+        }
+        .hidden()
     }
 }
 
