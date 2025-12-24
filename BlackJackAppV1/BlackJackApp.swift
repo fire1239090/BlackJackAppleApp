@@ -8365,7 +8365,8 @@ struct SpeedCounterRunView: View {
     private func playSingleHand(at index: Int, dealerUp: SpeedCounterCard, splitDepth: Int) async {
         while true {
             guard !Task.isCancelled else { return }
-            guard index < await MainActor.run(body: { playerHands.count }) else { return }
+            let handCount = await MainActor.run { playerHands.count }
+            guard index < handCount else { return }
             let currentHand = await MainActor.run { playerHands[index] }
             let handModel = hand(from: currentHand)
 
