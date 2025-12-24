@@ -8220,6 +8220,7 @@ struct SpeedCounterRunView: View {
             )
     }
 
+    @MainActor
     private func startShoe() {
         runningTask?.cancel()
         sessionLogged = false
@@ -8243,16 +8244,19 @@ struct SpeedCounterRunView: View {
         scheduleNextHand()
     }
 
+    @MainActor
     private func restartShoe() {
         startShoe()
     }
 
+    @MainActor
     private func scheduleNextHand(delay: Double = 0.5) {
         guard !shoeFinished else { return }
         runningTask?.cancel()
-        runningTask = Task {
-            await MainActor.run { awaitingNextHand = false }
+        runningTask = Task { @MainActor in
+            awaitingNextHand = false
             if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+            guard !Task.isCancelled else { return }
             await playHand()
         }
     }
@@ -8263,18 +8267,17 @@ struct SpeedCounterRunView: View {
         scheduleNextHand(delay: 0.1)
     }
 
+    @MainActor
     private func playHand() async {
+        guard !Task.isCancelled else { return }
         guard shoe.count > 15 else {
             await finishShoe()
             return
         }
 
-        await MainActor.run {
-            dealerCards = []
-            playerHands = [SpeedCounterHandState(cards: [], doubleCard: nil, isSplitAce: false, splitDepth: 0)]
-        }
+        dealerCards = []
+        playerHands = [SpeedCounterHandState(cards: [], doubleCard: nil, isSplitAce: false, splitDepth: 0)]
 
-        // Initial deal: player, dealer (hole), player, dealer (up)
         guard await dealCard(toPlayerHand: 0) != nil else { await finishShoe(); return }
         guard await dealDealerCard(faceDown: true) != nil else { await finishShoe(); return }
         guard await dealCard(toPlayerHand: 0) != nil else { await finishShoe(); return }
@@ -8285,87 +8288,84 @@ struct SpeedCounterRunView: View {
         await dealerPlay()
         await clearTable()
 
-        await MainActor.run {
-            handsDealt += 1
-            promptCounter += 1
-        }
+        handsDealt += 1
+        promptCounter += 1
 
-        await handlePostHand()
+        handlePostHand()
     }
 
-    private func handlePostHand() async {
-        if await shouldAskForCount() {
-            await MainActor.run {
-                isAskingCount = true
-                answerText = ""
-                feedbackMessage = nil
-                promptCounter = 0
-            }
+    @MainActor
+    private func handlePostHand() {
+        if shouldAskForCount() {
+            isAskingCount = true
+            answerText = ""
+            feedbackMessage = nil
+            promptCounter = 0
             return
         }
 
         if settings.askForNextHand {
-            await MainActor.run { awaitingNextHand = true }
+            awaitingNextHand = true
         } else {
             scheduleNextHand()
         }
     }
 
-    private func shouldAskForCount() async -> Bool {
-        await MainActor.run {
-            promptCounter >= settings.handsBetweenPrompts
-        }
+    private func shouldAskForCount() -> Bool {
+        promptCounter >= settings.handsBetweenPrompts
     }
 
+    @MainActor
     private func dealCard(toPlayerHand index: Int, perpendicular: Bool = false) async -> SpeedCounterDealtCard? {
         guard let next = await drawCard(faceDown: false) else { return nil }
-        await MainActor.run {
-            withAnimation(.easeInOut(duration: settings.dealSpeed)) {
-                if perpendicular {
-                    playerHands[index].doubleCard = SpeedCounterDealtCard(card: next.card, isFaceDown: false, isPerpendicular: true)
-                } else {
-                    playerHands[index].cards.append(next)
-                }
+        withAnimation(.easeInOut(duration: settings.dealSpeed)) {
+            if perpendicular {
+                playerHands[index].doubleCard = SpeedCounterDealtCard(card: next.card, isFaceDown: false, isPerpendicular: true)
+            } else {
+                playerHands[index].cards.append(next)
             }
         }
         try? await Task.sleep(nanoseconds: UInt64(settings.dealSpeed * 1_000_000_000))
         return next
     }
 
+    @MainActor
     private func dealDealerCard(faceDown: Bool) async -> SpeedCounterDealtCard? {
         guard let next = await drawCard(faceDown: faceDown) else { return nil }
-        await MainActor.run {
-            withAnimation(.easeInOut(duration: settings.dealSpeed)) {
-                dealerCards.append(next)
-            }
+        withAnimation(.easeInOut(duration: settings.dealSpeed)) {
+            dealerCards.append(next)
         }
         try? await Task.sleep(nanoseconds: UInt64(settings.dealSpeed * 1_000_000_000))
         return next
     }
 
+    @MainActor
     private func drawCard(faceDown: Bool) async -> SpeedCounterDealtCard? {
-        await MainActor.run {
-            guard !shoe.isEmpty else { return nil }
-            let card = shoe.removeLast()
-            if !faceDown {
-                runningCount += card.hiLoValue
-            }
-            return SpeedCounterDealtCard(card: card, isFaceDown: faceDown, isPerpendicular: false)
+        guard !shoe.isEmpty else { return nil }
+        let card = shoe.removeLast()
+        if !faceDown {
+            runningCount += card.hiLoValue
         }
+        return SpeedCounterDealtCard(card: card, isFaceDown: faceDown, isPerpendicular: false)
     }
 
+    @MainActor
     private func playPlayerHands(dealerUp: SpeedCounterCard) async {
         var handIndex = 0
         while handIndex < playerHands.count {
-            await playSingleHand(at: handIndex, dealerUp: dealerUp, splitDepth: playerHands[handIndex].splitDepth)
+            guard !Task.isCancelled else { return }
+            let splitDepth = playerHands[handIndex].splitDepth
+            await playSingleHand(at: handIndex, dealerUp: dealerUp, splitDepth: splitDepth)
             handIndex += 1
         }
     }
 
+    @MainActor
     private func playSingleHand(at index: Int, dealerUp: SpeedCounterCard, splitDepth: Int) async {
         while true {
+            guard !Task.isCancelled else { return }
             guard index < playerHands.count else { return }
-            let currentHand = await MainActor.run { playerHands[index] }
+            let currentHand = playerHands[index]
             let handModel = hand(from: currentHand)
 
             if currentHand.isSplitAce && currentHand.cards.count >= 2 { return }
@@ -8388,20 +8388,20 @@ struct SpeedCounterRunView: View {
         }
     }
 
+    @MainActor
     private func performSplit(at index: Int, dealerUp: SpeedCounterCard, splitDepth: Int) async {
-        let hand = await MainActor.run { playerHands[index] }
+        guard index < playerHands.count else { return }
+        let hand = playerHands[index]
         guard hand.cards.count == 2 else { return }
 
         let first = hand.cards[0]
         let second = hand.cards[1]
 
-        await MainActor.run {
-            playerHands.remove(at: index)
-            let left = SpeedCounterHandState(cards: [first], doubleCard: nil, isSplitAce: first.card.rank == 1, splitDepth: splitDepth + 1)
-            let right = SpeedCounterHandState(cards: [second], doubleCard: nil, isSplitAce: second.card.rank == 1, splitDepth: splitDepth + 1)
-            playerHands.insert(right, at: index)
-            playerHands.insert(left, at: index)
-        }
+        playerHands.remove(at: index)
+        let left = SpeedCounterHandState(cards: [first], doubleCard: nil, isSplitAce: first.card.rank == 1, splitDepth: splitDepth + 1)
+        let right = SpeedCounterHandState(cards: [second], doubleCard: nil, isSplitAce: second.card.rank == 1, splitDepth: splitDepth + 1)
+        playerHands.insert(right, at: index)
+        playerHands.insert(left, at: index)
 
         _ = await dealCard(toPlayerHand: index)
         _ = await dealCard(toPlayerHand: index + 1)
@@ -8418,30 +8418,29 @@ struct SpeedCounterRunView: View {
         return Hand(cards: cards, isSplitAce: state.isSplitAce, fromSplit: state.splitDepth > 0)
     }
 
+    @MainActor
     private func revealHoleCard() async {
-        await MainActor.run {
-            if let index = dealerCards.firstIndex(where: { $0.isFaceDown }) {
-                dealerCards[index].isFaceDown = false
-                runningCount += dealerCards[index].card.hiLoValue
-            }
+        if let index = dealerCards.firstIndex(where: { $0.isFaceDown }) {
+            dealerCards[index].isFaceDown = false
+            runningCount += dealerCards[index].card.hiLoValue
         }
         try? await Task.sleep(nanoseconds: UInt64(settings.dealSpeed * 1_000_000_000))
     }
 
+    @MainActor
     private func dealerPlay() async {
-        var dealerHand = await MainActor.run { Hand(cards: dealerCards.map { Card(rank: $0.card.rank) }) }
+        var dealerHand = Hand(cards: dealerCards.map { Card(rank: $0.card.rank) })
 
         while true {
+            guard !Task.isCancelled else { return }
             let value = dealerHand.bestValue
             let isSoft = dealerHand.isSoft
             if value < 17 || (value == 17 && gameRules.dealerHitsSoft17 && isSoft) {
                 if let newCard = await drawCard(faceDown: false) {
-                    await MainActor.run {
-                        withAnimation(.easeInOut(duration: settings.dealSpeed)) {
-                            dealerCards.append(newCard)
-                        }
-                        dealerHand.cards.append(Card(rank: newCard.card.rank))
+                    withAnimation(.easeInOut(duration: settings.dealSpeed)) {
+                        dealerCards.append(newCard)
                     }
+                    dealerHand.cards.append(Card(rank: newCard.card.rank))
                     try? await Task.sleep(nanoseconds: UInt64(settings.dealSpeed * 1_000_000_000))
                 } else {
                     break
@@ -8452,49 +8451,38 @@ struct SpeedCounterRunView: View {
         }
     }
 
+    @MainActor
     private func clearTable() async {
         try? await Task.sleep(nanoseconds: 300_000_000)
-        await MainActor.run {
-            withAnimation(.easeInOut(duration: 0.35)) {
-                dealerCards = []
-                playerHands = []
-            }
+        withAnimation(.easeInOut(duration: 0.35)) {
+            dealerCards = []
+            playerHands = []
         }
     }
 
+    @MainActor
     private func finishShoe() async {
-        let alreadyFinished = await MainActor.run { () -> Bool in
-            let wasFinished = shoeFinished
-            if !wasFinished {
-                shoeFinished = true
-                isAskingCount = false
-                awaitingNextHand = false
-            }
-            return wasFinished
-        }
-        if alreadyFinished { return }
+        guard !shoeFinished else { return }
+        shoeFinished = true
+        isAskingCount = false
+        awaitingNextHand = false
         await logSessionIfNeeded(force: true, completed: true)
     }
 
+    @MainActor
     private func logSessionIfNeeded(force: Bool = false, completed: Bool = false) async {
-        let snapshot = await MainActor.run { () -> (logged: Bool, hasData: Bool, correct: Int, total: Int, completed: Bool) in
-            let hasData = handsDealt > 0 || totalPrompts > 0 || force
-            return (sessionLogged, hasData, correctPrompts, totalPrompts, completed || shoeFinished)
-        }
-
-        guard !snapshot.logged, snapshot.hasData else { return }
+        let hasData = handsDealt > 0 || totalPrompts > 0 || force
+        guard !sessionLogged, hasData else { return }
 
         let session = SpeedCounterSession(
             date: Date(),
-            correctEntries: snapshot.correct,
-            totalEntries: snapshot.total,
-            completed: snapshot.completed
+            correctEntries: correctPrompts,
+            totalEntries: totalPrompts,
+            completed: completed || shoeFinished
         )
 
-        await MainActor.run {
-            sessionLogged = true
-            onComplete(session)
-        }
+        sessionLogged = true
+        onComplete(session)
     }
 
     @MainActor
@@ -8518,16 +8506,7 @@ struct SpeedCounterRunView: View {
         }
     }
 
-    private var shoeProgress: Double {
-        guard totalShoeCards > 0 else { return 0 }
-        return 1 - (Double(shoe.count) / Double(totalShoeCards))
-    }
-
-    private var shoeProgressLabel: String {
-        let percentage = Int(round(shoeProgress * 100))
-        return "\(percentage)% of shoe played"
-    }
-
+    @MainActor
     private func dismissFeedback() {
         showFeedbackModal = false
         feedbackMessage = nil
@@ -8538,6 +8517,17 @@ struct SpeedCounterRunView: View {
             pendingAutoAdvanceAfterFeedback = false
         }
     }
+
+    private var shoeProgress: Double {
+        guard totalShoeCards > 0 else { return 0 }
+        return 1 - (Double(shoe.count) / Double(totalShoeCards))
+    }
+
+    private var shoeProgressLabel: String {
+        let percentage = Int(round(shoeProgress * 100))
+        return "\(percentage)% of shoe played"
+    }
+
 }
 
 struct SpeedCounterCardView: View {
