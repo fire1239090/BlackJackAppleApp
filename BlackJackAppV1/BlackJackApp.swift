@@ -5544,6 +5544,7 @@ struct HandSimulationRunView: View {
     @State private var showRunningCountPrompt: Bool = false
     @State private var runningCountGuess: String = ""
     @State private var sessionProfit: Double = 0
+    @State private var lastHandProfit: Double? = nil
     @State private var decisions: Int = 0
     @State private var correctDecisions: Int = 0
     @State private var currentStreak: Int = 0
@@ -5782,6 +5783,21 @@ struct HandSimulationRunView: View {
                     Text("Hand Complete")
                         .font(.title3.weight(.bold))
                         .multilineTextAlignment(.center)
+                    if let lastHandProfit {
+                        Text(
+                            lastHandProfit == 0
+                                ? "Push"
+                                : lastHandProfit > 0
+                                    ? String(format: "Won $%.2f", lastHandProfit)
+                                    : String(format: "Lost $%.2f", abs(lastHandProfit))
+                        )
+                        .font(.headline)
+                        .foregroundColor(
+                            lastHandProfit == 0
+                                ? .primary
+                                : lastHandProfit > 0 ? .green : .red
+                        )
+                    }
                     Button(action: proceedToNextHand) {
                         Text(showRunningCountPrompt ? "Answer count to continue" : "Next Hand")
                             .font(.headline)
@@ -6092,6 +6108,7 @@ struct HandSimulationRunView: View {
         currentShoePerfect = true
         shoesPlayed += 1
         awaitingNextHand = false
+        lastHandProfit = nil
         prepareForBettingOrDeal()
     }
 
@@ -6103,6 +6120,7 @@ struct HandSimulationRunView: View {
         betFeedback = nil
         negativeChipMode = false
         awaitingNextHand = false
+        lastHandProfit = nil
         let reshuffled = checkForReshuffle()
         if !reshuffled {
             prepareForBettingOrDeal()
@@ -6526,6 +6544,7 @@ struct HandSimulationRunView: View {
     private func finishHand(with profit: Double) async {
         revealHoleCardIfNeeded()
         sessionProfit += profit
+        lastHandProfit = profit
         handsCompleted += 1
         handsSinceCountPrompt += 1
 
