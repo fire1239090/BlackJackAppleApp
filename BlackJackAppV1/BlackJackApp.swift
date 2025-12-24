@@ -4423,7 +4423,7 @@ private enum DeckBetTrainingConstants {
     static let deckCounts: [Double] = stride(from: 0.25, through: 6.0, by: 0.25).map { value in
         Double(round(value * 100) / 100)
     }
-    static let trueCountRange = 0...7
+    static let trueCountRange = 0...6
 
     static func deckLabel(_ value: Double) -> String {
         let formatted = String(format: "%.2f", value)
@@ -4749,7 +4749,7 @@ struct BetSizingTableView: View {
     private func trueCountLabel(_ value: Int) -> String {
         if value == 0 { return "0" }
         if value == DeckBetTrainingConstants.trueCountRange.upperBound {
-            return "+\(value) and above"
+            return "≥+\(value)"
         }
         return "+\(value)"
     }
