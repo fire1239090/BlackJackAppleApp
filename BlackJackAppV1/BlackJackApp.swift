@@ -6181,6 +6181,7 @@ struct HandSimulationRunView: View {
         guard await dealCardToDealer(faceDown: true) != nil else { await restartAfterFailedDeal(); return }
         guard await dealCardToPlayerHand(0) != nil else { await restartAfterFailedDeal(); return }
         guard await dealCardToDealer(faceDown: false) != nil else { await restartAfterFailedDeal(); return }
+        await handleDealerPeekIfNeeded()
     }
 
     private func restartAfterFailedDeal() async {
@@ -6226,6 +6227,31 @@ struct HandSimulationRunView: View {
             cards.append(Card(rank: double.card.rank))
         }
         return Hand(cards: cards, isSplitAce: hand.isSplitAce, fromSplit: hand.splitDepth > 0)
+    }
+
+    private func handleDealerPeekIfNeeded() async {
+        guard !testOutTerminated else { return }
+
+        let peekContext = await MainActor.run { () -> (Hand, Hand)? in
+            guard let upCard = dealerUpCard else { return nil }
+            let shouldPeek = upCard.rank == 1 || upCard.value == 10
+            guard shouldPeek else { return nil }
+            guard let playerHandState = playerHands.first else { return nil }
+            let playerHand = convert(hand: playerHandState)
+            let dealerHand = dealerHandModel()
+            return (playerHand, dealerHand)
+        }
+
+        guard let (playerHand, dealerHand) = peekContext else { return }
+        guard dealerHand.isBlackjack else { return }
+
+        await MainActor.run {
+            revealHoleCardIfNeeded()
+        }
+
+        let playerHasBlackjack = playerHand.isBlackjack && !playerHand.fromSplit
+        let profit = playerHasBlackjack ? 0 : -currentBet
+        await finishHand(with: profit)
     }
 
     private func advisedAction(for hand: Hand, dealerUp: Card) -> PlayerAction {
