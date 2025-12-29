@@ -24,6 +24,15 @@ enum EVSourceChoice: String, Identifiable, CaseIterable {
     var id: String { rawValue }
 }
 
+enum SessionIncidentType: String, Identifiable, CaseIterable, Codable {
+    case idCheck = "ID Check"
+    case backoff = "Backoff"
+    case trespass = "Trespass"
+
+    var id: String { rawValue }
+    var displayName: String { rawValue }
+}
+
 final class TripLoggerViewModel: ObservableObject {
     @Published var sessions: [TripSession] = []
     @Published var locationNotes: [LocationNote] = []
@@ -197,11 +206,13 @@ struct TripLoggerView: View {
             let key = "\(session.location.lowercased())|\(session.city.lowercased())"
             if notesByKey[key] == nil {
                 let trimmed = session.comments.trimmingCharacters(in: .whitespacesAndNewlines)
-                notesByKey[key] = LocationNote(
-                    location: session.location,
-                    city: session.city,
-                    notes: trimmed
-                )
+                if !trimmed.isEmpty || session.incidentType != nil {
+                    notesByKey[key] = LocationNote(
+                        location: session.location,
+                        city: session.city,
+                        notes: trimmed
+                    )
+                }
             }
         }
 
@@ -431,9 +442,30 @@ struct TripLoggerView: View {
     }
 
     private func notePreview(_ note: LocationNote) -> String {
+        if let primaryIncident = incidentReports(for: note).first {
+            return incidentDescription(from: primaryIncident)
+        }
         let trimmed = note.notes.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "No comments yet" }
         return trimmed.components(separatedBy: .newlines).first ?? "No comments yet"
+    }
+
+    private func incidentReports(for note: LocationNote) -> [IncidentReport] {
+        viewModel.sessions
+            .filter {
+                $0.incidentType != nil &&
+                $0.location.caseInsensitiveCompare(note.location) == .orderedSame &&
+                $0.city.caseInsensitiveCompare(note.city) == .orderedSame
+            }
+            .sorted { $0.timestamp > $1.timestamp }
+            .compactMap {
+                guard let type = $0.incidentType, let severity = $0.incidentSeverity else { return nil }
+                return IncidentReport(type: type, severity: severity, date: $0.timestamp)
+            }
+    }
+
+    private func incidentDescription(from report: IncidentReport) -> String {
+        "\(report.type.displayName) (Severity \(Int(report.severity)))"
     }
 
     private func statCard(title: String, value: Double, suffix: String, isCurrency: Bool) -> some View {
@@ -484,6 +516,8 @@ struct SessionEditorView: View {
     @State private var manualEVText: String = ""
     @State private var validationAlert: String?
     @State private var showLowHoursAlert: Bool = false
+    @State private var selectedIncident: SessionIncidentType?
+    @State private var incidentSeverity: Double = 3
 
     private var selectedRun: SavedRun? {
         guard let id = selectedRunID else { return nil }
@@ -515,6 +549,36 @@ struct SessionEditorView: View {
                                 RoundedRectangle(cornerRadius: 8)
                                     .stroke(Color.secondary.opacity(0.2))
                             )
+                    }
+                }
+
+                Section(header: Text("Backoffs / Trespasses")) {
+                    Text("Select if you experienced any heat during this session.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    ForEach(SessionIncidentType.allCases) { incident in
+                        Toggle(isOn: Binding(
+                            get: { selectedIncident == incident },
+                            set: { isOn in
+                                selectedIncident = isOn ? incident : nil
+                            }
+                        )) {
+                            Text(incident.displayName)
+                        }
+                    }
+
+                    if let incident = selectedIncident {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Severity of \(incident.displayName)")
+                                .font(.subheadline)
+                            HStack {
+                                Slider(value: $incidentSeverity, in: 1...5, step: 1)
+                                Text("\(Int(incidentSeverity))")
+                                    .font(.caption)
+                                    .frame(width: 28, alignment: .trailing)
+                            }
+                        }
                     }
                 }
 
@@ -593,6 +657,10 @@ struct SessionEditorView: View {
         durationText = String(format: "%.2f", sessionToEdit.durationHours)
         comments = sessionToEdit.comments
         manualEVText = String(format: "%.2f", sessionToEdit.evPerHour)
+        selectedIncident = sessionToEdit.incidentType
+        if let storedSeverity = sessionToEdit.incidentSeverity {
+            incidentSeverity = storedSeverity
+        }
         if let runID = sessionToEdit.evRunID, availableRuns.contains(where: { $0.id == runID }) {
             evChoice = .evLab
             selectedRunID = runID
@@ -647,6 +715,8 @@ struct SessionEditorView: View {
             evPerHour: evValue,
             evRunID: evRunID,
             evSourceName: evSourceName,
+            incidentType: selectedIncident,
+            incidentSeverity: selectedIncident != nil ? incidentSeverity : nil,
             comments: comments
         )
 
@@ -657,6 +727,8 @@ struct SessionEditorView: View {
         newSession.evPerHour = evValue
         newSession.evRunID = evRunID
         newSession.evSourceName = evSourceName
+        newSession.incidentType = selectedIncident
+        newSession.incidentSeverity = selectedIncident != nil ? incidentSeverity : nil
         newSession.comments = comments
         newSession.timestamp = sessionToEdit?.timestamp ?? Date()
 
@@ -686,9 +758,37 @@ struct LocationNoteDetailView: View {
             }
     }
 
+    private var incidentSummaries: [IncidentReport] {
+        sessions
+            .filter {
+                $0.incidentType != nil &&
+                $0.location.caseInsensitiveCompare(note.location) == .orderedSame &&
+                $0.city.caseInsensitiveCompare(note.city) == .orderedSame
+            }
+            .sorted { $0.timestamp > $1.timestamp }
+            .compactMap {
+                guard let type = $0.incidentType, let severity = $0.incidentSeverity else { return nil }
+                return IncidentReport(type: type, severity: severity, date: $0.timestamp)
+            }
+    }
+
     var body: some View {
         NavigationView {
             VStack(alignment: .leading, spacing: 16) {
+                if !incidentSummaries.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Heat Reports")
+                            .font(.headline)
+                        ForEach(incidentSummaries) { report in
+                            Text(incidentDescription(from: report))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(8)
+                                .background(Color.orange.opacity(0.1))
+                                .cornerRadius(8)
+                        }
+                    }
+                }
+
                 if relatedComments.isEmpty && workingNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("No comments yet")
                         .foregroundColor(.secondary)
@@ -751,6 +851,12 @@ struct LocationNoteDetailView: View {
         updated.notes = workingNotes
         onSave(updated)
         isEditing = false
+    }
+
+    private func incidentDescription(from report: IncidentReport) -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .short
+        return "\(report.type.displayName) • Severity \(Int(report.severity)) • \(dateFormatter.string(from: report.date))"
     }
 }
 
@@ -822,6 +928,8 @@ struct TripSession: Identifiable, Codable, Equatable {
     var evPerHour: Double
     var evRunID: UUID?
     var evSourceName: String?
+    var incidentType: SessionIncidentType?
+    var incidentSeverity: Double?
     var comments: String
 
     var expectedValue: Double { evPerHour * durationHours }
@@ -839,6 +947,13 @@ struct TripProgressPoint: Identifiable {
     var hourMark: Double
     var actual: Double
     var expected: Double
+}
+
+struct IncidentReport: Identifiable {
+    var id: UUID = .init()
+    var type: SessionIncidentType
+    var severity: Double
+    var date: Date
 }
 
 // MARK: - Core models
