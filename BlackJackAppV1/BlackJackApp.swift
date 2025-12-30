@@ -9266,10 +9266,12 @@ struct DeckCountThroughRunView: View {
         Button(action: { submitGuess(category) }) {
             Text(category.rawValue)
                 .multilineTextAlignment(.center)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .font(.subheadline.weight(.semibold))
                 .padding(12)
                 .frame(maxWidth: .infinity)
-                .background(Color.white)
+                .background(Color(uiColor: .systemBackground))
                 .foregroundColor(.primary)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 3)
