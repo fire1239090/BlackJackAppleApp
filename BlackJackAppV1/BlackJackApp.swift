@@ -4576,13 +4576,6 @@ struct BetSizingTable: Codable, Hashable {
     }
 
     static var `default`: BetSizingTable {
-        let pairs = DeckBetTrainingConstants.trueCountRange.map { trueCount in
-            (trueCount, Double(trueCount) * 100)
-        }
-        return BetSizingTable(bets: Dictionary(uniqueKeysWithValues: pairs))
-    }
-
-    static var testOutDefault: BetSizingTable {
         var pairs: [(Int, Double)] = [(0, 25)]
         pairs.append(contentsOf: DeckBetTrainingConstants.trueCountRange.dropFirst().map { trueCount in
             (trueCount, Double(trueCount) * 100)
@@ -4590,10 +4583,16 @@ struct BetSizingTable: Codable, Hashable {
         return BetSizingTable(bets: Dictionary(uniqueKeysWithValues: pairs))
     }
 
+    static var testOutDefault: BetSizingTable {
+        .default
+    }
+
     static var defaultInputs: [Int: String] {
-        Dictionary(uniqueKeysWithValues: DeckBetTrainingConstants.trueCountRange.map { trueCount in
+        var pairs: [(Int, String)] = [(0, "25")]
+        pairs.append(contentsOf: DeckBetTrainingConstants.trueCountRange.dropFirst().map { trueCount in
             (trueCount, String(Int(Double(trueCount) * 100)))
         })
+        return Dictionary(uniqueKeysWithValues: pairs)
     }
 
     mutating func update(trueCount: Int, value: Double) {
