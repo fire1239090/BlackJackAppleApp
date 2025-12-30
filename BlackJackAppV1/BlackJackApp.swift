@@ -5139,7 +5139,8 @@ struct BetSizingTrainingView: View {
             activeAlert = TrainingAlert(message: guidance)
             pendingScenarioAfterAlert = true
         } else if !evaluation.isCorrect {
-            activeAlert = TrainingAlert(message: evaluation.feedback)
+            let mathBreakdown = trueCountBreakdown(decksRemaining: decksRemaining, trueCount: trueCount)
+            activeAlert = TrainingAlert(message: [evaluation.feedback, mathBreakdown].joined(separator: "\n"))
             pendingScenarioAfterAlert = true
         } else {
             generateScenario(resetFeedback: false)
@@ -5177,6 +5178,13 @@ struct BetSizingTrainingView: View {
 
         return (isCorrect, feedback, guidance)
     }
+
+    private func trueCountBreakdown(decksRemaining: Double, trueCount: Double) -> String {
+        let discardLabel = DeckBetTrainingConstants.deckLabel(decksInDiscard)
+        let denominator = max(0.25, decksRemaining)
+        let remainingLabel = DeckBetTrainingConstants.deckLabel(denominator)
+        return "With running count \(runningCount) / (\(decksInPlay) decks in game - \(discardLabel) decks in discard = \(remainingLabel) decks remaining) we get a true count of \(String(format: \"%.2f\", trueCount))."
+    }
 }
 
 struct CombinedTrainingView: View {
@@ -5201,13 +5209,18 @@ struct CombinedTrainingView: View {
                     statTile(title: "Decks in Play", value: DeckBetTrainingConstants.deckLabel(Double(decksInPlay)))
                 }
 
-                Image(DeckBetTrainingConstants.deckAssetName(for: decksInDiscard, showDividers: config.showDividers))
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 300)
-                    .background(Color.secondary.opacity(0.05))
-                    .cornerRadius(16)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Discard Tray")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Image(DeckBetTrainingConstants.deckAssetName(for: decksInDiscard, showDividers: config.showDividers))
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 300)
+                        .background(Color.secondary.opacity(0.05))
+                        .cornerRadius(16)
+                }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("What is your bet?")
@@ -5302,7 +5315,8 @@ struct CombinedTrainingView: View {
             activeAlert = TrainingAlert(message: guidance)
             pendingScenarioAfterAlert = true
         } else if !evaluation.isCorrect {
-            activeAlert = TrainingAlert(message: evaluation.feedback)
+            let mathBreakdown = trueCountBreakdown(decksRemaining: decksRemaining, trueCount: trueCount)
+            activeAlert = TrainingAlert(message: [evaluation.feedback, mathBreakdown].joined(separator: "\n"))
             pendingScenarioAfterAlert = true
         } else {
             generateScenario(resetFeedback: false)
@@ -5339,6 +5353,13 @@ struct CombinedTrainingView: View {
         let guidance = guidanceNeeded ? "Your answer was acceptable, but an interpolated bet is about $\(Int(interpolated))." : nil
 
         return (isCorrect, feedback, guidance)
+    }
+
+    private func trueCountBreakdown(decksRemaining: Double, trueCount: Double) -> String {
+        let discardLabel = DeckBetTrainingConstants.deckLabel(decksInDiscard)
+        let denominator = max(0.25, decksRemaining)
+        let remainingLabel = DeckBetTrainingConstants.deckLabel(denominator)
+        return "With running count \(runningCount) / (\(decksInPlay) decks in game - \(discardLabel) decks in discard = \(remainingLabel) decks remaining) we get a true count of \(String(format: \"%.2f\", trueCount))."
     }
 }
 
