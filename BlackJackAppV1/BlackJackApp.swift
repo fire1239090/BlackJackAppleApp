@@ -5631,12 +5631,35 @@ struct HandSimulationView: View {
 struct HandSimulationRunView: View {
     private let maxSplitDepth = 3
     private let discardSizes = DeckBetTrainingConstants.deckCounts
-    private let cardWidth: CGFloat = 70
-    private var cardHeight: CGFloat { cardWidth / (2.5/3.5) }
-    private let cardOffsetX: CGFloat = 24
-    private let cardOffsetY: CGFloat = 14
-    private let handSpacing: CGFloat = 16
+    private let baseCardWidth: CGFloat = 70
+    private let baseCardOffsetX: CGFloat = 24
+    private let baseCardOffsetY: CGFloat = 14
+    private let baseHandSpacing: CGFloat = 16
+    private let baseTrayWidth: CGFloat = 90
     private var animationSpeed: Double { max(0.05, settings.dealSpeed) }
+
+    private func layoutScale(for size: CGSize) -> CGFloat {
+        let widthScale = size.width / 430
+        let heightScale = size.height / 850
+        return max(0.65, min(1.1, min(widthScale, heightScale)))
+    }
+
+    private func adjustedScale(from base: CGFloat, containerSize: CGSize) -> CGFloat {
+        let capHeight = max(140, containerSize.height * 0.35)
+        let currentHeight = maxHandHeight(scale: base)
+        guard currentHeight > 0 else { return base }
+        if currentHeight > capHeight {
+            return max(0.55, base * capHeight / currentHeight)
+        }
+        return base
+    }
+
+    private func cardWidth(for scale: CGFloat) -> CGFloat { baseCardWidth * scale }
+    private func cardHeight(for scale: CGFloat) -> CGFloat { cardWidth(for: scale) / (2.5/3.5) }
+    private func cardOffsetX(for scale: CGFloat) -> CGFloat { baseCardOffsetX * scale }
+    private func cardOffsetY(for scale: CGFloat) -> CGFloat { baseCardOffsetY * scale }
+    private func handSpacing(for scale: CGFloat) -> CGFloat { baseHandSpacing * scale }
+    private func trayWidth(for scale: CGFloat) -> CGFloat { baseTrayWidth * scale }
 
     let settings: HandSimulationSettings
     let onComplete: (HandSimulationSession) -> Void
@@ -5754,108 +5777,104 @@ struct HandSimulationRunView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color(uiColor: .systemGroupedBackground)
-                .ignoresSafeArea()
-                .ignoresSafeArea(.keyboard, edges: .bottom)
+        GeometryReader { proxy in
+            let scale = adjustedScale(from: layoutScale(for: proxy.size), containerSize: proxy.size)
 
-            VStack(spacing: 16) {
-                tableArea
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
 
-                betControls
+                VStack(spacing: 16) {
+                    tableArea(scale: scale, availableWidth: proxy.size.width)
 
-                actionButtons
+                    betControls(scale: scale)
 
-                sessionProfitView
-            }
-            .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .onAppear(perform: startShoe)
-            .onDisappear {
-                if !sessionLogged {
-                    completeSession()
+                    actionButtons(scale: scale)
+
+                    sessionProfitView
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .onAppear(perform: startShoe)
+                .onDisappear {
+                    if !sessionLogged {
+                        completeSession()
+                    }
+                }
+                .navigationTitle(navigationTitle)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(endActionLabel, action: completeSession)
+                            .fontWeight(.semibold)
+                    }
+                }
+
+                if showRunningCountPrompt {
+                    modalOverlay(scale: scale) { runningCountPrompt }
                 }
             }
-            .navigationTitle(navigationTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(endActionLabel, action: completeSession)
-                        .fontWeight(.semibold)
+            .alert(item: $activeAlert) { alert in
+                Alert(
+                    title: Text(alert.title),
+                    message: Text(alert.message),
+                    dismissButton: .default(Text("Continue")) {
+                        alert.onDismiss?()
+                    }
+                )
+            }
+            .sheet(isPresented: $showTrayExpanded) {
+                VStack {
+                    Image(discardAssetName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                    Button("Close") { showTrayExpanded = false }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.bottom)
                 }
+                .presentationDetents([.medium, .large])
             }
-
-            if showRunningCountPrompt {
-                modalOverlay { runningCountPrompt }
-            }
-        }
-        .alert(item: $activeAlert) { alert in
-            Alert(
-                title: Text(alert.title),
-                message: Text(alert.message),
-                dismissButton: .default(Text("Continue")) {
-                    alert.onDismiss?()
-                }
-            )
-        }
-        .sheet(isPresented: $showTrayExpanded) {
-            VStack {
-                Image(discardAssetName)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                Button("Close") { showTrayExpanded = false }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.bottom)
-            }
-            .presentationDetents([.medium, .large])
         }
     }
 
-    private var tableArea: some View {
+    private func tableArea(scale: CGFloat, availableWidth: CGFloat) -> some View {
         VStack(spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(discardAssetName)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 90)
-                    .onTapGesture { showTrayExpanded = true }
-                    .contextMenu {
-                        Image(discardAssetName)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 280)
+            if availableWidth < 430 {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .center, spacing: 12) {
+                        discardTray(scale: scale, expandedWidth: availableWidth)
+                        Spacer()
+                        countDisplay(scale: scale)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Dealer")
-                        .font(.headline)
-                    HStack(spacing: 8) {
-                        ForEach(dealerCards) { card in
-                            SpeedCounterCardView(card: card)
-                                .frame(width: cardWidth)
-                        }
-                    }
-                    .padding(.leading, 6)
+                    dealerSection(scale: scale)
                 }
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    discardTray(scale: scale, expandedWidth: availableWidth)
 
-                Spacer()
+                    dealerSection(scale: scale)
 
-                countDisplay
+                    Spacer()
+
+                    countDisplay(scale: scale)
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Player")
                     .font(.headline)
                 GeometryReader { proxy in
-                    let contentWidth = totalHandsWidth()
+                    let contentWidth = totalHandsWidth(scale: scale)
                     let horizontalPadding = max((proxy.size.width - contentWidth) / 2, 0) + 16
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 16) {
                             ForEach(playerHands) { hand in
-                                playerHandView(hand)
+                                playerHandView(hand, scale: scale)
                             }
                         }
                         .padding(.horizontal, horizontalPadding)
@@ -5863,10 +5882,10 @@ struct HandSimulationRunView: View {
                             maxWidth: max(proxy.size.width, contentWidth + (horizontalPadding * 2)),
                             alignment: .center
                         )
-                        .frame(height: maxHandHeight + 24, alignment: .bottom)
+                        .frame(height: maxHandHeight(scale: scale) + 24, alignment: .bottom)
                     }
                 }
-                .frame(height: maxHandHeight + 32)
+                .frame(height: maxHandHeight(scale: scale) + 32)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -5930,63 +5949,63 @@ struct HandSimulationRunView: View {
         }
     }
 
-    private var countDisplay: some View {
+    private func countDisplay(scale: CGFloat) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
             HStack(spacing: 10) {
                 Button(action: { showCounts.toggle() }) {
                     Image(systemName: showCounts ? "eye.slash.fill" : "eye.fill")
-                        .font(.headline)
+                        .font(.system(size: 17 * scale, weight: .regular))
                 }
                 .buttonStyle(.plain)
 
                 VStack(alignment: .trailing, spacing: 4) {
                     Text("Running Count")
-                        .font(.caption)
+                        .font(.system(size: 12 * scale))
                         .foregroundColor(.secondary)
                     Text(showCounts ? "\(runningCount)" : "— —")
-                        .font(.headline.monospacedDigit())
+                        .font(.system(size: 17 * scale, weight: .semibold, design: .monospaced))
                     Text("True Count")
-                        .font(.caption)
+                        .font(.system(size: 12 * scale))
                         .foregroundColor(.secondary)
                     Text(showCounts ? String(format: "%.2f", trueCount) : "— —")
-                        .font(.subheadline.monospacedDigit())
+                        .font(.system(size: 14 * scale, weight: .regular, design: .monospaced))
                 }
             }
         }
-        .frame(minWidth: 140, alignment: .trailing)
+        .frame(minWidth: 140 * scale, alignment: .trailing)
     }
 
-    private var betControls: some View {
+    private func betControls(scale: CGFloat) -> some View {
         VStack(alignment: .center, spacing: 12) {
             VStack(spacing: 2) {
                 Text("Bet Size:")
-                    .font(.headline)
+                    .font(.system(size: 17 * scale, weight: .semibold))
                     .frame(maxWidth: .infinity, alignment: .center)
                 Text("$\(Int(currentBet))")
-                    .font(.title3.weight(.semibold))
+                    .font(.system(size: 20 * scale, weight: .semibold))
                     .monospacedDigit()
                     .frame(maxWidth: .infinity, alignment: .center)
             }
 
             if awaitingBet {
                 Text("Tap Chips to Enter Bet")
-                    .font(.title3.weight(.bold))
+                    .font(.system(size: 20 * scale, weight: .bold))
                     .frame(maxWidth: .infinity, alignment: .center)
             } else if !bettingEnabled {
                 Text("Betting is disabled for this drill.")
-                    .font(.subheadline)
+                    .font(.system(size: 15 * scale))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
 
-            HStack(spacing: 14) {
+            HStack(spacing: 14 * scale) {
                 Spacer()
                 ForEach(chipOptions) { chip in
                     Button(action: { applyChip(chip) }) {
                         Text(chipLabel(for: chip))
-                            .font(.headline.weight(.semibold))
+                            .font(.system(size: 17 * scale, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 70, height: 70)
+                            .frame(width: 70 * scale, height: 70 * scale)
                             .background(chip.color)
                             .clipShape(Circle())
                             .overlay(
@@ -6000,9 +6019,9 @@ struct HandSimulationRunView: View {
 
                 Button(action: { negativeChipMode.toggle() }) {
                     Image(systemName: negativeChipMode ? "plus.circle.fill" : "minus.circle.fill")
-                        .font(.title)
+                        .font(.system(size: 28 * scale))
                         .foregroundColor(negativeChipMode ? .orange : .secondary)
-                        .padding(6)
+                        .padding(6 * scale)
                 }
                 .background(.ultraThinMaterial)
                 .clipShape(Circle())
@@ -6016,7 +6035,7 @@ struct HandSimulationRunView: View {
                     Image(systemName: betFeedback.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                         .foregroundColor(betFeedback.isError ? .orange : .green)
                     Text(betFeedback.message)
-                        .font(.caption)
+                        .font(.system(size: 12 * scale))
                         .foregroundColor(betFeedback.isError ? .primary : .green)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -6025,31 +6044,31 @@ struct HandSimulationRunView: View {
         .padding(.horizontal, 6)
     }
 
-    private var actionButtons: some View {
-        HStack(spacing: 10) {
+    private func actionButtons(scale: CGFloat) -> some View {
+        HStack(spacing: 10 * scale) {
             ForEach(PlayerAction.allCases, id: \.self) { action in
                 Button(
                     action: { handleAction(action) },
                     label: { actionLabel(for: action) }
                 )
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .padding(.horizontal, 8)
+                .padding(.vertical, 10 * scale)
+                .padding(.horizontal, 8 * scale)
                 .background(buttonEnabled(action) ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.1))
                 .foregroundColor(buttonEnabled(action) ? .primary : .secondary)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .disabled(!buttonEnabled(action) || awaitingBet || awaitingNextHand || showRunningCountPrompt)
             }
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 6 * scale)
     }
 
     private func actionLabel(for action: PlayerAction) -> some View {
         VStack {
             Text(label(for: action))
-                .font(.subheadline.weight(.semibold))
+                .font(.system(size: 15, weight: .semibold))
             Text(actionTitle(for: action))
-                .font(.caption2)
+                .font(.system(size: 11))
         }
     }
 
@@ -6104,17 +6123,17 @@ struct HandSimulationRunView: View {
         .padding(.top, 4)
     }
 
-    private func modalOverlay<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func modalOverlay<Content: View>(scale: CGFloat = 1, @ViewBuilder content: () -> Content) -> some View {
         Color.black.opacity(0.35)
             .ignoresSafeArea()
             .ignoresSafeArea(.keyboard, edges: .bottom)
             .overlay(
                 content()
-                    .frame(maxWidth: 360)
-                    .padding()
+                    .frame(maxWidth: 360 * scale)
+                    .padding(12 * scale)
                     .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .padding()
+                    .clipShape(RoundedRectangle(cornerRadius: 16 * scale, style: .continuous))
+                    .padding(12 * scale)
             )
     }
 
@@ -6132,51 +6151,82 @@ struct HandSimulationRunView: View {
         }
     }
 
-    private func playerHandView(_ hand: SpeedCounterHandState) -> some View {
+    private func discardTray(scale: CGFloat, expandedWidth: CGFloat) -> some View {
+        Image(discardAssetName)
+            .resizable()
+            .scaledToFit()
+            .frame(width: trayWidth(for: scale))
+            .onTapGesture { showTrayExpanded = true }
+            .contextMenu {
+                Image(discardAssetName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: max(expandedWidth * 0.6, 220))
+            }
+    }
+
+    private func dealerSection(scale: CGFloat) -> some View {
+        VStack(alignment: .center, spacing: 6) {
+            Text("Dealer")
+                .font(.headline)
+            HStack(spacing: 8 * scale) {
+                ForEach(dealerCards) { card in
+                    SpeedCounterCardView(card: card)
+                        .frame(width: cardWidth(for: scale))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    private func playerHandView(_ hand: SpeedCounterHandState, scale: CGFloat) -> some View {
         ZStack(alignment: .bottomLeading) {
             ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
                 SpeedCounterCardView(card: card)
-                    .frame(width: cardWidth)
-                    .offset(x: CGFloat(index) * cardOffsetX, y: CGFloat(-index) * cardOffsetY)
+                    .frame(width: cardWidth(for: scale))
+                    .offset(x: CGFloat(index) * cardOffsetX(for: scale), y: CGFloat(-index) * cardOffsetY(for: scale))
             }
 
             if let doubleCard = hand.doubleCard {
                 SpeedCounterCardView(card: doubleCard)
-                    .frame(width: cardWidth)
+                    .frame(width: cardWidth(for: scale))
                     .rotationEffect(.degrees(90))
-                    .offset(x: CGFloat(hand.cards.count) * cardOffsetX + 6, y: CGFloat(-hand.cards.count) * cardOffsetY)
+                    .offset(
+                        x: CGFloat(hand.cards.count) * cardOffsetX(for: scale) + 6 * scale,
+                        y: CGFloat(-hand.cards.count) * cardOffsetY(for: scale)
+                    )
             }
         }
     }
 
-    private func totalHandsWidth() -> CGFloat {
-        guard !playerHands.isEmpty else { return cardWidth }
+    private func totalHandsWidth(scale: CGFloat) -> CGFloat {
+        guard !playerHands.isEmpty else { return cardWidth(for: scale) }
         let width = playerHands.reduce(0) { partial, hand in
-            partial + handWidth(hand)
+            partial + handWidth(hand, scale: scale)
         }
-        let spacingWidth = handSpacing * CGFloat(max(playerHands.count - 1, 0))
+        let spacingWidth = handSpacing(for: scale) * CGFloat(max(playerHands.count - 1, 0))
         return width + spacingWidth
     }
 
-    private func handWidth(_ hand: SpeedCounterHandState) -> CGFloat {
+    private func handWidth(_ hand: SpeedCounterHandState, scale: CGFloat) -> CGFloat {
         let count = max(hand.cards.count, 1)
-        var width = cardWidth + CGFloat(max(0, count - 1)) * cardOffsetX
+        var width = cardWidth(for: scale) + CGFloat(max(0, count - 1)) * cardOffsetX(for: scale)
         if hand.doubleCard != nil {
-            width += cardWidth * 0.6
+            width += cardWidth(for: scale) * 0.6
         }
         return width
     }
 
-    private var maxHandHeight: CGFloat {
-        guard !playerHands.isEmpty else { return cardHeight }
-        return playerHands.map(handHeight).max() ?? cardHeight
+    private func maxHandHeight(scale: CGFloat) -> CGFloat {
+        guard !playerHands.isEmpty else { return cardHeight(for: scale) }
+        return playerHands.map { handHeight($0, scale: scale) }.max() ?? cardHeight(for: scale)
     }
 
-    private func handHeight(_ hand: SpeedCounterHandState) -> CGFloat {
+    private func handHeight(_ hand: SpeedCounterHandState, scale: CGFloat) -> CGFloat {
         let count = max(hand.cards.count, 1)
-        var height = cardHeight + CGFloat(max(0, count - 1)) * cardOffsetY
+        var height = cardHeight(for: scale) + CGFloat(max(0, count - 1)) * cardOffsetY(for: scale)
         if hand.doubleCard != nil {
-            height = max(height, cardWidth + cardOffsetY)
+            height = max(height, cardWidth(for: scale) + cardOffsetY(for: scale))
         }
         return height
     }
@@ -8025,11 +8075,32 @@ struct SpeedCounterView: View {
 }
 
 struct SpeedCounterRunView: View {
-    private let cardWidth: CGFloat = 80
-    private var cardHeight: CGFloat { cardWidth / (2.5/3.5) }
-    private let handSpacing: CGFloat = 24
-    private let cardOffsetX: CGFloat = 26
-    private let cardOffsetY: CGFloat = 18
+    private let baseCardWidth: CGFloat = 80
+    private let baseHandSpacing: CGFloat = 24
+    private let baseCardOffsetX: CGFloat = 26
+    private let baseCardOffsetY: CGFloat = 18
+
+    private func layoutScale(for size: CGSize) -> CGFloat {
+        let widthScale = size.width / 430
+        let heightScale = size.height / 850
+        return max(0.6, min(1.05, min(widthScale, heightScale)))
+    }
+
+    private func adjustedScale(from base: CGFloat, containerSize: CGSize) -> CGFloat {
+        let capHeight = max(140, containerSize.height * 0.35)
+        let currentHeight = maxHandHeight(scale: base)
+        guard currentHeight > 0 else { return base }
+        if currentHeight > capHeight {
+            return max(0.55, base * capHeight / currentHeight)
+        }
+        return base
+    }
+
+    private func cardWidth(for scale: CGFloat) -> CGFloat { baseCardWidth * scale }
+    private func cardHeight(for scale: CGFloat) -> CGFloat { cardWidth(for: scale) / (2.5/3.5) }
+    private func handSpacing(for scale: CGFloat) -> CGFloat { baseHandSpacing * scale }
+    private func cardOffsetX(for scale: CGFloat) -> CGFloat { baseCardOffsetX * scale }
+    private func cardOffsetY(for scale: CGFloat) -> CGFloat { baseCardOffsetY * scale }
 
     let settings: SpeedCounterSettings
     let onComplete: (SpeedCounterSession) -> Void
@@ -8068,138 +8139,144 @@ struct SpeedCounterRunView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color(uiColor: .systemGroupedBackground)
-                .ignoresSafeArea()
+        GeometryReader { proxy in
+            let scale = adjustedScale(from: layoutScale(for: proxy.size), containerSize: proxy.size)
 
-            VStack(spacing: 16) {
-                VStack(spacing: 6) {
-                    ProgressView(value: shoeProgress) {
-                        Text("Shoe Progress")
-                            .font(.subheadline.weight(.semibold))
-                    } currentValueLabel: {
-                        Text(shoeProgressLabel)
-                            .font(.caption)
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
+
+                VStack(spacing: 16 * scale) {
+                    VStack(spacing: 6 * scale) {
+                        ProgressView(value: shoeProgress) {
+                            Text("Shoe Progress")
+                                .font(.system(size: 15 * scale, weight: .semibold))
+                        } currentValueLabel: {
+                            Text(shoeProgressLabel)
+                                .font(.system(size: 12 * scale))
+                                .foregroundColor(.secondary)
+                        }
+                        .progressViewStyle(.linear)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6 * scale) {
+                        Text("Dealing hands from a \(settings.deckCount)-deck shoe.")
+                            .font(.system(size: 17 * scale, weight: .semibold))
+                        Text("Hands dealt: \(handsDealt)")
+                            .font(.system(size: 15 * scale))
                             .foregroundColor(.secondary)
                     }
-                    .progressViewStyle(.linear)
-                }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Dealing hands from a \(settings.deckCount)-deck shoe.")
-                        .font(.headline)
-                    Text("Hands dealt: \(handsDealt)")
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                    ZStack(alignment: .bottom) {
+                        VStack(spacing: 18 * scale) {
+                            dealerArea(scale: scale)
+                            Spacer(minLength: 12 * scale)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                ZStack(alignment: .bottom) {
-                    VStack(spacing: 18) {
-                        dealerArea
-                        Spacer(minLength: 12)
+                        playerArea(scale: scale)
+                            .padding(.bottom, 8 * scale)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.secondary.opacity(0.06))
+                    )
 
-                    playerArea
-                        .padding(.bottom, 8)
-                }
-                .padding()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.secondary.opacity(0.06))
-                )
-
-                HStack(spacing: 10) {
-                    Text("Running Count:")
-                        .font(.headline)
-                    Text(showRunningCount ? "\(runningCount)" : "— —")
-                        .font(.title3.monospacedDigit())
-                        .foregroundColor(.secondary)
-                    Button(action: { showRunningCount.toggle() }) {
-                        Image(systemName: showRunningCount ? "eye.slash.fill" : "eye.fill")
-                            .font(.headline)
+                    HStack(spacing: 10 * scale) {
+                        Text("Running Count:")
+                            .font(.system(size: 17 * scale, weight: .semibold))
+                        Text(showRunningCount ? "\(runningCount)" : "— —")
+                            .font(.system(size: 20 * scale, weight: .regular, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        Button(action: { showRunningCount.toggle() }) {
+                            Image(systemName: showRunningCount ? "eye.slash.fill" : "eye.fill")
+                                .font(.system(size: 17 * scale))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(showRunningCount ? "Hide running count" : "Show running count")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(showRunningCount ? "Hide running count" : "Show running count")
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .center)
 
-                if shoeFinished {
-                    VStack(spacing: 12) {
-                        Text("Shoe complete")
-                            .font(.headline)
-                        HStack {
-                            Button(action: dismiss.callAsFunction) {
-                                Text("Back to Start Screen")
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.secondary.opacity(0.12))
-                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            }
-                            Button(action: restartShoe) {
-                                Text("Keep Going")
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.accentColor)
-                                    .foregroundColor(.white)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    if shoeFinished {
+                        VStack(spacing: 12 * scale) {
+                            Text("Shoe complete")
+                                .font(.system(size: 17 * scale, weight: .semibold))
+                            HStack(spacing: 10 * scale) {
+                                Button(action: dismiss.callAsFunction) {
+                                    Text("Back to Start Screen")
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.secondary.opacity(0.12))
+                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                }
+                                Button(action: restartShoe) {
+                                    Text("Keep Going")
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.accentColor)
+                                        .foregroundColor(.white)
+                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                }
                             }
                         }
                     }
+
+                    Spacer()
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .navigationTitle("Speed Counter")
+                .navigationBarTitleDisplayMode(.inline)
+                .onAppear(perform: startShoe)
+                .onDisappear {
+                    runningTask?.cancel()
+                    runningTask = nil
+                    Task { await logSessionIfNeeded() }
                 }
 
-                Spacer()
-            }
-            .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .navigationTitle("Speed Counter")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear(perform: startShoe)
-            .onDisappear {
-                runningTask?.cancel()
-                runningTask = nil
-                Task { await logSessionIfNeeded() }
-            }
-
-            if isAskingCount {
-                modalOverlay { countPrompt }
-            } else if showFeedbackModal, let feedbackMessage {
-                modalOverlay {
-                    feedbackPrompt(message: feedbackMessage)
+                if isAskingCount {
+                    modalOverlay { countPrompt(scale: scale) }
+                } else if showFeedbackModal, let feedbackMessage {
+                    modalOverlay {
+                        feedbackPrompt(message: feedbackMessage, scale: scale)
+                    }
+                } else if awaitingNextHand && !shoeFinished {
+                    modalOverlay { nextHandPrompt(scale: scale) }
                 }
-            } else if awaitingNextHand && !shoeFinished {
-                modalOverlay { nextHandPrompt }
             }
         }
     }
 
-    private var dealerArea: some View {
-        VStack(alignment: .center, spacing: 8) {
+    private func dealerArea(scale: CGFloat) -> some View {
+        VStack(alignment: .center, spacing: 8 * scale) {
             Text("Dealer")
-                .font(.subheadline.weight(.semibold))
-            HStack(spacing: 12) {
+                .font(.system(size: 15 * scale, weight: .semibold))
+            HStack(spacing: 12 * scale) {
                 ForEach(dealerCards) { card in
                     SpeedCounterCardView(card: card)
+                        .frame(width: cardWidth(for: scale))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .center)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    private var playerArea: some View {
-        VStack(alignment: .center, spacing: 8) {
+    private func playerArea(scale: CGFloat) -> some View {
+        VStack(alignment: .center, spacing: 8 * scale) {
             Text("Player")
-                .font(.subheadline.weight(.semibold))
+                .font(.system(size: 15 * scale, weight: .semibold))
             GeometryReader { proxy in
-                let contentWidth = totalHandsWidth()
-                let horizontalPadding = max((proxy.size.width - contentWidth) / 2, 0) + 24
+                let contentWidth = totalHandsWidth(scale: scale)
+                let horizontalPadding = max((proxy.size.width - contentWidth) / 2, 0) + 24 * scale
 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .bottom, spacing: handSpacing) {
+                    HStack(alignment: .bottom, spacing: handSpacing(for: scale)) {
                         ForEach(playerHands) { hand in
-                            playerHandView(hand)
+                            playerHandView(hand, scale: scale)
                         }
                     }
                     .padding(.horizontal, horizontalPadding)
@@ -8207,69 +8284,73 @@ struct SpeedCounterRunView: View {
                         maxWidth: max(proxy.size.width, contentWidth + (horizontalPadding * 2)),
                         alignment: .center
                     )
-                    .frame(height: maxHandHeight + 32, alignment: .bottom)
+                    .frame(height: maxHandHeight(scale: scale) + 32 * scale, alignment: .bottom)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
             }
-            .frame(height: maxHandHeight + 44)
+            .frame(height: maxHandHeight(scale: scale) + 44 * scale)
         }
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    private func playerHandView(_ hand: SpeedCounterHandState) -> some View {
+    private func playerHandView(_ hand: SpeedCounterHandState, scale: CGFloat) -> some View {
         ZStack(alignment: .bottomLeading) {
             ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
                 SpeedCounterCardView(card: card)
-                    .offset(x: CGFloat(index) * cardOffsetX, y: CGFloat(-index) * cardOffsetY)
+                    .frame(width: cardWidth(for: scale))
+                    .offset(
+                        x: CGFloat(index) * cardOffsetX(for: scale),
+                        y: CGFloat(-index) * cardOffsetY(for: scale)
+                    )
             }
 
             if let doubleCard = hand.doubleCard {
                 SpeedCounterCardView(card: doubleCard)
                     .rotationEffect(.degrees(90))
                     .offset(
-                        x: CGFloat(hand.cards.count) * cardOffsetX + 10,
-                        y: CGFloat(-hand.cards.count) * cardOffsetY - 6
+                        x: CGFloat(hand.cards.count) * cardOffsetX(for: scale) + 10 * scale,
+                        y: CGFloat(-hand.cards.count) * cardOffsetY(for: scale) - 6 * scale
                     )
             }
         }
     }
 
-    private func totalHandsWidth() -> CGFloat {
-        guard !playerHands.isEmpty else { return cardWidth }
+    private func totalHandsWidth(scale: CGFloat) -> CGFloat {
+        guard !playerHands.isEmpty else { return cardWidth(for: scale) }
         let width = playerHands.reduce(0) { partial, hand in
-            partial + handWidth(hand)
+            partial + handWidth(hand, scale: scale)
         }
-        let spacingWidth = handSpacing * CGFloat(max(playerHands.count - 1, 0))
+        let spacingWidth = handSpacing(for: scale) * CGFloat(max(playerHands.count - 1, 0))
         return width + spacingWidth
     }
 
-    private func handWidth(_ hand: SpeedCounterHandState) -> CGFloat {
+    private func handWidth(_ hand: SpeedCounterHandState, scale: CGFloat) -> CGFloat {
         let count = max(hand.cards.count, 1)
-        var width = cardWidth + CGFloat(max(0, count - 1)) * cardOffsetX
+        var width = cardWidth(for: scale) + CGFloat(max(0, count - 1)) * cardOffsetX(for: scale)
         if hand.doubleCard != nil {
-            width += cardWidth * 0.6
+            width += cardWidth(for: scale) * 0.6
         }
         return width
     }
 
-    private var maxHandHeight: CGFloat {
-        guard !playerHands.isEmpty else { return cardHeight }
-        return playerHands.map(handHeight).max() ?? cardHeight
+    private func maxHandHeight(scale: CGFloat) -> CGFloat {
+        guard !playerHands.isEmpty else { return cardHeight(for: scale) }
+        return playerHands.map { handHeight($0, scale: scale) }.max() ?? cardHeight(for: scale)
     }
 
-    private func handHeight(_ hand: SpeedCounterHandState) -> CGFloat {
+    private func handHeight(_ hand: SpeedCounterHandState, scale: CGFloat) -> CGFloat {
         let count = max(hand.cards.count, 1)
-        var height = cardHeight + CGFloat(max(0, count - 1)) * cardOffsetY
+        var height = cardHeight(for: scale) + CGFloat(max(0, count - 1)) * cardOffsetY(for: scale)
         if hand.doubleCard != nil {
-            height = max(height, cardWidth + cardOffsetY)
+            height = max(height, cardWidth(for: scale) + cardOffsetY(for: scale))
         }
         return height
     }
 
-    private var countPrompt: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func countPrompt(scale: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 12 * scale) {
             Text("What's the count?")
-                .font(.headline)
+                .font(.system(size: 17 * scale, weight: .semibold))
             TextField("Enter count", text: $answerText)
                 .keyboardType(.numberPad)
                 .textFieldStyle(.roundedBorder)
@@ -8277,38 +8358,38 @@ struct SpeedCounterRunView: View {
                 .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
+        .padding(12 * scale)
     }
 
-    private func feedbackPrompt(message: String) -> some View {
-        VStack(spacing: 12) {
+    private func feedbackPrompt(message: String, scale: CGFloat) -> some View {
+        VStack(spacing: 12 * scale) {
             Text(message)
-                .font(.headline)
+                .font(.system(size: 17 * scale, weight: .semibold))
                 .multilineTextAlignment(.center)
             Button("Close") {
                 dismissFeedback()
             }
             .buttonStyle(.borderedProminent)
         }
-        .padding()
+        .padding(12 * scale)
     }
 
-    private var nextHandPrompt: some View {
-        VStack(spacing: 12) {
+    private func nextHandPrompt(scale: CGFloat) -> some View {
+        VStack(spacing: 12 * scale) {
             Text("Ready for the next hand?")
-                .font(.headline)
+                .font(.system(size: 17 * scale, weight: .semibold))
             Button(action: continueAfterPrompt) {
                 Text("Next Hand")
-                    .font(.headline)
+                    .font(.system(size: 17 * scale, weight: .semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10 * scale)
+                    .padding(.horizontal, 12 * scale)
                     .background(Color.accentColor)
                     .foregroundColor(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 12 * scale, style: .continuous))
             }
         }
-        .padding()
+        .padding(12 * scale)
     }
 
     @ViewBuilder
