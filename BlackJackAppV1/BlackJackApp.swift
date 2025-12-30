@@ -6451,7 +6451,20 @@ struct HandSimulationRunView: View {
     private func applyChip(_ chip: ChipOption) {
         guard chipsEnabled else { return }
         let delta = Double(chip.value) * (negativeChipMode ? -1 : 1)
-        currentBet = max(0, currentBet + delta)
+        let proposed = currentBet + delta
+        let minimumBet = minimumBetForCurrentTrueCount()
+
+        if proposed < minimumBet {
+            currentBet = minimumBet
+            activeAlert = SimulationAlert(
+                title: "Minimum Bet",
+                message: "The minimum bet for true count \(String(format: "%.2f", trueCount)) is $\(Int(minimumBet)). Your wager has been adjusted to that amount.",
+                onDismiss: nil
+            )
+            return
+        }
+
+        currentBet = max(0, proposed)
     }
 
     private func chipLabel(for chip: ChipOption) -> String {
@@ -6508,6 +6521,15 @@ struct HandSimulationRunView: View {
         }
 
         return (correctRange, feedback, rangeLabel, tcLabel)
+    }
+
+    private func minimumBetForCurrentTrueCount() -> Double {
+        let tc = trueCount
+        let lower = Int(floor(tc))
+        let upper = Int(ceil(tc))
+        let lowerBet = settings.betTable.value(for: lower)
+        let upperBet = settings.betTable.value(for: upper)
+        return min(lowerBet, upperBet)
     }
 
     private func handleAction(_ action: PlayerAction) {
