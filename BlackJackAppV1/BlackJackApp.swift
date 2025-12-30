@@ -5183,7 +5183,7 @@ struct BetSizingTrainingView: View {
         let discardLabel = DeckBetTrainingConstants.deckLabel(decksInDiscard)
         let denominator = max(0.25, decksRemaining)
         let remainingLabel = DeckBetTrainingConstants.deckLabel(denominator)
-        return "With running count \(runningCount) / (\(decksInPlay) decks in game - \(discardLabel) decks in discard = \(remainingLabel) decks remaining) we get a true count of \(String(format: \"%.2f\", trueCount))."
+        return "With running count \(runningCount) / (\(decksInPlay) decks in game - \(discardLabel) decks in discard = \(remainingLabel) decks remaining) we get a true count of \(String(format: "%.2f", trueCount))."
     }
 }
 
@@ -5359,7 +5359,7 @@ struct CombinedTrainingView: View {
         let discardLabel = DeckBetTrainingConstants.deckLabel(decksInDiscard)
         let denominator = max(0.25, decksRemaining)
         let remainingLabel = DeckBetTrainingConstants.deckLabel(denominator)
-        return "With running count \(runningCount) / (\(decksInPlay) decks in game - \(discardLabel) decks in discard = \(remainingLabel) decks remaining) we get a true count of \(String(format: \"%.2f\", trueCount))."
+        return "With running count \(runningCount) / (\(decksInPlay) decks in game - \(discardLabel) decks in discard = \(remainingLabel) decks remaining) we get a true count of \(String(format: "%.2f", trueCount))."
     }
 }
 
