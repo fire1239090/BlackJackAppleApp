@@ -5645,13 +5645,14 @@ struct HandSimulationRunView: View {
     }
 
     private func adjustedScale(from base: CGFloat, containerSize: CGSize) -> CGFloat {
-        let capHeight = max(140, containerSize.height * 0.35)
+        let tableVerticalBudget = max(containerSize.height * 0.38, 180)
+        let headerAndSpacing = cardHeight(for: base) + 44
+        let playerAreaBudget = max(120, tableVerticalBudget - headerAndSpacing)
         let currentHeight = maxHandHeight(scale: base)
         guard currentHeight > 0 else { return base }
-        if currentHeight > capHeight {
-            return max(0.55, base * capHeight / currentHeight)
-        }
-        return base
+
+        let heightScale = min(1, playerAreaBudget / currentHeight)
+        return max(0.55, base * heightScale)
     }
 
     private func cardWidth(for scale: CGFloat) -> CGFloat { baseCardWidth * scale }
@@ -5785,7 +5786,7 @@ struct HandSimulationRunView: View {
                     .ignoresSafeArea()
                     .ignoresSafeArea(.keyboard, edges: .bottom)
 
-                VStack(spacing: 16) {
+                VStack(spacing: 12) {
                     tableArea(scale: scale, availableWidth: proxy.size.width)
 
                     betControls(scale: scale)
@@ -5889,7 +5890,7 @@ struct HandSimulationRunView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 20)
+        .padding(.vertical, 14)
         .padding(.horizontal, 12)
         .background(Color.secondary.opacity(0.08))
         .cornerRadius(16)
