@@ -9715,8 +9715,11 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    Text("Card Counting App")
-                        .font(.largeTitle.weight(.bold))
+                    HomeHeaderAsset.image()
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.horizontal, 16)
                         .padding(.top, 12)
 
                     NavigationLink {
