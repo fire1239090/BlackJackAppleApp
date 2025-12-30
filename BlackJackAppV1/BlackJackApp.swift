@@ -536,7 +536,10 @@ struct SessionEditorView: View {
                     TextField("Location", text: $location)
                     TextField("City", text: $city)
                     TextField("Earnings", text: $earningsText)
-                        .keyboardType(.decimalPad)
+                        .keyboardType(.numbersAndPunctuation)
+                        .onChange(of: earningsText) { newValue in
+                            earningsText = sanitizeNumericText(newValue, allowNegative: true)
+                        }
                     TextField("Duration (hours)", text: $durationText)
                         .keyboardType(.decimalPad)
                     VStack(alignment: .leading, spacing: 6) {
@@ -667,6 +670,30 @@ struct SessionEditorView: View {
         } else {
             evChoice = .manual
         }
+    }
+
+    private func sanitizeNumericText(_ text: String, allowNegative: Bool) -> String {
+        var result = ""
+        var hasDecimal = false
+
+        for (index, character) in text.enumerated() {
+            if character.isWholeNumber {
+                result.append(character)
+                continue
+            }
+
+            if character == ".", !hasDecimal {
+                hasDecimal = true
+                result.append(character)
+                continue
+            }
+
+            if allowNegative, character == "-", index == 0, result.isEmpty {
+                result.append(character)
+            }
+        }
+
+        return result
     }
 
     private func attemptSave() {
