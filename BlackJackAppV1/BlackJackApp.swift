@@ -5634,6 +5634,7 @@ struct HandSimulationRunView: View {
     private let baseCardWidth: CGFloat = 70
     private let baseCardOffsetX: CGFloat = 24
     private let baseCardOffsetY: CGFloat = 10
+    private let baseCardTopBuffer: CGFloat = 12
     private let baseHandSpacing: CGFloat = 16
     private let baseTrayWidth: CGFloat = 90
     private var animationSpeed: Double { max(0.05, settings.dealSpeed) }
@@ -5659,6 +5660,7 @@ struct HandSimulationRunView: View {
     private func cardHeight(for scale: CGFloat) -> CGFloat { cardWidth(for: scale) / (2.5/3.5) }
     private func cardOffsetX(for scale: CGFloat) -> CGFloat { baseCardOffsetX * scale }
     private func cardOffsetY(for scale: CGFloat) -> CGFloat { baseCardOffsetY * scale }
+    private func cardTopBuffer(for scale: CGFloat) -> CGFloat { baseCardTopBuffer * scale }
     private func handSpacing(for scale: CGFloat) -> CGFloat { baseHandSpacing * scale }
     private func trayWidth(for scale: CGFloat) -> CGFloat { baseTrayWidth * scale }
 
@@ -6198,6 +6200,11 @@ struct HandSimulationRunView: View {
                     )
             }
         }
+        .frame(
+            width: handWidth(hand, scale: scale),
+            height: handHeight(hand, scale: scale),
+            alignment: .bottomLeading
+        )
     }
 
     private func totalHandsWidth(scale: CGFloat) -> CGFloat {
@@ -6229,7 +6236,7 @@ struct HandSimulationRunView: View {
         if hand.doubleCard != nil {
             height = max(height, cardWidth(for: scale) + cardOffsetY(for: scale))
         }
-        return height
+        return height + cardTopBuffer(for: scale)
     }
 
     private func dispatchFailure(_ reason: TestOutFailureReason) {
