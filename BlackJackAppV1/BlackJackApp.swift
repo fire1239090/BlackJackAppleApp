@@ -9266,6 +9266,8 @@ struct DeckCountThroughRunView: View {
         Button(action: { submitGuess(category) }) {
             Text(category.rawValue)
                 .multilineTextAlignment(.center)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .font(.subheadline.weight(.semibold))
                 .padding(12)
                 .frame(maxWidth: .infinity)
