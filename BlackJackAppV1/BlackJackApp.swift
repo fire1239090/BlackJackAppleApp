@@ -9271,7 +9271,7 @@ struct DeckCountThroughRunView: View {
                 .font(.subheadline.weight(.semibold))
                 .padding(12)
                 .frame(maxWidth: .infinity)
-                .background(Color.white)
+                .background(Color(uiColor: .systemBackground))
                 .foregroundColor(.primary)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 3)
