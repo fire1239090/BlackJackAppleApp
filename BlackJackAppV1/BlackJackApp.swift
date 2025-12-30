@@ -7694,6 +7694,7 @@ struct CardSortingStats {
 
 struct CardSortingView: View {
     @AppStorage("cardSortingAttempts") private var storedAttempts: Data = Data()
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var showIntro = true
     @State private var currentCard: TrainingCard = TrainingCard.fullDeck().randomElement() ?? TrainingCard(rank: .ace, suit: .spades)
@@ -7717,19 +7718,27 @@ struct CardSortingView: View {
 
     private var overallStats: CardSortingStats { .make(for: attempts) }
     private var weeklyStats: CardSortingStats { .make(for: lastWeekAttempts) }
+    private var layout: CardSortingLayout { CardSortingLayout(sizeClass: horizontalSizeClass) }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                if showIntro {
-                    introView
+            Group {
+                if layout.usesSplitColumns {
+                    HStack(alignment: .top, spacing: layout.columnSpacing) {
+                        mainContent
+                        CardSortingStatsSummary(overall: overallStats, weekly: weeklyStats)
+                            .frame(maxWidth: layout.statsMaxWidth, alignment: .leading)
+                    }
                 } else {
-                    gameView
+                    VStack(spacing: layout.verticalSpacing) {
+                        mainContent
+                        CardSortingStatsSummary(overall: overallStats, weekly: weeklyStats)
+                    }
                 }
-
-                CardSortingStatsSummary(overall: overallStats, weekly: weeklyStats)
             }
-            .padding()
+            .frame(maxWidth: layout.contentMaxWidth, alignment: .center)
+            .padding(.horizontal, layout.horizontalPadding)
+            .padding(.vertical, layout.verticalPadding)
         }
         .navigationTitle("Card Sorting")
         .navigationBarTitleDisplayMode(.inline)
@@ -7763,10 +7772,11 @@ struct CardSortingView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
+        .frame(maxWidth: layout.mainContentMaxWidth, alignment: .leading)
     }
 
     private var gameView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: layout.innerSpacing) {
             Text("Swipe the card: left = Low, right = High, up = Neutral.")
                 .multilineTextAlignment(.center)
                 .font(.subheadline)
@@ -7786,6 +7796,7 @@ struct CardSortingView: View {
                             }
                     )
             }
+            .frame(maxWidth: layout.cardMaxWidth)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
 
@@ -7824,6 +7835,17 @@ struct CardSortingView: View {
                 .padding()
                 .background(feedbackIsPositive ? Color.green.opacity(0.12) : Color.red.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .frame(maxWidth: layout.mainContentMaxWidth, alignment: .center)
+    }
+
+    private var mainContent: some View {
+        Group {
+            if showIntro {
+                introView
+            } else {
+                gameView
             }
         }
     }
@@ -7884,6 +7906,21 @@ struct CardSortingView: View {
         if let data = try? JSONEncoder().encode(updatedAttempts) {
             storedAttempts = data
         }
+    }
+
+    private struct CardSortingLayout {
+        let sizeClass: UserInterfaceSizeClass?
+
+        var usesSplitColumns: Bool { sizeClass == .regular }
+        var cardMaxWidth: CGFloat { usesSplitColumns ? 340 : 260 }
+        var columnSpacing: CGFloat { usesSplitColumns ? 28 : 0 }
+        var verticalSpacing: CGFloat { usesSplitColumns ? 24 : 20 }
+        var innerSpacing: CGFloat { usesSplitColumns ? 18 : 16 }
+        var horizontalPadding: CGFloat { usesSplitColumns ? 32 : 20 }
+        var verticalPadding: CGFloat { usesSplitColumns ? 24 : 20 }
+        var contentMaxWidth: CGFloat { usesSplitColumns ? 960 : .infinity }
+        var mainContentMaxWidth: CGFloat { usesSplitColumns ? 520 : .infinity }
+        var statsMaxWidth: CGFloat { usesSplitColumns ? 360 : .infinity }
     }
 }
 
