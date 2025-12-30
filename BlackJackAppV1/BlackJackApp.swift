@@ -5634,7 +5634,7 @@ struct HandSimulationRunView: View {
     private let baseCardWidth: CGFloat = 70
     private let baseCardOffsetX: CGFloat = 24
     private let baseCardOffsetY: CGFloat = 10
-    private let baseCardTopBuffer: CGFloat = 12
+    private let baseCardTopBuffer: CGFloat = 25
     private let baseHandSpacing: CGFloat = 16
     private let baseTrayWidth: CGFloat = 90
     private var animationSpeed: Double { max(0.05, settings.dealSpeed) }
