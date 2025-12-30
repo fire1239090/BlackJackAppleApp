@@ -5645,7 +5645,7 @@ struct HandSimulationRunView: View {
     }
 
     private func adjustedScale(from base: CGFloat, containerSize: CGSize) -> CGFloat {
-        let capHeight = containerSize.height * 0.45
+        let capHeight = max(140, containerSize.height * 0.35)
         let currentHeight = maxHandHeight(scale: base)
         guard currentHeight > 0 else { return base }
         if currentHeight > capHeight {
@@ -8083,11 +8083,11 @@ struct SpeedCounterRunView: View {
     private func layoutScale(for size: CGSize) -> CGFloat {
         let widthScale = size.width / 430
         let heightScale = size.height / 850
-        return max(0.65, min(1.05, min(widthScale, heightScale)))
+        return max(0.6, min(1.05, min(widthScale, heightScale)))
     }
 
     private func adjustedScale(from base: CGFloat, containerSize: CGSize) -> CGFloat {
-        let capHeight = containerSize.height * 0.45
+        let capHeight = max(140, containerSize.height * 0.35)
         let currentHeight = maxHandHeight(scale: base)
         guard currentHeight > 0 else { return base }
         if currentHeight > capHeight {
