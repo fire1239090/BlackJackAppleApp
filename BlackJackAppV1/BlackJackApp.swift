@@ -3390,6 +3390,7 @@ struct ContentView: View {
                 }
                 .padding()
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Blackjack EV Lab")
             .onAppear(perform: loadSavedRuns)
             .sheet(item: $selectedSavedRun) { run in
@@ -3426,7 +3427,19 @@ struct ContentView: View {
             } message: {
                 Text("Another saved run already uses that name. Please choose a unique name.")
             }
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done", action: dismissKeyboard)
+                }
+            }
         }
+    }
+
+    private func dismissKeyboard() {
+#if canImport(UIKit)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+#endif
     }
 
     // MARK: - Sections
