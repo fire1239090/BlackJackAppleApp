@@ -8381,7 +8381,7 @@ struct SpeedCounterRunView: View {
             Text("What's the count?")
                 .font(.system(size: 17 * scale, weight: .semibold))
             TextField("Enter count", text: $answerText)
-                .keyboardType(.numberPad)
+                .keyboardType(.numbersAndPunctuation)
                 .textFieldStyle(.roundedBorder)
             Button("Submit", action: submitCount)
                 .buttonStyle(.borderedProminent)
