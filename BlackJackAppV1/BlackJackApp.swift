@@ -9003,7 +9003,8 @@ struct DeckCountThroughView: View {
                     onComplete: { session in
                         sessions.insert(session, at: 0)
                         persistSessions()
-                    }
+                    },
+                    onCancel: handleRunCancellation
                 )
                 .id(runConfigID)
             } label: {
@@ -9022,6 +9023,10 @@ struct DeckCountThroughView: View {
     private func beginRun() {
         runConfigID = UUID()
         navigateToRun = true
+    }
+
+    private func handleRunCancellation() {
+        navigateToRun = false
     }
 
     private func loadSessions() {
@@ -9045,6 +9050,7 @@ struct DeckCountThroughRunView: View {
     let minutes: Int
     let seconds: Int
     let onComplete: (DeckCountThroughSession) -> Void
+    let onCancel: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -9060,6 +9066,7 @@ struct DeckCountThroughRunView: View {
     @State private var dealingTimer: Timer?
     @State private var guessResult: String?
     @State private var cardAnimationToggle: Bool = false
+    @State private var wasIdleTimerDisabled: Bool = false
 
     private let cardsToDeal = 51
 
@@ -9127,8 +9134,8 @@ struct DeckCountThroughRunView: View {
         .navigationBarBackButtonHidden(phase == .dealing || phase == .guessing)
         .navigationTitle("Deck Count Through")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear(perform: startRun)
-        .onDisappear(perform: stopTimers)
+        .onAppear(perform: prepareForRun)
+        .onDisappear(perform: teardownRun)
         .toolbar {
             if phase != .finished {
                 ToolbarItem(placement: .cancellationAction) {
@@ -9361,8 +9368,21 @@ struct DeckCountThroughRunView: View {
     }
 
     private func cancelRun() {
-        stopTimers()
+        teardownRun()
+        onCancel()
         dismiss()
+    }
+
+    private func prepareForRun() {
+        stopTimers()
+        wasIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
+        UIApplication.shared.isIdleTimerDisabled = true
+        startRun()
+    }
+
+    private func teardownRun() {
+        stopTimers()
+        UIApplication.shared.isIdleTimerDisabled = wasIdleTimerDisabled
     }
 }
 
