@@ -5641,7 +5641,17 @@ struct HandSimulationRunView: View {
     private func layoutScale(for size: CGSize) -> CGFloat {
         let widthScale = size.width / 430
         let heightScale = size.height / 850
-        return max(0.75, min(1.1, min(widthScale, heightScale)))
+        return max(0.65, min(1.1, min(widthScale, heightScale)))
+    }
+
+    private func adjustedScale(from base: CGFloat, containerSize: CGSize) -> CGFloat {
+        let capHeight = containerSize.height * 0.45
+        let currentHeight = maxHandHeight(scale: base)
+        guard currentHeight > 0 else { return base }
+        if currentHeight > capHeight {
+            return max(0.55, base * capHeight / currentHeight)
+        }
+        return base
     }
 
     private func cardWidth(for scale: CGFloat) -> CGFloat { baseCardWidth * scale }
@@ -5768,7 +5778,7 @@ struct HandSimulationRunView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let scale = layoutScale(for: proxy.size)
+            let scale = adjustedScale(from: layoutScale(for: proxy.size), containerSize: proxy.size)
 
             ZStack {
                 Color(uiColor: .systemGroupedBackground)
@@ -6156,7 +6166,7 @@ struct HandSimulationRunView: View {
     }
 
     private func dealerSection(scale: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .center, spacing: 6) {
             Text("Dealer")
                 .font(.headline)
             HStack(spacing: 8 * scale) {
@@ -6165,7 +6175,7 @@ struct HandSimulationRunView: View {
                         .frame(width: cardWidth(for: scale))
                 }
             }
-            .padding(.leading, 6)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
@@ -8073,7 +8083,17 @@ struct SpeedCounterRunView: View {
     private func layoutScale(for size: CGSize) -> CGFloat {
         let widthScale = size.width / 430
         let heightScale = size.height / 850
-        return max(0.75, min(1.05, min(widthScale, heightScale)))
+        return max(0.65, min(1.05, min(widthScale, heightScale)))
+    }
+
+    private func adjustedScale(from base: CGFloat, containerSize: CGSize) -> CGFloat {
+        let capHeight = containerSize.height * 0.45
+        let currentHeight = maxHandHeight(scale: base)
+        guard currentHeight > 0 else { return base }
+        if currentHeight > capHeight {
+            return max(0.55, base * capHeight / currentHeight)
+        }
+        return base
     }
 
     private func cardWidth(for scale: CGFloat) -> CGFloat { baseCardWidth * scale }
@@ -8120,7 +8140,7 @@ struct SpeedCounterRunView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let scale = layoutScale(for: proxy.size)
+            let scale = adjustedScale(from: layoutScale(for: proxy.size), containerSize: proxy.size)
 
             ZStack {
                 Color(uiColor: .systemGroupedBackground)
@@ -8231,7 +8251,7 @@ struct SpeedCounterRunView: View {
     }
 
     private func dealerArea(scale: CGFloat) -> some View {
-        VStack(alignment: .center, spacing: 8) {
+        VStack(alignment: .center, spacing: 8 * scale) {
             Text("Dealer")
                 .font(.system(size: 15 * scale, weight: .semibold))
             HStack(spacing: 12 * scale) {
@@ -8242,7 +8262,7 @@ struct SpeedCounterRunView: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private func playerArea(scale: CGFloat) -> some View {
