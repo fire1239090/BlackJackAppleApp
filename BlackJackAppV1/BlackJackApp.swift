@@ -3434,6 +3434,7 @@ struct ContentView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     private func dismissKeyboard() {
