@@ -9710,12 +9710,20 @@ struct TrainingStatsView: View {
 
 struct HomeView: View {
     private let defaultRules = GameRules.defaultStrategyRules
+    private var homeHeaderImage: Image {
+#if canImport(UIKit)
+        if let uiImage = UIImage(named: "HomeHeader") {
+            return Image(uiImage: uiImage)
+        }
+#endif
+        return Image(systemName: "photo")
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    HomeHeaderAsset.image()
+                    homeHeaderImage
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: .infinity, alignment: .center)
