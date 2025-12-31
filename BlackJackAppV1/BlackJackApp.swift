@@ -9726,6 +9726,7 @@ struct HomeView: View {
                     homeHeaderImage
                         .resizable()
                         .scaledToFit()
+                        .frame(maxWidth: UIScreen.main.bounds.width * 0.5)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.horizontal, 16)
                         .padding(.top, 12)
