@@ -5958,6 +5958,7 @@ struct HandSimulationRunView: View {
                         ? cardWidth(for: scale)
                         : max(proxy.size.width / CGFloat(enumeratedHands.count), cardWidth(for: scale) + handSpacing(for: scale))
                     let layout = handLayout(for: enumeratedHands, baseScale: scale, slotWidth: slotWidth)
+                    let topBuffer = cardTopBuffer(for: scale)
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 0) {
@@ -5970,9 +5971,10 @@ struct HandSimulationRunView: View {
                         }
                         .frame(width: max(proxy.size.width, layout.contentWidth), alignment: .center)
                     }
-                    .frame(height: layout.maxHeight + 24, alignment: .bottom)
+                    .frame(height: layout.maxHeight + topBuffer, alignment: .bottom)
+                    .padding(.top, topBuffer * 0.25)
                 }
-                .frame(height: maxHandHeight(scale: scale) + 32)
+                .frame(height: maxHandHeight(scale: scale) + cardTopBuffer(for: scale) + 32)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
