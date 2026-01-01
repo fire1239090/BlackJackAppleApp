@@ -5702,12 +5702,6 @@ struct HandSimulationView: View {
 struct HandSimulationRunView: View {
     private let maxSplitDepth = 3
     private let discardSizes = DeckBetTrainingConstants.deckCounts
-    private let baseCardWidth: CGFloat = 64
-    private let baseCardOffsetX: CGFloat = 22
-    private let baseCardOffsetY: CGFloat = 6
-    private let baseCardTopBuffer: CGFloat = 28
-    private let baseHandSpacing: CGFloat = 24
-    private let baseTrayWidth: CGFloat = 90
     private var animationSpeed: Double { max(0.05, settings.dealSpeed) }
 
     private struct SimulationLayout {
