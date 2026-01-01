@@ -14,10 +14,10 @@
             filePath = "BlackJackAppV1/BlackJackApp.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "8002"
-            endingLineNumber = "8002"
-            landmarkName = "body"
-            landmarkType = "24">
+            startingLineNumber = "7994"
+            endingLineNumber = "7994"
+            landmarkName = "CardSortingView"
+            landmarkType = "14">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
