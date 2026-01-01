@@ -5692,10 +5692,10 @@ struct HandSimulationView: View {
 struct HandSimulationRunView: View {
     private let maxSplitDepth = 3
     private let discardSizes = DeckBetTrainingConstants.deckCounts
-    private let baseCardWidth: CGFloat = 68
-    private let baseCardOffsetX: CGFloat = 24
-    private let baseCardOffsetY: CGFloat = 8
-    private let baseCardTopBuffer: CGFloat = 18
+    private let baseCardWidth: CGFloat = 64
+    private let baseCardOffsetX: CGFloat = 22
+    private let baseCardOffsetY: CGFloat = 6
+    private let baseCardTopBuffer: CGFloat = 28
     private let baseHandSpacing: CGFloat = 24
     private let baseTrayWidth: CGFloat = 90
     private var animationSpeed: Double { max(0.05, settings.dealSpeed) }
@@ -5974,7 +5974,7 @@ struct HandSimulationRunView: View {
                     .frame(height: layout.maxHeight + topBuffer, alignment: .bottom)
                     .padding(.top, topBuffer * 0.25)
                 }
-                .frame(height: maxHandHeight(scale: scale) + cardTopBuffer(for: scale) + 32)
+                .frame(height: maxHandHeight(scale: scale) + cardTopBuffer(for: scale) + 34)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
