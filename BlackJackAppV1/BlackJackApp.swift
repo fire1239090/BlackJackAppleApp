@@ -5511,19 +5511,23 @@ struct HandSimulationView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Build full-hand intuition by practicing betting, counting, and strategy fundamentals in one place.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+            GeometryReader { proxy in
+                let spacing = proxy.size.height * 0.02
+                let padding = max(proxy.size.width, proxy.size.height) * 0.03
+                ScrollView {
+                    VStack(alignment: .leading, spacing: spacing) {
+                        Text("Build full-hand intuition by practicing betting, counting, and strategy fundamentals in one place.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
 
-                    ruleSection
-                    dealingSpeedSection
-                    runningCountSection
-                    betSection
-                    statsSection
+                        ruleSection(padding: padding)
+                        dealingSpeedSection(padding: padding)
+                        runningCountSection(padding: padding)
+                        betSection(padding: padding)
+                        statsSection(padding: padding)
+                    }
+                    .padding(padding)
                 }
-                .padding()
             }
             .navigationTitle("Hand Simulation")
             .navigationBarTitleDisplayMode(.inline)
@@ -5551,8 +5555,9 @@ struct HandSimulationView: View {
         .onAppear(perform: loadSessions)
     }
 
-    private var ruleSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func ruleSection(padding: CGFloat) -> some View {
+        let sectionPadding = padding * 0.6
+        return VStack(alignment: .leading, spacing: sectionPadding * 0.5) {
             Text("Game Rules")
                 .font(.headline)
             Stepper(value: $settings.rules.decks, in: 1...8) {
@@ -5574,13 +5579,14 @@ struct HandSimulationView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
-        .padding()
+        .padding(sectionPadding)
         .background(Color.secondary.opacity(0.08))
         .cornerRadius(14)
     }
 
-    private var runningCountSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    private func runningCountSection(padding: CGFloat) -> some View {
+        let sectionPadding = padding * 0.6
+        return VStack(alignment: .leading, spacing: sectionPadding * 0.45) {
             Toggle("Ask Running Count", isOn: $settings.askRunningCount.animation())
             if settings.askRunningCount {
                 Stepper(value: $settings.runningCountCadence, in: 1...10) {
@@ -5588,13 +5594,14 @@ struct HandSimulationView: View {
                 }
             }
         }
-        .padding()
+        .padding(sectionPadding)
         .background(Color.secondary.opacity(0.08))
         .cornerRadius(14)
     }
 
-    private var dealingSpeedSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    private func dealingSpeedSection(padding: CGFloat) -> some View {
+        let sectionPadding = padding * 0.6
+        return VStack(alignment: .leading, spacing: sectionPadding * 0.45) {
             Text("Dealing Speed")
                 .font(.headline)
             HStack {
@@ -5610,13 +5617,14 @@ struct HandSimulationView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
-        .padding()
+        .padding(sectionPadding)
         .background(Color.secondary.opacity(0.08))
         .cornerRadius(14)
     }
 
-    private var betSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    private func betSection(padding: CGFloat) -> some View {
+        let sectionPadding = padding * 0.4
+        return VStack(alignment: .leading, spacing: sectionPadding * 0.5) {
             Toggle("Enable Betting Practice", isOn: $settings.bettingEnabled.animation())
             Text("True Count / Betting Table")
                 .font(.headline)
@@ -5630,10 +5638,12 @@ struct HandSimulationView: View {
                 )
             }
         }
+        .padding(sectionPadding)
     }
 
-    private var statsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func statsSection(padding: CGFloat) -> some View {
+        let sectionPadding = padding * 0.6
+        return VStack(alignment: .leading, spacing: sectionPadding * 0.6) {
             Text("Recent Performance")
                 .font(.headline)
             statRow(title: "Accurate Decisions", overall: overallStats.accuracy, weekly: weeklyStats.accuracy, formatter: percentLabel)
@@ -5641,7 +5651,7 @@ struct HandSimulationView: View {
             statRow(title: "Perfect Shoes", overall: Double(overallStats.perfectShoes), weekly: Double(weeklyStats.perfectShoes), formatter: countLabel)
             statRow(title: "Longest Perfect Shoe Streak", overall: Double(overallStats.longestPerfectStreak), weekly: Double(weeklyStats.longestPerfectStreak), formatter: countLabel)
         }
-        .padding()
+        .padding(sectionPadding)
         .background(Color.secondary.opacity(0.08))
         .cornerRadius(14)
     }
@@ -5692,38 +5702,44 @@ struct HandSimulationView: View {
 struct HandSimulationRunView: View {
     private let maxSplitDepth = 3
     private let discardSizes = DeckBetTrainingConstants.deckCounts
-    private let baseCardWidth: CGFloat = 64
-    private let baseCardOffsetX: CGFloat = 22
-    private let baseCardOffsetY: CGFloat = 6
-    private let baseCardTopBuffer: CGFloat = 28
-    private let baseHandSpacing: CGFloat = 24
-    private let baseTrayWidth: CGFloat = 90
     private var animationSpeed: Double { max(0.05, settings.dealSpeed) }
 
-    private func layoutScale(for size: CGSize) -> CGFloat {
-        let widthScale = size.width / 430
-        let heightScale = size.height / 850
-        return max(0.6, min(1.1, min(widthScale, heightScale)))
+    private struct SimulationLayout {
+        let size: CGSize
+
+        var base: CGFloat { min(size.width, size.height) }
+        var spacing: CGFloat { base * 0.02 }
+        var smallSpacing: CGFloat { spacing * 0.7 }
+        var padding: CGFloat { base * 0.028 }
+        var innerPadding: CGFloat { base * 0.018 }
+        var cornerRadius: CGFloat { base * 0.035 }
+        var cardWidth: CGFloat { base * 0.16 }
+        var cardHeight: CGFloat { cardWidth * (3.5 / 2.5) }
+        var cardOffsetX: CGFloat { cardWidth * 0.34 }
+        var cardOffsetY: CGFloat { cardHeight * 0.07 }
+        var cardTopBuffer: CGFloat { cardHeight * 0.32 }
+        var handSpacing: CGFloat { cardWidth * 0.36 }
+        var trayWidth: CGFloat { base * 0.22 }
+        var overlayWidth: CGFloat { size.width * 0.6 }
+        var overlayPadding: CGFloat { base * 0.03 }
+        var overlayCornerRadius: CGFloat { base * 0.045 }
+        var modalButtonPadding: CGFloat { base * 0.035 }
+        var chipSize: CGFloat { cardWidth * 1.05 }
+        var chipStroke: CGFloat { chipSize * 0.03 }
+        var actionSpacing: CGFloat { base * 0.018 }
+        var buttonPadding: CGFloat { base * 0.024 }
+        var countPanelWidth: CGFloat { base * 0.32 }
+        var inactiveHandScale: CGFloat { 0.74 }
+
+        var fontScale: CGFloat {
+            let ratio = base / max(size.width, size.height)
+            return min(max(0.85, ratio * 2.2), 1.35)
+        }
+
+        func handScale(isActive: Bool) -> CGFloat {
+            isActive ? 1 : inactiveHandScale
+        }
     }
-
-    private func adjustedScale(from base: CGFloat, containerSize: CGSize) -> CGFloat {
-        let tableVerticalBudget = max(containerSize.height * 0.38, 180)
-        let headerAndSpacing = cardHeight(for: base) + 44
-        let playerAreaBudget = max(120, tableVerticalBudget - headerAndSpacing)
-        let currentHeight = maxHandHeight(scale: base)
-        guard currentHeight > 0 else { return base }
-
-        let heightScale = min(1, playerAreaBudget / currentHeight)
-        return max(0.5, base * heightScale)
-    }
-
-    private func cardWidth(for scale: CGFloat) -> CGFloat { baseCardWidth * scale }
-    private func cardHeight(for scale: CGFloat) -> CGFloat { cardWidth(for: scale) / (2.5/3.5) }
-    private func cardOffsetX(for scale: CGFloat) -> CGFloat { baseCardOffsetX * scale }
-    private func cardOffsetY(for scale: CGFloat) -> CGFloat { baseCardOffsetY * scale }
-    private func cardTopBuffer(for scale: CGFloat) -> CGFloat { baseCardTopBuffer * scale }
-    private func handSpacing(for scale: CGFloat) -> CGFloat { baseHandSpacing * scale }
-    private func trayWidth(for scale: CGFloat) -> CGFloat { baseTrayWidth * scale }
 
     let settings: HandSimulationSettings
     let onComplete: (HandSimulationSession) -> Void
@@ -5863,23 +5879,23 @@ struct HandSimulationRunView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let scale = adjustedScale(from: layoutScale(for: proxy.size), containerSize: proxy.size)
+            let layout = SimulationLayout(size: proxy.size)
 
             ZStack {
                 Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
                     .ignoresSafeArea(.keyboard, edges: .bottom)
 
-                VStack(spacing: 12) {
-                    tableArea(scale: scale, availableWidth: proxy.size.width)
+                VStack(spacing: layout.spacing) {
+                    tableArea(layout: layout)
 
-                    betControls(scale: scale)
+                    betControls(layout: layout)
 
-                    actionButtons(scale: scale)
+                    actionButtons(layout: layout)
 
-                    sessionProfitView
+                    sessionProfitView(layout: layout)
                 }
-                .padding()
+                .padding(layout.padding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .onAppear(perform: startShoe)
                 .onDisappear {
@@ -5897,7 +5913,7 @@ struct HandSimulationRunView: View {
                 }
 
                 if showRunningCountPrompt {
-                    modalOverlay(scale: scale) { runningCountPrompt }
+                    modalOverlay(layout: layout) { runningCountPrompt(layout: layout) }
                 }
             }
             .alert(item: $activeAlert) { alert in
@@ -5925,84 +5941,84 @@ struct HandSimulationRunView: View {
         }
     }
 
-    private func tableArea(scale: CGFloat, availableWidth: CGFloat) -> some View {
-        VStack(spacing: 12) {
-            if availableWidth < 430 {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .center, spacing: 12) {
-                        discardTray(scale: scale, expandedWidth: availableWidth)
-                        Spacer()
-                        countDisplay(scale: scale)
+    private func tableArea(layout: SimulationLayout) -> some View {
+        VStack(spacing: layout.spacing) {
+            if layout.size.width < layout.size.height * 0.65 {
+                VStack(alignment: .leading, spacing: layout.spacing) {
+                    HStack(alignment: .center, spacing: layout.spacing) {
+                        discardTray(layout: layout, expandedWidth: layout.size.width)
+                        Spacer(minLength: 0)
+                        countDisplay(layout: layout)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    dealerSection(scale: scale)
+                    dealerSection(layout: layout)
                 }
             } else {
-                HStack(alignment: .top, spacing: 12) {
-                    discardTray(scale: scale, expandedWidth: availableWidth)
+                HStack(alignment: .top, spacing: layout.spacing) {
+                    discardTray(layout: layout, expandedWidth: layout.size.width)
 
-                    dealerSection(scale: scale)
+                    dealerSection(layout: layout)
 
-                    Spacer()
+                    Spacer(minLength: 0)
 
-                    countDisplay(scale: scale)
+                    countDisplay(layout: layout)
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: layout.smallSpacing) {
                 Text("Player")
                     .font(.headline)
                 GeometryReader { proxy in
                     let enumeratedHands = Array(playerHands.enumerated())
                     let slotWidth = enumeratedHands.isEmpty
-                        ? cardWidth(for: scale)
-                        : max(proxy.size.width / CGFloat(enumeratedHands.count), cardWidth(for: scale) + handSpacing(for: scale))
-                    let layout = handLayout(for: enumeratedHands, baseScale: scale, slotWidth: slotWidth)
-                    let topBuffer = cardTopBuffer(for: scale)
+                        ? layout.cardWidth
+                        : max(proxy.size.width / CGFloat(enumeratedHands.count), layout.cardWidth + layout.handSpacing)
+                    let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth)
+                    let topBuffer = layout.cardTopBuffer
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 0) {
                             ForEach(enumeratedHands, id: \.element.id) { index, hand in
-                                let handScale = handScale(for: index, baseScale: scale)
-                                let width = max(slotWidth, handWidth(hand, scale: handScale))
-                                playerHandView(hand, scale: handScale)
-                                    .frame(width: width, height: layout.maxHeight, alignment: .bottom)
+                                let handScale = layout.handScale(isActive: index == activeHandIndex)
+                                let width = max(slotWidth, handWidth(hand, layout: layout, scale: handScale))
+                                playerHandView(hand, layout: layout, scale: handScale)
+                                    .frame(width: width, height: layoutInfo.maxHeight, alignment: .bottom)
                             }
                         }
-                        .frame(width: max(proxy.size.width, layout.contentWidth), alignment: .center)
+                        .frame(width: max(proxy.size.width, layoutInfo.contentWidth), alignment: .center)
                     }
-                    .frame(height: layout.maxHeight + topBuffer, alignment: .bottom)
+                    .frame(height: layoutInfo.maxHeight + topBuffer, alignment: .bottom)
                     .padding(.top, topBuffer * 0.25)
                 }
-                .frame(height: maxHandHeight(scale: scale) + cardTopBuffer(for: scale) + 32)
+                .frame(height: maxHandHeight(layout: layout) + layout.cardTopBuffer + layout.spacing * 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 14)
-        .padding(.horizontal, 12)
+        .padding(.vertical, layout.padding)
+        .padding(.horizontal, layout.padding)
         .background(Color.secondary.opacity(0.08))
-        .cornerRadius(16)
+        .cornerRadius(layout.cornerRadius)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .overlay {
             if awaitingBet {
-                VStack(spacing: 14) {
+                VStack(spacing: layout.spacing) {
                     Text("Tap Chips to Enter Bet")
                         .font(.title3.weight(.bold))
                         .multilineTextAlignment(.center)
                     Button(action: submitBetAndDeal) {
                         Text("Deal Next Hand")
                             .font(.headline)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: 220)
+                            .padding(.horizontal, layout.modalButtonPadding)
+                            .padding(.vertical, layout.buttonPadding)
+                            .frame(maxWidth: layout.overlayWidth)
                     }
                     .buttonStyle(.borderedProminent)
                 }
-                .padding()
+                .padding(layout.overlayPadding)
                 .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: layout.overlayCornerRadius, style: .continuous))
             } else if awaitingNextHand {
-                VStack(spacing: 14) {
+                VStack(spacing: layout.spacing) {
                     Text("Hand Complete")
                         .font(.title3.weight(.bold))
                         .multilineTextAlignment(.center)
@@ -6024,82 +6040,89 @@ struct HandSimulationRunView: View {
                     Button(action: proceedToNextHand) {
                         Text(showRunningCountPrompt ? "Answer count to continue" : "Next Hand")
                             .font(.headline)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: 220)
+                            .padding(.horizontal, layout.modalButtonPadding)
+                            .padding(.vertical, layout.buttonPadding)
+                            .frame(maxWidth: layout.overlayWidth)
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(showRunningCountPrompt)
                 }
-                .padding()
+                .padding(layout.overlayPadding)
                 .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: layout.overlayCornerRadius, style: .continuous))
             }
         }
     }
 
-    private func countDisplay(scale: CGFloat) -> some View {
-        VStack(alignment: .trailing, spacing: 6) {
-            HStack(spacing: 10) {
+    private func countDisplay(layout: SimulationLayout) -> some View {
+        let fontScale = layout.fontScale
+        let labelFont = Font.system(size: 12 * fontScale)
+        let valueFont = Font.system(size: 17 * fontScale, weight: .semibold, design: .monospaced)
+        let smallValueFont = Font.system(size: 14 * fontScale, weight: .regular, design: .monospaced)
+
+        return VStack(alignment: .trailing, spacing: layout.smallSpacing) {
+            HStack(spacing: layout.smallSpacing) {
                 Button(action: { showCounts.toggle() }) {
                     Image(systemName: showCounts ? "eye.slash.fill" : "eye.fill")
-                        .font(.system(size: 17 * scale, weight: .regular))
+                        .font(.system(size: 17 * fontScale, weight: .regular))
                 }
                 .buttonStyle(.plain)
 
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: layout.smallSpacing * 0.8) {
                     Text("Running Count")
-                        .font(.system(size: 12 * scale))
+                        .font(labelFont)
                         .foregroundColor(.secondary)
                     Text(showCounts ? "\(runningCount)" : "— —")
-                        .font(.system(size: 17 * scale, weight: .semibold, design: .monospaced))
+                        .font(valueFont)
                     Text("True Count")
-                        .font(.system(size: 12 * scale))
+                        .font(labelFont)
                         .foregroundColor(.secondary)
                     Text(showCounts ? String(format: "%.2f", trueCount) : "— —")
-                        .font(.system(size: 14 * scale, weight: .regular, design: .monospaced))
+                        .font(smallValueFont)
                 }
             }
         }
-        .frame(minWidth: 140 * scale, alignment: .trailing)
+        .frame(minWidth: layout.countPanelWidth, alignment: .trailing)
     }
 
-    private func betControls(scale: CGFloat) -> some View {
-        VStack(alignment: .center, spacing: 12) {
-            VStack(spacing: 2) {
+    private func betControls(layout: SimulationLayout) -> some View {
+        let fontScale = layout.fontScale
+
+        return VStack(alignment: .center, spacing: layout.spacing) {
+            VStack(spacing: layout.smallSpacing * 0.6) {
                 Text("Bet Size:")
-                    .font(.system(size: 17 * scale, weight: .semibold))
+                    .font(.system(size: 17 * fontScale, weight: .semibold))
                     .frame(maxWidth: .infinity, alignment: .center)
                 Text("$\(Int(activeBet))")
-                    .font(.system(size: 20 * scale, weight: .semibold))
+                    .font(.system(size: 20 * fontScale, weight: .semibold))
                     .monospacedDigit()
                     .frame(maxWidth: .infinity, alignment: .center)
             }
 
             if awaitingBet {
                 Text("Tap Chips to Enter Bet")
-                    .font(.system(size: 20 * scale, weight: .bold))
+                    .font(.system(size: 20 * fontScale, weight: .bold))
                     .frame(maxWidth: .infinity, alignment: .center)
             } else if !bettingEnabled {
                 Text("Betting is disabled for this drill.")
-                    .font(.system(size: 15 * scale))
+                    .font(.system(size: 15 * fontScale))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
 
-            HStack(spacing: 14 * scale) {
-                Spacer()
+            HStack(spacing: layout.spacing) {
+                Spacer(minLength: 0)
                 ForEach(chipOptions) { chip in
                     Button(action: { applyChip(chip) }) {
                         Text(chipLabel(for: chip))
-                            .font(.system(size: 17 * scale, weight: .semibold))
+                            .font(.system(size: 17 * fontScale, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 70 * scale, height: 70 * scale)
+                            .frame(width: layout.chipSize, height: layout.chipSize)
                             .background(chip.color)
                             .clipShape(Circle())
                             .overlay(
                                 Circle()
-                                    .stroke(Color.white.opacity(0.6), lineWidth: 2)
+                                    .stroke(Color.white.opacity(0.6), lineWidth: layout.chipStroke)
                             )
                     }
                     .disabled(!chipsEnabled)
@@ -6108,56 +6131,56 @@ struct HandSimulationRunView: View {
 
                 Button(action: { negativeChipMode.toggle() }) {
                     Image(systemName: negativeChipMode ? "plus.circle.fill" : "minus.circle.fill")
-                        .font(.system(size: 28 * scale))
+                        .font(.system(size: 28 * fontScale))
                         .foregroundColor(negativeChipMode ? .orange : .secondary)
-                        .padding(6 * scale)
+                        .padding(layout.innerPadding)
                 }
                 .background(.ultraThinMaterial)
                 .clipShape(Circle())
                 .disabled(!chipsEnabled)
                 .opacity(chipsEnabled ? 1 : 0.35)
-                Spacer()
+                Spacer(minLength: 0)
             }
 
             if let betFeedback {
-                HStack(alignment: .center, spacing: 8) {
+                HStack(alignment: .center, spacing: layout.smallSpacing) {
                     Image(systemName: betFeedback.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                         .foregroundColor(betFeedback.isError ? .orange : .green)
                     Text(betFeedback.message)
-                        .font(.system(size: 12 * scale))
+                        .font(.system(size: 12 * fontScale))
                         .foregroundColor(betFeedback.isError ? .primary : .green)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
             }
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, layout.innerPadding)
     }
 
-    private func actionButtons(scale: CGFloat) -> some View {
-        HStack(spacing: 10 * scale) {
+    private func actionButtons(layout: SimulationLayout) -> some View {
+        HStack(spacing: layout.actionSpacing) {
             ForEach(PlayerAction.allCases, id: \.self) { action in
                 Button(
                     action: { handleAction(action) },
-                    label: { actionLabel(for: action) }
+                    label: { actionLabel(for: action, layout: layout) }
                 )
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10 * scale)
-                .padding(.horizontal, 8 * scale)
+                .padding(.vertical, layout.buttonPadding)
+                .padding(.horizontal, layout.innerPadding)
                 .background(buttonEnabled(action) ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.1))
                 .foregroundColor(buttonEnabled(action) ? .primary : .secondary)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous))
                 .disabled(!buttonEnabled(action) || awaitingBet || awaitingNextHand || showRunningCountPrompt)
             }
         }
-        .padding(.horizontal, 6 * scale)
+        .padding(.horizontal, layout.innerPadding)
     }
 
-    private func actionLabel(for action: PlayerAction) -> some View {
+    private func actionLabel(for action: PlayerAction, layout: SimulationLayout) -> some View {
         VStack {
             Text(label(for: action))
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 15 * layout.fontScale, weight: .semibold))
             Text(actionTitle(for: action))
-                .font(.system(size: 11))
+                .font(.system(size: 11 * layout.fontScale))
         }
     }
 
@@ -6200,34 +6223,34 @@ struct HandSimulationRunView: View {
         }
     }
 
-    private var sessionProfitView: some View {
+    private func sessionProfitView(layout: SimulationLayout) -> some View {
         VStack(spacing: 6) {
             Text("Session Profit")
                 .font(.headline)
             Text(String(format: "$%.2f", sessionProfit))
-                .font(.title2.weight(.semibold))
+                .font(.system(size: 22 * layout.fontScale, weight: .semibold))
                 .foregroundColor(sessionProfit >= 0 ? .green : .red)
         }
         .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.top, 4)
+        .padding(.top, layout.smallSpacing)
     }
 
-    private func modalOverlay<Content: View>(scale: CGFloat = 1, @ViewBuilder content: () -> Content) -> some View {
+    private func modalOverlay<Content: View>(layout: SimulationLayout, @ViewBuilder content: () -> Content) -> some View {
         Color.black.opacity(0.35)
             .ignoresSafeArea()
             .ignoresSafeArea(.keyboard, edges: .bottom)
             .overlay(
                 content()
-                    .frame(maxWidth: 360 * scale)
-                    .padding(12 * scale)
+                    .frame(maxWidth: layout.overlayWidth)
+                    .padding(layout.overlayPadding)
                     .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 16 * scale, style: .continuous))
-                    .padding(12 * scale)
+                    .clipShape(RoundedRectangle(cornerRadius: layout.overlayCornerRadius, style: .continuous))
+                    .padding(layout.overlayPadding)
             )
     }
 
-    private var runningCountPrompt: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func runningCountPrompt(layout: SimulationLayout) -> some View {
+        VStack(alignment: .leading, spacing: layout.spacing) {
             Text("What's the running count?")
                 .font(.headline)
             TextField("Enter count", text: $runningCountGuess)
@@ -6240,104 +6263,99 @@ struct HandSimulationRunView: View {
         }
     }
 
-    private func discardTray(scale: CGFloat, expandedWidth: CGFloat) -> some View {
+    private func discardTray(layout: SimulationLayout, expandedWidth: CGFloat) -> some View {
         Image(discardAssetName)
             .resizable()
             .scaledToFit()
-            .frame(width: trayWidth(for: scale))
+            .frame(width: layout.trayWidth)
             .onTapGesture { showTrayExpanded = true }
             .contextMenu {
                 Image(discardAssetName)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: max(expandedWidth * 0.6, 220))
+                    .frame(width: max(expandedWidth * 0.6, layout.trayWidth * 1.2))
             }
     }
 
-    private func dealerSection(scale: CGFloat) -> some View {
-        VStack(alignment: .center, spacing: 6) {
+    private func dealerSection(layout: SimulationLayout) -> some View {
+        VStack(alignment: .center, spacing: layout.smallSpacing) {
             Text("Dealer")
                 .font(.headline)
-            HStack(spacing: 8 * scale) {
+            HStack(spacing: layout.smallSpacing) {
                 ForEach(dealerCards) { card in
                     SpeedCounterCardView(card: card)
-                        .frame(width: cardWidth(for: scale))
+                        .frame(width: layout.cardWidth)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
-    private func playerHandView(_ hand: SpeedCounterHandState, scale: CGFloat) -> some View {
+    private func playerHandView(_ hand: SpeedCounterHandState, layout: SimulationLayout, scale: CGFloat) -> some View {
         ZStack(alignment: .bottomLeading) {
             ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
                 SpeedCounterCardView(card: card)
-                    .frame(width: cardWidth(for: scale))
-                    .offset(x: CGFloat(index) * cardOffsetX(for: scale), y: CGFloat(-index) * cardOffsetY(for: scale))
+                    .frame(width: layout.cardWidth * scale)
+                    .offset(x: CGFloat(index) * layout.cardOffsetX * scale, y: CGFloat(-index) * layout.cardOffsetY * scale)
             }
 
             if let doubleCard = hand.doubleCard {
                 SpeedCounterCardView(card: doubleCard)
-                    .frame(width: cardWidth(for: scale))
+                    .frame(width: layout.cardWidth * scale)
                     .rotationEffect(.degrees(90))
                     .offset(
-                        x: CGFloat(hand.cards.count) * cardOffsetX(for: scale) + 6 * scale,
-                        y: CGFloat(-hand.cards.count) * cardOffsetY(for: scale)
+                        x: CGFloat(hand.cards.count) * layout.cardOffsetX * scale + layout.smallSpacing * scale,
+                        y: CGFloat(-hand.cards.count) * layout.cardOffsetY * scale
                     )
             }
         }
         .frame(
-            width: handWidth(hand, scale: scale),
-            height: handHeight(hand, scale: scale),
+            width: handWidth(hand, layout: layout, scale: scale),
+            height: handHeight(hand, layout: layout, scale: scale),
             alignment: .bottomLeading
         )
     }
 
-    private func totalHandsWidth(scale: CGFloat) -> CGFloat {
-        guard !playerHands.isEmpty else { return cardWidth(for: scale) }
+    private func totalHandsWidth(layout: SimulationLayout) -> CGFloat {
+        guard !playerHands.isEmpty else { return layout.cardWidth }
         let width = playerHands.enumerated().reduce(0) { partial, pair in
-            let handScale = handScale(for: pair.offset, baseScale: scale)
-            return partial + handWidth(pair.element, scale: handScale)
+            let handScale = layout.handScale(isActive: pair.offset == activeHandIndex)
+            return partial + handWidth(pair.element, layout: layout, scale: handScale)
         }
-        let spacingWidth = handSpacing(for: scale) * CGFloat(max(playerHands.count - 1, 0))
+        let spacingWidth = layout.handSpacing * CGFloat(max(playerHands.count - 1, 0))
         return width + spacingWidth
     }
 
-    private func handWidth(_ hand: SpeedCounterHandState, scale: CGFloat) -> CGFloat {
+    private func handWidth(_ hand: SpeedCounterHandState, layout: SimulationLayout, scale: CGFloat) -> CGFloat {
         let count = max(hand.cards.count, 1)
-        var width = cardWidth(for: scale) + CGFloat(max(0, count - 1)) * cardOffsetX(for: scale)
+        var width = layout.cardWidth * scale + CGFloat(max(0, count - 1)) * layout.cardOffsetX * scale
         if hand.doubleCard != nil {
-            width += cardWidth(for: scale) * 0.6
+            width += layout.cardWidth * scale * 0.6
         }
         return width
     }
 
-    private func maxHandHeight(scale: CGFloat) -> CGFloat {
-        guard !playerHands.isEmpty else { return cardHeight(for: scale) }
+    private func maxHandHeight(layout: SimulationLayout) -> CGFloat {
+        guard !playerHands.isEmpty else { return layout.cardHeight }
         return playerHands.enumerated().map { index, hand in
-            handHeight(hand, scale: handScale(for: index, baseScale: scale))
-        }.max() ?? cardHeight(for: scale)
+            handHeight(hand, layout: layout, scale: layout.handScale(isActive: index == activeHandIndex))
+        }.max() ?? layout.cardHeight
     }
 
-    private func handHeight(_ hand: SpeedCounterHandState, scale: CGFloat) -> CGFloat {
+    private func handHeight(_ hand: SpeedCounterHandState, layout: SimulationLayout, scale: CGFloat) -> CGFloat {
         let count = max(hand.cards.count, 1)
-        var height = cardHeight(for: scale) + CGFloat(max(0, count - 1)) * cardOffsetY(for: scale)
+        var height = layout.cardHeight * scale + CGFloat(max(0, count - 1)) * layout.cardOffsetY * scale
         if hand.doubleCard != nil {
-            height = max(height, cardWidth(for: scale) + cardOffsetY(for: scale))
+            height = max(height, layout.cardWidth * scale + layout.cardOffsetY * scale)
         }
-        return height + cardTopBuffer(for: scale)
+        return height + layout.cardTopBuffer * scale
     }
 
-    private func handScale(for index: Int, baseScale: CGFloat) -> CGFloat {
-        guard index == activeHandIndex else { return baseScale * 0.7 }
-        return baseScale
-    }
-
-    private func handLayout(for hands: [(Int, SpeedCounterHandState)], baseScale: CGFloat, slotWidth: CGFloat) -> (maxHeight: CGFloat, contentWidth: CGFloat) {
-        let metrics = hands.reduce((maxHeight: cardHeight(for: baseScale), contentWidth: CGFloat(0))) { partial, pair in
-            let handScale = handScale(for: pair.0, baseScale: baseScale)
-            let width = max(slotWidth, handWidth(pair.1, scale: handScale))
-            let height = handHeight(pair.1, scale: handScale)
+    private func handLayout(for hands: [(Int, SpeedCounterHandState)], layout: SimulationLayout, slotWidth: CGFloat) -> (maxHeight: CGFloat, contentWidth: CGFloat) {
+        let metrics = hands.reduce((maxHeight: layout.cardHeight, contentWidth: CGFloat(0))) { partial, pair in
+            let handScale = layout.handScale(isActive: pair.0 == activeHandIndex)
+            let width = max(slotWidth, handWidth(pair.1, layout: layout, scale: handScale))
+            let height = handHeight(pair.1, layout: layout, scale: handScale)
             return (max(partial.maxHeight, height), partial.contentWidth + width)
         }
         return metrics
@@ -6990,36 +7008,42 @@ struct TestOutView: View {
     private let betTable = BetSizingTable.testOutDefault
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Put everything together in one high-stakes drill. Any basic strategy mistake, off-target bet, or big counting miss will end the test.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+        GeometryReader { proxy in
+            let spacing = proxy.size.height * 0.022
+            let padding = max(proxy.size.width, proxy.size.height) * 0.03
+            ScrollView {
+                VStack(alignment: .leading, spacing: spacing) {
+                    Text("Put everything together in one high-stakes drill. Any basic strategy mistake, off-target bet, or big counting miss will end the test.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
 
-                ruleSummary
+                    ruleSummary(padding: padding)
 
-                Toggle("Allow Surrender", isOn: $allowSurrender)
-                    .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                    Toggle("Allow Surrender", isOn: $allowSurrender)
+                        .toggleStyle(SwitchToggleStyle(tint: .accentColor))
 
-                BetSizingTableView(betTable: betTable, isEditable: false, title: "True Count / Bet Spread")
+                    BetSizingTableView(betTable: betTable, isEditable: false, title: "True Count / Bet Spread")
 
-                Button(action: startTestOut) {
-                    Text("Start Test Out")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
+                    Button(action: startTestOut) {
+                        Text("Start Test Out")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, spacing * 0.4)
                 }
-                .buttonStyle(.borderedProminent)
-                .padding(.top, 4)
+                .padding(padding)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding()
         }
         .navigationTitle("Test Out")
         .navigationBarTitleDisplayMode(.inline)
         .background(navigationLinks)
     }
 
-    private var ruleSummary: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    private func ruleSummary(padding: CGFloat) -> some View {
+        let sectionPadding = padding * 0.6
+        return VStack(alignment: .leading, spacing: sectionPadding * 0.45) {
             Text("Test Settings")
                 .font(.headline)
             Label("6 decks, dealer hits soft 17", systemImage: "rectangle.stack.badge.person.crop")
@@ -7031,7 +7055,7 @@ struct TestOutView: View {
         }
         .font(.subheadline)
         .foregroundColor(.secondary)
-        .padding()
+        .padding(sectionPadding)
         .background(Color.secondary.opacity(0.08))
         .cornerRadius(12)
     }
