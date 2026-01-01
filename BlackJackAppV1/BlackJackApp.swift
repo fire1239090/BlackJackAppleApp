@@ -5696,7 +5696,7 @@ struct HandSimulationRunView: View {
     private let baseCardOffsetX: CGFloat = 24
     private let baseCardOffsetY: CGFloat = 10
     private let baseCardTopBuffer: CGFloat = 25
-    private let baseHandSpacing: CGFloat = 16
+    private let baseHandSpacing: CGFloat = 24
     private let baseTrayWidth: CGFloat = 90
     private var animationSpeed: Double { max(0.05, settings.dealSpeed) }
 
@@ -5764,6 +5764,10 @@ struct HandSimulationRunView: View {
     @State private var awaitingNextHand: Bool = false
     @State private var initialDealTask: Task<Void, Never>?
     @State private var testOutTerminated: Bool = false
+    @State private var handBets: [Double] = []
+    @State private var handResolutions: [HandResolution] = []
+    @State private var activeHandIndex: Int = 0
+    @State private var isResolvingDealer: Bool = false
 
     private struct BetFeedback: Identifiable {
         let id = UUID()
@@ -5782,6 +5786,14 @@ struct HandSimulationRunView: View {
         let id = UUID()
         let value: Int
         let color: Color
+    }
+
+    private struct HandResolution {
+        let hand: Hand?
+        let bet: Double
+        let immediateProfit: Double?
+
+        var needsDealer: Bool { immediateProfit == nil && hand != nil }
     }
 
     private let chipOptions: [ChipOption] = [
@@ -5818,10 +5830,19 @@ struct HandSimulationRunView: View {
     }
 
     private var recommendedAction: PlayerAction? {
-        guard let hand = playerHands.first else { return nil }
+        guard let hand = activeHand else { return nil }
         guard let dealerUp = dealerUpCard else { return nil }
         let handModel = convert(hand: hand)
         return advisedAction(for: handModel, dealerUp: dealerUp)
+    }
+
+    private var activeHand: SpeedCounterHandState? {
+        guard activeHandIndex < playerHands.count else { return nil }
+        return playerHands[activeHandIndex]
+    }
+
+    private var activeBet: Double {
+        handBet(for: activeHandIndex)
     }
 
     private func defaultBet() -> Double {
@@ -6045,7 +6066,7 @@ struct HandSimulationRunView: View {
                 Text("Bet Size:")
                     .font(.system(size: 17 * scale, weight: .semibold))
                     .frame(maxWidth: .infinity, alignment: .center)
-                Text("$\(Int(currentBet))")
+                Text("$\(Int(activeBet))")
                     .font(.system(size: 20 * scale, weight: .semibold))
                     .monospacedDigit()
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -6138,7 +6159,7 @@ struct HandSimulationRunView: View {
 
     private func buttonEnabled(_ action: PlayerAction) -> Bool {
         if testOutTerminated { return false }
-        guard let handState = playerHands.first else { return false }
+        guard let handState = activeHand else { return false }
         let hand = convert(hand: handState)
         switch action {
         case .double:
@@ -6149,7 +6170,7 @@ struct HandSimulationRunView: View {
             if hand.isSplitAce && !settings.resplitAces && handState.splitDepth > 0 { return false }
             return true
         case .surrender:
-            return rules.surrenderAllowed && hand.cards.count == 2
+            return rules.surrenderAllowed && hand.cards.count == 2 && handState.splitDepth == 0
         case .hit, .stand:
             return true
         }
@@ -6335,6 +6356,9 @@ struct HandSimulationRunView: View {
         runningCount = 0
         dealerCards = []
         playerHands = []
+        handBets = []
+        handResolutions = []
+        activeHandIndex = 0
         currentBet = defaultBet()
         betFeedback = nil
         negativeChipMode = false
@@ -6350,6 +6374,9 @@ struct HandSimulationRunView: View {
         guard !testOutTerminated else { return }
         dealerCards = []
         playerHands = []
+        handBets = []
+        handResolutions = []
+        activeHandIndex = 0
         currentBet = defaultBet()
         betFeedback = nil
         negativeChipMode = false
@@ -6421,6 +6448,9 @@ struct HandSimulationRunView: View {
         initialDealTask?.cancel()
         dealerCards = []
         playerHands = [SpeedCounterHandState(cards: [], doubleCard: nil, isSplitAce: false, splitDepth: 0)]
+        handBets = [currentBet]
+        handResolutions = []
+        activeHandIndex = 0
 
         initialDealTask = Task {
             await dealInitialCardsSequentially()
@@ -6502,7 +6532,7 @@ struct HandSimulationRunView: View {
         }
 
         let playerHasBlackjack = playerHand.isBlackjack && !playerHand.fromSplit
-        let profit = playerHasBlackjack ? 0 : -currentBet
+        let profit = playerHasBlackjack ? 0 : -activeBet
         await finishHand(with: profit)
     }
 
@@ -6595,191 +6625,188 @@ struct HandSimulationRunView: View {
     }
 
     private func handleAction(_ action: PlayerAction) {
-        Task {
-            guard await MainActor.run(body: { !awaitingBet && !awaitingNextHand && !testOutTerminated }) else { return }
-            guard let recommended = await MainActor.run(body: { recommendedAction }) else {
-                await MainActor.run {
-                    activeAlert = SimulationAlert(
-                        title: "Strategy Correction",
-                        message: "Finish dealing the hand before choosing an action.",
-                        onDismiss: nil
-                    )
-                }
-                return
-            }
-            let correct = action == recommended
-            if isTestOutMode && !correct {
-                dispatchFailure(.basicStrategy(expected: actionTitle(for: recommended)))
-                return
-            }
-            await MainActor.run {
-                recordDecision(correct: correct)
-                if !correct {
-                    currentShoePerfect = false
-                }
-            }
-            let correctionMessage = correct ? nil : "Basic strategy recommends \(actionTitle(for: recommended))."
-            await resolveCurrentHand(with: action, correctionMessage: correctionMessage)
-        }
+        Task { await handleActionOnMain(action) }
     }
 
-    private func resolveCurrentHand(with action: PlayerAction, correctionMessage: String? = nil) async {
-        guard !testOutTerminated else { return }
-        guard var handState = await MainActor.run(body: { playerHands.first }),
-              let dealerUp = await MainActor.run(body: { dealerUpCard }) else { return }
-        var dealerHand = await MainActor.run(body: { dealerHandModel() })
-        var profit: Double = 0
-        var handFinished = false
+    @MainActor
+    private func handleActionOnMain(_ action: PlayerAction) async {
+        guard !awaitingBet, !awaitingNextHand, !testOutTerminated, !isResolvingDealer, !showRunningCountPrompt else { return }
+        guard let handState = activeHand, let dealerUp = dealerUpCard else { return }
+        let handModel = convert(hand: handState)
+        let recommended = advisedAction(for: handModel, dealerUp: dealerUp)
+
+        let correct = action == recommended
+        if isTestOutMode && !correct {
+            dispatchFailure(.basicStrategy(expected: actionTitle(for: recommended)))
+            return
+        }
+
+        recordDecision(correct: correct)
+        if !correct { currentShoePerfect = false }
+        let correctionMessage = correct ? nil : "Basic strategy recommends \(actionTitle(for: recommended))."
+
+        await resolveAction(action, correctionMessage: correctionMessage)
+    }
+
+    @MainActor
+    private func resolveAction(_ action: PlayerAction, correctionMessage: String?) async {
+        guard let handState = activeHand, let dealerUp = dealerUpCard else { return }
 
         switch action {
         case .surrender:
-            await pauseBeforeDealerHand()
-            dealerHand = await MainActor.run(body: { revealDealerHand() })
-            profit = await MainActor.run(body: { -currentBet / 2.0 })
-            handFinished = true
+            await concludeHand(immediateProfit: -activeBet / 2, finalHand: nil, correctionMessage: correctionMessage)
         case .stand:
-            await pauseBeforeDealerHand()
-            dealerHand = await MainActor.run(body: { revealDealerHand() })
-            await dealerPlay(&dealerHand)
-            profit = await MainActor.run(body: { settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet) })
-            handFinished = true
+            let model = convert(hand: handState)
+            await concludeHand(immediateProfit: nil, finalHand: model, correctionMessage: correctionMessage)
         case .double:
-            if let newCard = await MainActor.run(body: { drawCard() }) {
-                await MainActor.run {
-                    withAnimation(.easeInOut(duration: animationSpeed)) {
-                        handState.doubleCard = newCard
-                        playerHands[0] = handState
-                    }
+            guard handState.cards.count == 2 else { return }
+            if let newCard = drawCard() {
+                withAnimation(.easeInOut(duration: animationSpeed)) {
+                    playerHands[activeHandIndex].doubleCard = newCard
                 }
+                handBets[activeHandIndex] *= 2
             }
-            await pauseBeforeDealerHand()
-            dealerHand = await MainActor.run(body: { revealDealerHand() })
-            await dealerPlay(&dealerHand)
-            profit = await MainActor.run(body: { settle(hand: convert(hand: handState), dealerHand: dealerHand, bet: currentBet * 2) })
-            handFinished = true
+            let updatedModel = convert(hand: playerHands[activeHandIndex])
+            await concludeHand(immediateProfit: nil, finalHand: updatedModel, correctionMessage: correctionMessage)
         case .hit:
-            if let newCard = await MainActor.run(body: { drawCard() }) {
-                await MainActor.run {
-                    withAnimation(.easeInOut(duration: animationSpeed)) {
-                        playerHands[0].cards.append(newCard)
-                    }
-                    handState = playerHands[0]
+            if let newCard = drawCard() {
+                withAnimation(.easeInOut(duration: animationSpeed)) {
+                    playerHands[activeHandIndex].cards.append(newCard)
                 }
             }
-            let model = await MainActor.run(body: { convert(hand: handState) })
-            if model.isBusted {
-                await pauseBeforeDealerHand()
-                await MainActor.run(body: { revealHoleCardIfNeeded() })
-                profit = -currentBet
-                handFinished = true
-            } else if model.bestValue >= 21 {
-                await pauseBeforeDealerHand()
-                dealerHand = await MainActor.run(body: { revealDealerHand() })
-                await dealerPlay(&dealerHand)
-                profit = await MainActor.run(body: { settle(hand: model, dealerHand: dealerHand, bet: currentBet) })
-                handFinished = true
-            }
-        case .split:
-            profit = await resolveSplitHands(initial: handState, dealerUp: dealerUp)
-            handFinished = true
-        }
-
-        if let correctionMessage {
-            await MainActor.run {
+            let updatedModel = convert(hand: playerHands[activeHandIndex])
+            if updatedModel.isBusted {
+                await concludeHand(immediateProfit: -activeBet, finalHand: nil, correctionMessage: correctionMessage)
+            } else if updatedModel.bestValue >= 21 {
+                await concludeHand(immediateProfit: nil, finalHand: updatedModel, correctionMessage: correctionMessage)
+            } else if let correctionMessage {
                 activeAlert = SimulationAlert(
                     title: "Strategy Correction",
                     message: correctionMessage,
                     onDismiss: nil
                 )
             }
-        }
-
-        if handFinished {
-            await finishHand(with: profit)
+        case .split:
+            await performPlayerSplit(at: activeHandIndex, correctionMessage: correctionMessage)
         }
     }
 
     @MainActor
-    private func resolveSplitHands(initial: SpeedCounterHandState, dealerUp: Card) async -> Double {
-        guard !testOutTerminated else { return 0 }
-        guard initial.cards.count == 2 else { return 0 }
+    private func performPlayerSplit(at index: Int, correctionMessage: String?) async {
+        guard index < playerHands.count else { return }
+        let hand = playerHands[index]
+        guard hand.cards.count == 2 else { return }
+        guard hand.splitDepth < maxSplitDepth else { return }
+        if hand.isSplitAce && !settings.resplitAces && hand.splitDepth > 0 { return }
+        let bet = handBet(for: index)
 
-        let first = initial.cards[0]
-        let second = initial.cards[1]
+        let first = hand.cards[0]
+        let second = hand.cards[1]
 
-        var handsToPlay: [SpeedCounterHandState] = []
+        playerHands.remove(at: index)
+        handBets.remove(at: index)
 
-        let left = SpeedCounterHandState(cards: [first], doubleCard: nil, isSplitAce: first.card.rank == 1, splitDepth: initial.splitDepth + 1)
-        let right = SpeedCounterHandState(cards: [second], doubleCard: nil, isSplitAce: second.card.rank == 1, splitDepth: initial.splitDepth + 1)
-        handsToPlay.append(left)
-        handsToPlay.append(right)
+        let left = SpeedCounterHandState(cards: [first], doubleCard: nil, isSplitAce: first.card.rank == 1, splitDepth: hand.splitDepth + 1)
+        let right = SpeedCounterHandState(cards: [second], doubleCard: nil, isSplitAce: second.card.rank == 1, splitDepth: hand.splitDepth + 1)
 
-        playerHands = handsToPlay
+        playerHands.insert(right, at: index)
+        playerHands.insert(left, at: index)
+        handBets.insert(bet, at: index)
+        handBets.insert(bet, at: index)
 
-        for index in playerHands.indices {
+        for offset in 0..<2 {
             if let extra = drawCard() {
                 withAnimation(.easeInOut(duration: animationSpeed)) {
-                    playerHands[index].cards.append(extra)
+                    playerHands[index + offset].cards.append(extra)
                 }
             }
+            await pauseBetweenDeals()
         }
 
-        var outcomes: [(Hand, Double)] = []
+        activeHandIndex = index
 
-        for index in playerHands.indices {
-            var model = convert(hand: playerHands[index])
-            var bet = currentBet
+        if let correctionMessage {
+            activeAlert = SimulationAlert(
+                title: "Strategy Correction",
+                message: correctionMessage,
+                onDismiss: nil
+            )
+        }
 
-            if model.isSplitAce {
-                // One card only on split aces
-            } else {
-                while true {
-                    if model.isBusted { break }
-                    let action = advisedAction(for: model, dealerUp: dealerUp)
-                    if action == .double && model.cards.count == 2 {
-                        if let newCard = drawCard() {
-                            withAnimation(.easeInOut(duration: animationSpeed)) {
-                                playerHands[index].doubleCard = newCard
-                            }
-                            model.cards.append(Card(rank: newCard.card.rank))
-                            bet *= 2
-                        }
-                        break
-                    } else if action == .hit {
-                        if let newCard = drawCard() {
-                            withAnimation(.easeInOut(duration: animationSpeed)) {
-                                playerHands[index].cards.append(newCard)
-                            }
-                            model.cards.append(Card(rank: newCard.card.rank))
-                        } else {
-                            break
-                        }
-                    } else {
-                        break
-                    }
-                }
+        await settleOrAdvanceHands()
+    }
+
+    @MainActor
+    private func handBet(for index: Int) -> Double {
+        guard index >= 0, index < handBets.count else { return currentBet }
+        return handBets[index]
+    }
+
+    @MainActor
+    private func concludeHand(immediateProfit: Double?, finalHand: Hand?, correctionMessage: String?) async {
+        handResolutions.append(HandResolution(hand: finalHand, bet: activeBet, immediateProfit: immediateProfit))
+        activeHandIndex += 1
+
+        if let correctionMessage {
+            activeAlert = SimulationAlert(
+                title: "Strategy Correction",
+                message: correctionMessage,
+                onDismiss: nil
+            )
+        }
+
+        await settleOrAdvanceHands()
+    }
+
+    @MainActor
+    private func settleOrAdvanceHands() async {
+        while activeHandIndex < playerHands.count {
+            let state = playerHands[activeHandIndex]
+            if state.isSplitAce && state.cards.count >= 2 {
+                let model = convert(hand: state)
+                handResolutions.append(HandResolution(hand: model, bet: activeBet, immediateProfit: nil))
+                activeHandIndex += 1
+                continue
             }
-
-            outcomes.append((model, bet))
+            break
         }
 
+        if activeHandIndex >= playerHands.count {
+            await settleAllHands()
+        } else {
+            currentBet = activeBet
+        }
+    }
+
+    @MainActor
+    private func settleAllHands() async {
+        guard !isResolvingDealer else { return }
+        isResolvingDealer = true
         await pauseBeforeDealerHand()
         revealHoleCardIfNeeded()
-        var dealerHandCopy = dealerHandModel()
-        let hasLiveHand = outcomes.contains { !$0.0.isBusted }
-        if hasLiveHand {
-            await dealerPlay(&dealerHandCopy)
+        var dealerHand = dealerHandModel()
+
+        let shouldPlayDealer = handResolutions.contains { resolution in
+            guard resolution.needsDealer, let hand = resolution.hand else { return false }
+            return !hand.isBusted
+        }
+
+        if shouldPlayDealer {
+            await dealerPlay(&dealerHand)
         }
 
         var profit: Double = 0
-        for outcome in outcomes {
-            if outcome.0.isBusted {
-                profit -= outcome.1
-            } else {
-                profit += settle(hand: outcome.0, dealerHand: dealerHandCopy, bet: outcome.1)
+        for resolution in handResolutions {
+            if let immediate = resolution.immediateProfit {
+                profit += immediate
+            } else if let hand = resolution.hand {
+                profit += settle(hand: hand, dealerHand: dealerHand, bet: resolution.bet)
             }
         }
-        return profit
+
+        handResolutions = []
+        await finishHand(with: profit)
+        isResolvingDealer = false
     }
 
     private func dealerHandModel() -> Hand {
