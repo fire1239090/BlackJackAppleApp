@@ -5692,10 +5692,10 @@ struct HandSimulationView: View {
 struct HandSimulationRunView: View {
     private let maxSplitDepth = 3
     private let discardSizes = DeckBetTrainingConstants.deckCounts
-    private let baseCardWidth: CGFloat = 70
-    private let baseCardOffsetX: CGFloat = 24
-    private let baseCardOffsetY: CGFloat = 10
-    private let baseCardTopBuffer: CGFloat = 25
+    private let baseCardWidth: CGFloat = 64
+    private let baseCardOffsetX: CGFloat = 22
+    private let baseCardOffsetY: CGFloat = 6
+    private let baseCardTopBuffer: CGFloat = 28
     private let baseHandSpacing: CGFloat = 24
     private let baseTrayWidth: CGFloat = 90
     private var animationSpeed: Double { max(0.05, settings.dealSpeed) }
@@ -5703,7 +5703,7 @@ struct HandSimulationRunView: View {
     private func layoutScale(for size: CGSize) -> CGFloat {
         let widthScale = size.width / 430
         let heightScale = size.height / 850
-        return max(0.65, min(1.1, min(widthScale, heightScale)))
+        return max(0.6, min(1.1, min(widthScale, heightScale)))
     }
 
     private func adjustedScale(from base: CGFloat, containerSize: CGSize) -> CGFloat {
@@ -5714,7 +5714,7 @@ struct HandSimulationRunView: View {
         guard currentHeight > 0 else { return base }
 
         let heightScale = min(1, playerAreaBudget / currentHeight)
-        return max(0.55, base * heightScale)
+        return max(0.5, base * heightScale)
     }
 
     private func cardWidth(for scale: CGFloat) -> CGFloat { baseCardWidth * scale }
