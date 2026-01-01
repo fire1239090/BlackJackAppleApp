@@ -5953,22 +5953,24 @@ struct HandSimulationRunView: View {
                 Text("Player")
                     .font(.headline)
                 GeometryReader { proxy in
-                    let contentWidth = totalHandsWidth(scale: scale)
-                    let horizontalPadding = max((proxy.size.width - contentWidth) / 2, 0) + 16
+                    let enumeratedHands = Array(playerHands.enumerated())
+                    let slotWidth = enumeratedHands.isEmpty
+                        ? cardWidth(for: scale)
+                        : max(proxy.size.width / CGFloat(enumeratedHands.count), cardWidth(for: scale) + handSpacing(for: scale))
+                    let layout = handLayout(for: enumeratedHands, baseScale: scale, slotWidth: slotWidth)
 
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 16) {
-                            ForEach(playerHands) { hand in
-                                playerHandView(hand, scale: scale)
+                        HStack(spacing: 0) {
+                            ForEach(enumeratedHands, id: \.element.id) { index, hand in
+                                let handScale = handScale(for: index, baseScale: scale)
+                                let width = max(slotWidth, handWidth(hand, scale: handScale))
+                                playerHandView(hand, scale: handScale)
+                                    .frame(width: width, height: layout.maxHeight, alignment: .bottom)
                             }
                         }
-                        .padding(.horizontal, horizontalPadding)
-                        .frame(
-                            maxWidth: max(proxy.size.width, contentWidth + (horizontalPadding * 2)),
-                            alignment: .center
-                        )
-                        .frame(height: maxHandHeight(scale: scale) + 24, alignment: .bottom)
+                        .frame(width: max(proxy.size.width, layout.contentWidth), alignment: .center)
                     }
+                    .frame(height: layout.maxHeight + 24, alignment: .bottom)
                 }
                 .frame(height: maxHandHeight(scale: scale) + 32)
             }
@@ -6291,8 +6293,9 @@ struct HandSimulationRunView: View {
 
     private func totalHandsWidth(scale: CGFloat) -> CGFloat {
         guard !playerHands.isEmpty else { return cardWidth(for: scale) }
-        let width = playerHands.reduce(0) { partial, hand in
-            partial + handWidth(hand, scale: scale)
+        let width = playerHands.enumerated().reduce(0) { partial, pair in
+            let handScale = handScale(for: pair.offset, baseScale: scale)
+            return partial + handWidth(pair.element, scale: handScale)
         }
         let spacingWidth = handSpacing(for: scale) * CGFloat(max(playerHands.count - 1, 0))
         return width + spacingWidth
@@ -6309,7 +6312,9 @@ struct HandSimulationRunView: View {
 
     private func maxHandHeight(scale: CGFloat) -> CGFloat {
         guard !playerHands.isEmpty else { return cardHeight(for: scale) }
-        return playerHands.map { handHeight($0, scale: scale) }.max() ?? cardHeight(for: scale)
+        return playerHands.enumerated().map { index, hand in
+            handHeight(hand, scale: handScale(for: index, baseScale: scale))
+        }.max() ?? cardHeight(for: scale)
     }
 
     private func handHeight(_ hand: SpeedCounterHandState, scale: CGFloat) -> CGFloat {
@@ -6319,6 +6324,21 @@ struct HandSimulationRunView: View {
             height = max(height, cardWidth(for: scale) + cardOffsetY(for: scale))
         }
         return height + cardTopBuffer(for: scale)
+    }
+
+    private func handScale(for index: Int, baseScale: CGFloat) -> CGFloat {
+        guard index == activeHandIndex else { return baseScale * 0.7 }
+        return baseScale
+    }
+
+    private func handLayout(for hands: [(Int, SpeedCounterHandState)], baseScale: CGFloat, slotWidth: CGFloat) -> (maxHeight: CGFloat, contentWidth: CGFloat) {
+        let metrics = hands.reduce((maxHeight: cardHeight(for: baseScale), contentWidth: 0)) { partial, pair in
+            let handScale = handScale(for: pair.0, baseScale: baseScale)
+            let width = max(slotWidth, handWidth(pair.1, scale: handScale))
+            let height = handHeight(pair.1, scale: handScale)
+            return (max(partial.maxHeight, height), partial.contentWidth + width)
+        }
+        return metrics
     }
 
     private func dispatchFailure(_ reason: TestOutFailureReason) {
