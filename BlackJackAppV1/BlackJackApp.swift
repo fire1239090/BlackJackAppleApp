@@ -5713,7 +5713,7 @@ struct HandSimulationRunView: View {
         var padding: CGFloat { base * 0.028 }
         var innerPadding: CGFloat { base * 0.018 }
         var cornerRadius: CGFloat { base * 0.035 }
-        var cardWidth: CGFloat { base * 0.16 }
+        var cardWidth: CGFloat { base * 0.14 }
         var cardHeight: CGFloat { cardWidth * (3.5 / 2.5) }
         var cardOffsetX: CGFloat { cardWidth * 0.34 }
         var cardOffsetY: CGFloat { cardHeight * 0.07 }
@@ -5724,8 +5724,8 @@ struct HandSimulationRunView: View {
         var overlayPadding: CGFloat { base * 0.03 }
         var overlayCornerRadius: CGFloat { base * 0.045 }
         var modalButtonPadding: CGFloat { base * 0.035 }
-        var chipSize: CGFloat { cardWidth * 1.05 }
-        var chipStroke: CGFloat { chipSize * 0.03 }
+        var chipSize: CGFloat { cardWidth * 0.8 }
+        var chipStroke: CGFloat { chipSize * 0.02 }
         var actionSpacing: CGFloat { base * 0.018 }
         var buttonPadding: CGFloat { base * 0.024 }
         var countPanelWidth: CGFloat { base * 0.32 }
