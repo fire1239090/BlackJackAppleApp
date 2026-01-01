@@ -6332,7 +6332,7 @@ struct HandSimulationRunView: View {
     }
 
     private func handLayout(for hands: [(Int, SpeedCounterHandState)], baseScale: CGFloat, slotWidth: CGFloat) -> (maxHeight: CGFloat, contentWidth: CGFloat) {
-        let metrics = hands.reduce((maxHeight: cardHeight(for: baseScale), contentWidth: 0)) { partial, pair in
+        let metrics = hands.reduce((maxHeight: cardHeight(for: baseScale), contentWidth: CGFloat(0))) { partial, pair in
             let handScale = handScale(for: pair.0, baseScale: baseScale)
             let width = max(slotWidth, handWidth(pair.1, scale: handScale))
             let height = handHeight(pair.1, scale: handScale)
