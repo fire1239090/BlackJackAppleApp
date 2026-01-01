@@ -6557,7 +6557,12 @@ struct HandSimulationRunView: View {
     }
 
     private func advisedAction(for hand: Hand, dealerUp: Card) -> PlayerAction {
-        StrategyAdvisor.baseAction(for: hand, dealerUp: dealerUp, rules: rules)
+        if hand.fromSplit {
+            var splitRules = rules
+            splitRules.surrenderAllowed = false
+            return StrategyAdvisor.baseAction(for: hand, dealerUp: dealerUp, rules: splitRules)
+        }
+        return StrategyAdvisor.baseAction(for: hand, dealerUp: dealerUp, rules: rules)
     }
 
     private func applyChip(_ chip: ChipOption) {
