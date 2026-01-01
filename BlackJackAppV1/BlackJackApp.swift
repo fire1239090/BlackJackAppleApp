@@ -6170,7 +6170,7 @@ struct HandSimulationRunView: View {
             if hand.isSplitAce && !settings.resplitAces && handState.splitDepth > 0 { return false }
             return true
         case .surrender:
-            return rules.surrenderAllowed && hand.cards.count == 2
+            return rules.surrenderAllowed && hand.cards.count == 2 && handState.splitDepth == 0
         case .hit, .stand:
             return true
         }
