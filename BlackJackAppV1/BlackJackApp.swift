@@ -5741,6 +5741,8 @@ struct HandSimulationRunView: View {
             self.size = size
 
             let minSide = min(size.width, size.height)
+            let maxSide = max(size.width, size.height)
+
             padding = minSide * 0.0125
             let usableHeight = max(size.height - padding * 2, 0)
             topRowHeight = usableHeight * 0.15
@@ -5755,33 +5757,36 @@ struct HandSimulationRunView: View {
             let playingAreaWidth = max(size.width - (padding * 2), 0)
             let playingAreaHeight = max(cardsAreaHeight - (padding * 2), 0)
             base = min(playingAreaWidth, playingAreaHeight)
-            spacing = base * 0.02
+
+            spacing = minSide * 0.02
             smallSpacing = spacing * 0.7
-            innerPadding = base * 0.018
-            cornerRadius = base * 0.035
+            innerPadding = minSide * 0.015
+            cornerRadius = minSide * 0.03
             cardWidth = base * 0.18
             cardHeight = cardWidth * (3.5 / 2.5)
             cardOffsetX = cardWidth * 0.34
             cardOffsetY = cardHeight * 0.07
             cardTopBuffer = cardHeight * 0.1
             handSpacing = cardWidth * 0.36
-            trayWidth = topRowHeight * 0.9
+            trayWidth = topRowHeight * 1.1
             overlayWidth = size.width * 0.6
-            overlayPadding = base * 0.03
-            overlayCornerRadius = base * 0.045
-            modalButtonPadding = base * 0.035
-            chipSize = cardWidth * 1.1
+            overlayPadding = minSide * 0.03
+            overlayCornerRadius = minSide * 0.045
+            modalButtonPadding = max(overlayPadding, actionAreaHeight * 0.1)
+            chipSize = chipAreaHeight * 0.55
             chipStroke = chipSize * 0.03
-            actionSpacing = base * 0.018
-            buttonPadding = base * 0.024
-            countPanelWidth = base * 0.15
+            actionSpacing = actionAreaHeight * 0.08
+            buttonPadding = actionAreaHeight * 0.22
+            countPanelWidth = max(topRowHeight * 1.25, size.width * 0.24)
             inactiveHandScale = 1
             labelHeight = max(24, cardHeight * 0.22)
         }
 
         var fontScale: CGFloat {
-            let ratio = base / max(size.width, size.height)
-            return min(max(0.85, ratio * 2.2), 1.35)
+            let minSide = min(size.width, size.height)
+            let maxSide = max(size.width, size.height)
+            let ratio = minSide / maxSide
+            return min(max(0.9, ratio * 1.8), 1.35)
         }
 
         func handScale(isActive: Bool) -> CGFloat {
