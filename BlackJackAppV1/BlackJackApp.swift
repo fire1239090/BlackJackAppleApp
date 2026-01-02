@@ -5978,7 +5978,7 @@ struct HandSimulationRunView: View {
                     let slotWidth = enumeratedHands.isEmpty
                         ? layout.cardWidth
                         : max(proxy.size.width / CGFloat(enumeratedHands.count), layout.cardWidth + layout.handSpacing)
-                    let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth, globalScale: handScale)
+                    let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth, globalScale: globalScale)
                     let topBuffer = layout.cardTopBuffer
                     // Scale the player area down only when it would overflow the available vertical space.
                     let preferredHeight = layoutInfo.maxHeight + topBuffer
