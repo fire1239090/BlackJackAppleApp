@@ -6007,7 +6007,8 @@ struct HandSimulationRunView: View {
             )
             let dealerCardArea = CGSize(width: proxy.size.width, height: max(dealerAreaHeight - layout.labelHeight, 0))
             let playerCardArea = CGSize(width: proxy.size.width, height: max(playerCardsHeight, 0))
-            let cardScale = globalCardScale(layout: layout, dealerArea: dealerCardArea, playerArea: playerCardArea)
+            let rawScale = globalCardScale(layout: layout, dealerArea: dealerCardArea, playerArea: playerCardArea)
+            let cardScale = min(rawScale * 1.2, 1.0)
 
             VStack(spacing: spacerBetweenSections) {
                 dealerSection(layout: layout, scale: cardScale)
