@@ -5997,19 +5997,28 @@ struct HandSimulationRunView: View {
     private func tableArea(layout: SimulationLayout) -> some View {
         GeometryReader { proxy in
             let dealerAreaHeight = proxy.size.height * 0.38
-            let playerAreaHeight = proxy.size.height - dealerAreaHeight - layout.smallSpacing
+            let spacerBetweenSections = layout.smallSpacing
+            let spacerInsidePlayer = layout.smallSpacing
+            let playerCardsHeight = max(
+                proxy.size.height - dealerAreaHeight - spacerBetweenSections - layout.labelHeight - spacerInsidePlayer,
+                0
+            )
             let dealerCardArea = CGSize(width: proxy.size.width, height: max(dealerAreaHeight - layout.labelHeight, 0))
-            let playerCardArea = CGSize(width: proxy.size.width, height: max(playerAreaHeight - layout.labelHeight, 0))
+            let playerCardArea = CGSize(width: proxy.size.width, height: max(playerCardsHeight, 0))
             let cardScale = globalCardScale(layout: layout, dealerArea: dealerCardArea, playerArea: playerCardArea)
 
-            VStack(spacing: layout.smallSpacing) {
+            VStack(spacing: spacerBetweenSections) {
                 dealerSection(layout: layout, scale: cardScale)
                     .frame(height: dealerAreaHeight, alignment: .top)
 
-                VStack(alignment: .leading, spacing: layout.smallSpacing) {
+                VStack(alignment: .leading, spacing: spacerInsidePlayer) {
                     Text("Player")
                         .font(.headline)
-                    playerHandsSection(layout: layout, scale: cardScale, availableSize: CGSize(width: proxy.size.width, height: playerAreaHeight - layout.labelHeight))
+                    playerHandsSection(
+                        layout: layout,
+                        scale: cardScale,
+                        availableSize: CGSize(width: proxy.size.width, height: playerCardsHeight)
+                    )
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
