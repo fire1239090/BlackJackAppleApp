@@ -5956,13 +5956,13 @@ struct HandSimulationRunView: View {
                         countDisplay(layout: layout)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    dealerSection(layout: layout, scale: globalScale)
+                    dealerSection(layout: layout, scale: handScale)
                 }
             } else {
                 HStack(alignment: .top, spacing: layout.spacing) {
                     discardTray(layout: layout, expandedWidth: layout.size.width)
 
-                    dealerSection(layout: layout, scale: globalScale)
+                    dealerSection(layout: layout, scale: handScale)
 
                     Spacer(minLength: 0)
 
@@ -5986,7 +5986,7 @@ struct HandSimulationRunView: View {
                     let adjustedScale = preferredHeight > availablePlayerHeight
                         ? max(0.35, availablePlayerHeight / preferredHeight)
                         : 1
-                    let combinedScale = globalScale * adjustedScale
+                    let combinedScale = handScale * adjustedScale
                     let scaledSlotWidth = slotWidth * combinedScale
                     let scaledLayoutInfo = handLayout(
                         for: enumeratedHands,
