@@ -9000,7 +9000,7 @@ struct SpeedCounterCardView: View {
                 CardIconView(card: card.card.trainingCard)
             }
         }
-        .frame(width: 80)
+        .aspectRatio(2.5 / 3.5, contentMode: .fit)
     }
 }
 
