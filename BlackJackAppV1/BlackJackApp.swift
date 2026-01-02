@@ -7376,7 +7376,6 @@ struct CardIconView: View {
                 drawnCard
             }
         }
-        .frame(minWidth: 88, minHeight: 125)
         .aspectRatio(2.5/3.5, contentMode: .fit)
     }
 
