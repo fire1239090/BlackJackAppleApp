@@ -5752,7 +5752,9 @@ struct HandSimulationRunView: View {
             let remainingHeight = max(usableHeight - allocatedHeight, 0)
             sectionSpacing = remainingHeight / 4
 
-            base = min(size.width, cardsAreaHeight)
+            let playingAreaWidth = max(size.width - (padding * 2), 0)
+            let playingAreaHeight = max(cardsAreaHeight - (padding * 2), 0)
+            base = min(playingAreaWidth, playingAreaHeight)
             spacing = base * 0.02
             smallSpacing = spacing * 0.7
             innerPadding = base * 0.018
