@@ -5983,18 +5983,19 @@ struct HandSimulationRunView: View {
                     let preferredHeight = layoutInfo.maxHeight + topBuffer
                     let capHeight = max(layout.cardHeight * 1.6, availableSize.height * 0.5)
                     let adjustedScale = preferredHeight > capHeight ? max(0.45, capHeight / preferredHeight) : 1
-                    let scaledSlotWidth = slotWidth * globalScale
+                    let combinedScale = globalScale * adjustedScale
+                    let scaledSlotWidth = slotWidth * combinedScale
                     let scaledLayoutInfo = handLayout(
                         for: enumeratedHands,
                         layout: layout,
                         slotWidth: scaledSlotWidth,
-                        globalScale: adjustedScale
+                        globalScale: combinedScale
                     )
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 0) {
                             ForEach(enumeratedHands, id: \.element.id) { index, hand in
-                                let handScale = layout.handScale(isActive: index == activeHandIndex) * globalScale * adjustedScale
+                                let handScale = layout.handScale(isActive: index == activeHandIndex) * combinedScale
                                 let width = max(scaledSlotWidth, handWidth(hand, layout: layout, scale: handScale, globalScale: 1))
                                 playerHandView(hand, layout: layout, scale: handScale)
                                     .frame(width: width, height: scaledLayoutInfo.maxHeight, alignment: .bottom)
@@ -6002,10 +6003,10 @@ struct HandSimulationRunView: View {
                         }
                         .frame(width: max(proxy.size.width, scaledLayoutInfo.contentWidth), alignment: .center)
                     }
-                    .frame(height: scaledLayoutInfo.maxHeight + topBuffer * globalScale * adjustedScale, alignment: .bottom)
-                    .padding(.top, topBuffer * globalScale * adjustedScale * 0.25)
+                    .frame(height: scaledLayoutInfo.maxHeight + layout.spacing * combinedScale, alignment: .bottom)
+                    .padding(.top, topBuffer * combinedScale * 0.25)
                 }
-                .frame(height: maxHandHeight(layout: layout, globalScale: globalScale) + layout.cardTopBuffer * globalScale + layout.spacing * 2)
+                .frame(height: maxHandHeight(layout: layout, globalScale: combinedScale) + layout.spacing * 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
