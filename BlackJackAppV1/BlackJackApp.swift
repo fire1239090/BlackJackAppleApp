@@ -5980,9 +5980,12 @@ struct HandSimulationRunView: View {
                         : max(proxy.size.width / CGFloat(enumeratedHands.count), layout.cardWidth + layout.handSpacing)
                     let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth, globalScale: 1)
                     let topBuffer = layout.cardTopBuffer
+                    // Scale the player area down only when it would overflow the available vertical space.
                     let preferredHeight = layoutInfo.maxHeight + topBuffer
-                    let capHeight = max(layout.cardHeight * 1.6, availableSize.height * 0.5)
-                    let adjustedScale = preferredHeight > capHeight ? max(0.45, capHeight / preferredHeight) : 1
+                    let availablePlayerHeight = availableSize.height * 0.8
+                    let adjustedScale = preferredHeight > availablePlayerHeight
+                        ? max(0.35, availablePlayerHeight / preferredHeight)
+                        : 1
                     let combinedScale = globalScale * adjustedScale
                     let scaledSlotWidth = slotWidth * combinedScale
                     let scaledLayoutInfo = handLayout(
@@ -6397,8 +6400,8 @@ struct HandSimulationRunView: View {
         let slotWidth = max(containerSize.width / CGFloat(enumeratedHands.count), layout.cardWidth + layout.handSpacing)
         let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth, globalScale: 1)
         let preferredHeight = layoutInfo.maxHeight + layout.cardTopBuffer
-        let capHeight = max(layout.cardHeight * 1.6, containerSize.height * 0.5)
-        return preferredHeight > capHeight ? max(0.45, capHeight / preferredHeight) : 1
+        let availableHeight = containerSize.height * 0.85
+        return preferredHeight > availableHeight ? max(0.35, availableHeight / preferredHeight) : 1
     }
 
     private func dispatchFailure(_ reason: TestOutFailureReason) {
@@ -8997,7 +9000,7 @@ struct SpeedCounterCardView: View {
                 CardIconView(card: card.card.trainingCard)
             }
         }
-        .frame(width: 80)
+        .aspectRatio(2.5 / 3.5, contentMode: .fit)
     }
 }
 
