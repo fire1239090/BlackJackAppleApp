@@ -5713,7 +5713,7 @@ struct HandSimulationRunView: View {
         var padding: CGFloat { base * 0.024 }
         var innerPadding: CGFloat { base * 0.018 }
         var cornerRadius: CGFloat { base * 0.035 }
-        var cardWidth: CGFloat { base * 0.16}
+        var cardWidth: CGFloat { base * 0.17}
         var cardHeight: CGFloat { cardWidth * (3.5 / 2.5) }
         var cardOffsetX: CGFloat { cardWidth * 0.34 }
         var cardOffsetY: CGFloat { cardHeight * 0.07 }
@@ -5956,13 +5956,13 @@ struct HandSimulationRunView: View {
                         countDisplay(layout: layout)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    dealerSection(layout: layout, scale: globalScale)
+                    dealerSection(layout: layout, scale: handScale)
                 }
             } else {
                 HStack(alignment: .top, spacing: layout.spacing) {
                     discardTray(layout: layout, expandedWidth: layout.size.width)
 
-                    dealerSection(layout: layout, scale: globalScale)
+                    dealerSection(layout: layout, scale: handScale)
 
                     Spacer(minLength: 0)
 
@@ -5978,15 +5978,15 @@ struct HandSimulationRunView: View {
                     let slotWidth = enumeratedHands.isEmpty
                         ? layout.cardWidth
                         : max(proxy.size.width / CGFloat(enumeratedHands.count), layout.cardWidth + layout.handSpacing)
-                    let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth, globalScale: 1)
+                    let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth, globalScale: handScale)
                     let topBuffer = layout.cardTopBuffer
                     // Scale the player area down only when it would overflow the available vertical space.
                     let preferredHeight = layoutInfo.maxHeight + topBuffer
-                    let availablePlayerHeight = availableSize.height * 0.8
+                    let availablePlayerHeight = availableSize.height * 0.9
                     let adjustedScale = preferredHeight > availablePlayerHeight
                         ? max(0.35, availablePlayerHeight / preferredHeight)
                         : 1
-                    let combinedScale = globalScale * adjustedScale
+                    let combinedScale = handScale * adjustedScale
                     let scaledSlotWidth = slotWidth * combinedScale
                     let scaledLayoutInfo = handLayout(
                         for: enumeratedHands,
@@ -5994,7 +5994,7 @@ struct HandSimulationRunView: View {
                         slotWidth: scaledSlotWidth,
                         globalScale: combinedScale
                     )
-                    let playerAreaHeight = maxHandHeight(layout: layout, globalScale: combinedScale) + layout.spacing * 2
+                    let playerAreaHeight = scaledLayoutInfo.maxHeight + layout.spacing * combinedScale * 1.2
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 0) {
@@ -6400,7 +6400,7 @@ struct HandSimulationRunView: View {
         let slotWidth = max(containerSize.width / CGFloat(enumeratedHands.count), layout.cardWidth + layout.handSpacing)
         let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth, globalScale: 1)
         let preferredHeight = layoutInfo.maxHeight + layout.cardTopBuffer
-        let availableHeight = containerSize.height * 0.85
+        let availableHeight = containerSize.height * 0.92
         return preferredHeight > availableHeight ? max(0.35, availableHeight / preferredHeight) : 1
     }
 
