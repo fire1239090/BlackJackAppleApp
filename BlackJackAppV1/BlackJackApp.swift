@@ -5710,25 +5710,25 @@ struct HandSimulationRunView: View {
         var base: CGFloat { min(size.width, size.height) }
         var spacing: CGFloat { base * 0.02 }
         var smallSpacing: CGFloat { spacing * 0.7 }
-        var padding: CGFloat { base * 0.028 }
+        var padding: CGFloat { base * 0.024 }
         var innerPadding: CGFloat { base * 0.018 }
         var cornerRadius: CGFloat { base * 0.035 }
-        var cardWidth: CGFloat { base * 0.14 }
+        var cardWidth: CGFloat { base * 0.13 }
         var cardHeight: CGFloat { cardWidth * (3.5 / 2.5) }
         var cardOffsetX: CGFloat { cardWidth * 0.34 }
         var cardOffsetY: CGFloat { cardHeight * 0.07 }
-        var cardTopBuffer: CGFloat { cardHeight * 0.32 }
+        var cardTopBuffer: CGFloat { cardHeight * 0.35 }
         var handSpacing: CGFloat { cardWidth * 0.36 }
-        var trayWidth: CGFloat { base * 0.22 }
+        var trayWidth: CGFloat { base * 0.15 }
         var overlayWidth: CGFloat { size.width * 0.6 }
         var overlayPadding: CGFloat { base * 0.03 }
         var overlayCornerRadius: CGFloat { base * 0.045 }
         var modalButtonPadding: CGFloat { base * 0.035 }
-        var chipSize: CGFloat { cardWidth * 0.8 }
-        var chipStroke: CGFloat { chipSize * 0.02 }
+        var chipSize: CGFloat { cardWidth * 1.1 }
+        var chipStroke: CGFloat { chipSize * 0.03 }
         var actionSpacing: CGFloat { base * 0.018 }
         var buttonPadding: CGFloat { base * 0.024 }
-        var countPanelWidth: CGFloat { base * 0.32 }
+        var countPanelWidth: CGFloat { base * 0.15 }
         var inactiveHandScale: CGFloat { 0.74 }
 
         var fontScale: CGFloat {
@@ -5988,7 +5988,7 @@ struct HandSimulationRunView: View {
                         .frame(width: max(proxy.size.width, layoutInfo.contentWidth), alignment: .center)
                     }
                     .frame(height: layoutInfo.maxHeight + topBuffer, alignment: .bottom)
-                    .padding(.top, topBuffer * 0.25)
+                    .padding(.top, topBuffer * 0.05)
                 }
                 .frame(height: maxHandHeight(layout: layout) + layout.cardTopBuffer + layout.spacing * 2)
             }
