@@ -5713,11 +5713,11 @@ struct HandSimulationRunView: View {
         var padding: CGFloat { base * 0.024 }
         var innerPadding: CGFloat { base * 0.018 }
         var cornerRadius: CGFloat { base * 0.035 }
-        var cardWidth: CGFloat { base * 0.13 }
+        var cardWidth: CGFloat { base * 0.16}
         var cardHeight: CGFloat { cardWidth * (3.5 / 2.5) }
         var cardOffsetX: CGFloat { cardWidth * 0.34 }
         var cardOffsetY: CGFloat { cardHeight * 0.07 }
-        var cardTopBuffer: CGFloat { cardHeight * 0.35 }
+        var cardTopBuffer: CGFloat { cardHeight * 0.1 }
         var handSpacing: CGFloat { cardWidth * 0.36 }
         var trayWidth: CGFloat { base * 0.15 }
         var overlayWidth: CGFloat { size.width * 0.6 }
