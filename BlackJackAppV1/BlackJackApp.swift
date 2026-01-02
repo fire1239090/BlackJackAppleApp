@@ -5991,6 +5991,7 @@ struct HandSimulationRunView: View {
                         slotWidth: scaledSlotWidth,
                         globalScale: combinedScale
                     )
+                    let playerAreaHeight = maxHandHeight(layout: layout, globalScale: combinedScale) + layout.spacing * 2
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 0) {
@@ -6005,8 +6006,8 @@ struct HandSimulationRunView: View {
                     }
                     .frame(height: scaledLayoutInfo.maxHeight + layout.spacing * combinedScale, alignment: .bottom)
                     .padding(.top, topBuffer * combinedScale * 0.25)
+                    .frame(height: playerAreaHeight)
                 }
-                .frame(height: maxHandHeight(layout: layout, globalScale: combinedScale) + layout.spacing * 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
