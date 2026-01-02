@@ -5884,6 +5884,7 @@ struct HandSimulationRunView: View {
     var body: some View {
         GeometryReader { proxy in
             let layout = SimulationLayout(size: proxy.size)
+            let handScale = handAreaScale(layout: layout, containerSize: proxy.size)
 
             ZStack {
                 Color(uiColor: .systemGroupedBackground)
@@ -5891,7 +5892,7 @@ struct HandSimulationRunView: View {
                     .ignoresSafeArea(.keyboard, edges: .bottom)
 
                 VStack(spacing: layout.spacing) {
-                    tableArea(layout: layout, availableHeight: proxy.size.height)
+                    tableArea(layout: layout, availableSize: proxy.size, globalScale: handScale)
 
                     betControls(layout: layout)
 
@@ -5945,7 +5946,7 @@ struct HandSimulationRunView: View {
         }
     }
 
-    private func tableArea(layout: SimulationLayout, availableHeight: CGFloat) -> some View {
+    private func tableArea(layout: SimulationLayout, availableSize: CGSize, globalScale: CGFloat) -> some View {
         VStack(spacing: layout.spacing) {
             if layout.size.width < layout.size.height * 0.65 {
                 VStack(alignment: .leading, spacing: layout.spacing) {
@@ -5955,13 +5956,13 @@ struct HandSimulationRunView: View {
                         countDisplay(layout: layout)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    dealerSection(layout: layout)
+                    dealerSection(layout: layout, scale: globalScale)
                 }
             } else {
                 HStack(alignment: .top, spacing: layout.spacing) {
                     discardTray(layout: layout, expandedWidth: layout.size.width)
 
-                    dealerSection(layout: layout)
+                    dealerSection(layout: layout, scale: globalScale)
 
                     Spacer(minLength: 0)
 
@@ -5977,23 +5978,23 @@ struct HandSimulationRunView: View {
                     let slotWidth = enumeratedHands.isEmpty
                         ? layout.cardWidth
                         : max(proxy.size.width / CGFloat(enumeratedHands.count), layout.cardWidth + layout.handSpacing)
-                    let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth)
+                    let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth, globalScale: 1)
                     let topBuffer = layout.cardTopBuffer
                     let preferredHeight = layoutInfo.maxHeight + topBuffer
-                    let capHeight = max(layout.cardHeight * 1.6, availableHeight * 0.5)
-                    let globalScale = preferredHeight > capHeight ? max(0.45, capHeight / preferredHeight) : 1
+                    let capHeight = max(layout.cardHeight * 1.6, availableSize.height * 0.5)
+                    let adjustedScale = preferredHeight > capHeight ? max(0.45, capHeight / preferredHeight) : 1
                     let scaledSlotWidth = slotWidth * globalScale
                     let scaledLayoutInfo = handLayout(
                         for: enumeratedHands,
                         layout: layout,
                         slotWidth: scaledSlotWidth,
-                        globalScale: globalScale
+                        globalScale: adjustedScale
                     )
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 0) {
                             ForEach(enumeratedHands, id: \.element.id) { index, hand in
-                                let handScale = layout.handScale(isActive: index == activeHandIndex) * globalScale
+                                let handScale = layout.handScale(isActive: index == activeHandIndex) * globalScale * adjustedScale
                                 let width = max(scaledSlotWidth, handWidth(hand, layout: layout, scale: handScale, globalScale: 1))
                                 playerHandView(hand, layout: layout, scale: handScale)
                                     .frame(width: width, height: scaledLayoutInfo.maxHeight, alignment: .bottom)
@@ -6001,10 +6002,10 @@ struct HandSimulationRunView: View {
                         }
                         .frame(width: max(proxy.size.width, scaledLayoutInfo.contentWidth), alignment: .center)
                     }
-                    .frame(height: scaledLayoutInfo.maxHeight + topBuffer * globalScale, alignment: .bottom)
-                    .padding(.top, topBuffer * globalScale * 0.25)
+                    .frame(height: scaledLayoutInfo.maxHeight + topBuffer * globalScale * adjustedScale, alignment: .bottom)
+                    .padding(.top, topBuffer * globalScale * adjustedScale * 0.25)
                 }
-                .frame(height: maxHandHeight(layout: layout) + layout.cardTopBuffer + layout.spacing * 2)
+                .frame(height: maxHandHeight(layout: layout, globalScale: globalScale) + layout.cardTopBuffer * globalScale + layout.spacing * 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -6291,14 +6292,14 @@ struct HandSimulationRunView: View {
             }
     }
 
-    private func dealerSection(layout: SimulationLayout) -> some View {
+    private func dealerSection(layout: SimulationLayout, scale: CGFloat) -> some View {
         VStack(alignment: .center, spacing: layout.smallSpacing) {
             Text("Dealer")
                 .font(.headline)
             HStack(spacing: layout.smallSpacing) {
                 ForEach(dealerCards) { card in
                     SpeedCounterCardView(card: card)
-                        .frame(width: layout.cardWidth)
+                        .frame(width: layout.cardWidth * scale)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .center)
@@ -6385,6 +6386,17 @@ struct HandSimulationRunView: View {
             return (max(partial.maxHeight, height), partial.contentWidth + width)
         }
         return metrics
+    }
+
+    private func handAreaScale(layout: SimulationLayout, containerSize: CGSize) -> CGFloat {
+        let enumeratedHands = Array(playerHands.enumerated())
+        guard !enumeratedHands.isEmpty else { return 1 }
+
+        let slotWidth = max(containerSize.width / CGFloat(enumeratedHands.count), layout.cardWidth + layout.handSpacing)
+        let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth, globalScale: 1)
+        let preferredHeight = layoutInfo.maxHeight + layout.cardTopBuffer
+        let capHeight = max(layout.cardHeight * 1.6, containerSize.height * 0.5)
+        return preferredHeight > capHeight ? max(0.45, capHeight / preferredHeight) : 1
     }
 
     private func dispatchFailure(_ reason: TestOutFailureReason) {
