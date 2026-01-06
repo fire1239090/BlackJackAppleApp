@@ -2444,6 +2444,11 @@ struct StrategyAdvisor {
             action = .hit
         }
 
+        // No double after the initial two cards
+        if action == .double && hand.cards.count > 2 {
+            action = .hit
+        }
+
         return action
     }
 
