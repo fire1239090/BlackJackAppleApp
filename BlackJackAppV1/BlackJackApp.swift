@@ -8416,32 +8416,41 @@ struct SpeedCounterView: View {
 }
 
 struct SpeedCounterRunView: View {
-    private let baseCardWidth: CGFloat = 80
-    private let baseHandSpacing: CGFloat = 24
-    private let baseCardOffsetX: CGFloat = 26
-    private let baseCardOffsetY: CGFloat = 12
+    private struct SpeedCounterLayoutMetrics {
+        let containerSize: CGSize
 
-    private func layoutScale(for size: CGSize) -> CGFloat {
-        let widthScale = size.width / 430
-        let heightScale = size.height / 850
-        return max(0.5, min(1.05, min(widthScale, heightScale)))
-    }
+        private var minSide: CGFloat { min(containerSize.width, containerSize.height) }
 
-    private func adjustedScale(from base: CGFloat, containerSize: CGSize) -> CGFloat {
-        let capHeight = max(120, containerSize.height * 0.28)
-        let currentHeight = maxHandHeight(scale: base)
-        guard currentHeight > 0 else { return base }
-        if currentHeight > capHeight {
-            return max(0.45, base * capHeight / currentHeight)
+        var fontScale: CGFloat {
+            let normalized = minSide / 380
+            return max(0.75, min(1.35, normalized))
         }
-        return base
-    }
 
-    private func cardWidth(for scale: CGFloat) -> CGFloat { baseCardWidth * scale }
-    private func cardHeight(for scale: CGFloat) -> CGFloat { cardWidth(for: scale) / (2.5/3.5) }
-    private func handSpacing(for scale: CGFloat) -> CGFloat { baseHandSpacing * scale }
-    private func cardOffsetX(for scale: CGFloat) -> CGFloat { baseCardOffsetX * scale }
-    private func cardOffsetY(for scale: CGFloat) -> CGFloat { baseCardOffsetY * scale }
+        var sectionSpacing: CGFloat { max(12, minSide * 0.03) }
+        var labelSpacing: CGFloat { max(6, minSide * 0.016) }
+        var innerSpacing: CGFloat { max(8, minSide * 0.022) }
+        var contentPadding: CGFloat { max(12, minSide * 0.032) }
+        var horizontalInset: CGFloat { max(16, containerSize.width * 0.05) }
+        var panelCornerRadius: CGFloat { max(12, minSide * 0.035) }
+        var modalCornerRadius: CGFloat { max(16, minSide * 0.04) }
+        var modalShadow: CGFloat { max(10, minSide * 0.03) }
+        var modalWidth: CGFloat { min(containerSize.width * 0.9, 440) }
+
+        var cardWidth: CGFloat {
+            let widthBased = containerSize.width * 0.18
+            let heightBased = containerSize.height * 0.16
+            let lowerBound = minSide * 0.14
+            let upperBound = minSide * 0.34
+            let candidate = min(widthBased, heightBased)
+            return min(max(candidate, lowerBound), upperBound)
+        }
+
+        var cardHeight: CGFloat { cardWidth / (2.5 / 3.5) }
+        var cardOffsetX: CGFloat { cardWidth * 0.34 }
+        var cardOffsetY: CGFloat { cardHeight * 0.18 }
+        var handSpacing: CGFloat { cardWidth * 0.34 }
+        var stackHeight: CGFloat { cardHeight * 0.92 }
+    }
 
     let settings: SpeedCounterSettings
     let onComplete: (SpeedCounterSession) -> Void
@@ -8481,60 +8490,60 @@ struct SpeedCounterRunView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let scale = adjustedScale(from: layoutScale(for: proxy.size), containerSize: proxy.size)
+            let metrics = SpeedCounterLayoutMetrics(containerSize: proxy.size)
 
             ZStack {
                 Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
 
-                VStack(spacing: 16 * scale) {
-                    VStack(spacing: 6 * scale) {
+                VStack(spacing: metrics.sectionSpacing) {
+                    VStack(spacing: metrics.labelSpacing) {
                         ProgressView(value: shoeProgress) {
                             Text("Shoe Progress")
-                                .font(.system(size: 15 * scale, weight: .semibold))
+                                .font(.system(size: 15 * metrics.fontScale, weight: .semibold))
                         } currentValueLabel: {
                             Text(shoeProgressLabel)
-                                .font(.system(size: 12 * scale))
+                                .font(.system(size: 12 * metrics.fontScale))
                                 .foregroundColor(.secondary)
                         }
                         .progressViewStyle(.linear)
                     }
 
-                    VStack(alignment: .leading, spacing: 6 * scale) {
+                    VStack(alignment: .leading, spacing: metrics.labelSpacing) {
                         Text("Dealing hands from a \(settings.deckCount)-deck shoe.")
-                            .font(.system(size: 17 * scale, weight: .semibold))
+                            .font(.system(size: 17 * metrics.fontScale, weight: .semibold))
                         Text("Hands dealt: \(handsDealt)")
-                            .font(.system(size: 15 * scale))
+                            .font(.system(size: 15 * metrics.fontScale))
                             .foregroundColor(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     ZStack(alignment: .bottom) {
-                        VStack(spacing: 18 * scale) {
-                            dealerArea(scale: scale)
-                            Spacer(minLength: 12 * scale)
+                        VStack(spacing: metrics.sectionSpacing) {
+                            dealerArea(metrics: metrics)
+                            Spacer(minLength: metrics.labelSpacing)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                        playerArea(scale: scale)
-                            .padding(.bottom, 8 * scale)
+                        playerArea(metrics: metrics)
+                            .padding(.bottom, metrics.labelSpacing)
                     }
-                    .padding()
+                    .padding(metrics.contentPadding)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: metrics.panelCornerRadius, style: .continuous)
                             .fill(Color.secondary.opacity(0.06))
                     )
 
-                    HStack(spacing: 10 * scale) {
+                    HStack(spacing: metrics.labelSpacing) {
                         Text("Running Count:")
-                            .font(.system(size: 17 * scale, weight: .semibold))
+                            .font(.system(size: 17 * metrics.fontScale, weight: .semibold))
                         Text(showRunningCount ? "\(runningCount)" : "— —")
-                            .font(.system(size: 20 * scale, weight: .regular, design: .monospaced))
+                            .font(.system(size: 20 * metrics.fontScale, weight: .regular, design: .monospaced))
                             .foregroundColor(.secondary)
                         Button(action: { showRunningCount.toggle() }) {
                             Image(systemName: showRunningCount ? "eye.slash.fill" : "eye.fill")
-                                .font(.system(size: 17 * scale))
+                                .font(.system(size: 17 * metrics.fontScale))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(showRunningCount ? "Hide running count" : "Show running count")
@@ -8542,24 +8551,24 @@ struct SpeedCounterRunView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
 
                     if shoeFinished {
-                        VStack(spacing: 12 * scale) {
+                        VStack(spacing: metrics.innerSpacing) {
                             Text("Shoe complete")
-                                .font(.system(size: 17 * scale, weight: .semibold))
-                            HStack(spacing: 10 * scale) {
+                                .font(.system(size: 17 * metrics.fontScale, weight: .semibold))
+                            HStack(spacing: metrics.innerSpacing) {
                                 Button(action: dismiss.callAsFunction) {
                                     Text("Back to Start Screen")
                                         .frame(maxWidth: .infinity)
-                                        .padding()
+                                        .padding(metrics.contentPadding * 0.6)
                                         .background(Color.secondary.opacity(0.12))
-                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        .clipShape(RoundedRectangle(cornerRadius: metrics.panelCornerRadius, style: .continuous))
                                 }
                                 Button(action: restartShoe) {
                                     Text("Keep Going")
                                         .frame(maxWidth: .infinity)
-                                        .padding()
+                                        .padding(metrics.contentPadding * 0.6)
                                         .background(Color.accentColor)
                                         .foregroundColor(.white)
-                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        .clipShape(RoundedRectangle(cornerRadius: metrics.panelCornerRadius, style: .continuous))
                                 }
                             }
                         }
@@ -8567,7 +8576,7 @@ struct SpeedCounterRunView: View {
 
                     Spacer()
                 }
-                .padding()
+                .padding(metrics.contentPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .navigationTitle("Speed Counter")
                 .navigationBarTitleDisplayMode(.inline)
@@ -8579,26 +8588,26 @@ struct SpeedCounterRunView: View {
                 }
 
                 if isAskingCount {
-                    modalOverlay { countPrompt(scale: scale) }
+                    modalOverlay(metrics: metrics) { countPrompt(metrics: metrics) }
                 } else if showFeedbackModal, let feedbackMessage {
-                    modalOverlay {
-                        feedbackPrompt(message: feedbackMessage, scale: scale)
+                    modalOverlay(metrics: metrics) {
+                        feedbackPrompt(message: feedbackMessage, metrics: metrics)
                     }
                 } else if awaitingNextHand && !shoeFinished {
-                    modalOverlay { nextHandPrompt(scale: scale) }
+                    modalOverlay(metrics: metrics) { nextHandPrompt(metrics: metrics) }
                 }
             }
         }
     }
 
-    private func dealerArea(scale: CGFloat) -> some View {
-        VStack(alignment: .center, spacing: 8 * scale) {
+    private func dealerArea(metrics: SpeedCounterLayoutMetrics) -> some View {
+        VStack(alignment: .center, spacing: metrics.labelSpacing) {
             Text("Dealer")
-                .font(.system(size: 15 * scale, weight: .semibold))
-            HStack(spacing: 12 * scale) {
+                .font(.system(size: 15 * metrics.fontScale, weight: .semibold))
+            HStack(spacing: metrics.innerSpacing) {
                 ForEach(dealerCards) { card in
                     SpeedCounterCardView(card: card)
-                        .frame(width: cardWidth(for: scale))
+                        .frame(width: metrics.cardWidth)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .center)
@@ -8606,18 +8615,18 @@ struct SpeedCounterRunView: View {
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    private func playerArea(scale: CGFloat) -> some View {
-        VStack(alignment: .center, spacing: 8 * scale) {
+    private func playerArea(metrics: SpeedCounterLayoutMetrics) -> some View {
+        VStack(alignment: .center, spacing: metrics.labelSpacing) {
             Text("Player")
-                .font(.system(size: 15 * scale, weight: .semibold))
+                .font(.system(size: 15 * metrics.fontScale, weight: .semibold))
             GeometryReader { proxy in
-                let contentWidth = totalHandsWidth(scale: scale)
-                let horizontalPadding = max((proxy.size.width - contentWidth) / 2, 0) + 24 * scale
+                let contentWidth = totalHandsWidth(metrics: metrics)
+                let horizontalPadding = max((proxy.size.width - contentWidth) / 2, 0) + metrics.horizontalInset
 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .bottom, spacing: handSpacing(for: scale)) {
+                    HStack(alignment: .bottom, spacing: metrics.handSpacing) {
                         ForEach(playerHands) { hand in
-                            playerHandView(hand, scale: scale)
+                            playerHandView(hand, metrics: metrics)
                         }
                     }
                     .padding(.horizontal, horizontalPadding)
@@ -8625,23 +8634,23 @@ struct SpeedCounterRunView: View {
                         maxWidth: max(proxy.size.width, contentWidth + (horizontalPadding * 2)),
                         alignment: .center
                     )
-                    .frame(height: maxHandHeight(scale: scale) + 32 * scale, alignment: .bottom)
+                    .frame(height: maxHandHeight(metrics: metrics) + metrics.stackHeight * 0.35, alignment: .bottom)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
             }
-            .frame(height: maxHandHeight(scale: scale) + 44 * scale)
+            .frame(height: maxHandHeight(metrics: metrics) + metrics.stackHeight * 0.48)
         }
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    private func playerHandView(_ hand: SpeedCounterHandState, scale: CGFloat) -> some View {
+    private func playerHandView(_ hand: SpeedCounterHandState, metrics: SpeedCounterLayoutMetrics) -> some View {
         ZStack(alignment: .bottomLeading) {
             ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
                 SpeedCounterCardView(card: card)
-                    .frame(width: cardWidth(for: scale))
+                    .frame(width: metrics.cardWidth)
                     .offset(
-                        x: CGFloat(index) * cardOffsetX(for: scale),
-                        y: CGFloat(-index) * cardOffsetY(for: scale)
+                        x: CGFloat(index) * metrics.cardOffsetX,
+                        y: CGFloat(-index) * metrics.cardOffsetY
                     )
             }
 
@@ -8649,49 +8658,49 @@ struct SpeedCounterRunView: View {
                 SpeedCounterCardView(card: doubleCard)
                     .rotationEffect(.degrees(90))
                     .offset(
-                        x: CGFloat(hand.cards.count) * cardOffsetX(for: scale) + 10 * scale,
-                        y: CGFloat(-hand.cards.count) * cardOffsetY(for: scale) - 6 * scale
+                        x: CGFloat(hand.cards.count) * metrics.cardOffsetX + metrics.cardWidth * 0.12,
+                        y: CGFloat(-hand.cards.count) * metrics.cardOffsetY - metrics.cardHeight * 0.08
                     )
             }
         }
     }
 
-    private func totalHandsWidth(scale: CGFloat) -> CGFloat {
-        guard !playerHands.isEmpty else { return cardWidth(for: scale) }
+    private func totalHandsWidth(metrics: SpeedCounterLayoutMetrics) -> CGFloat {
+        guard !playerHands.isEmpty else { return metrics.cardWidth }
         let width = playerHands.reduce(0) { partial, hand in
-            partial + handWidth(hand, scale: scale)
+            partial + handWidth(hand, metrics: metrics)
         }
-        let spacingWidth = handSpacing(for: scale) * CGFloat(max(playerHands.count - 1, 0))
+        let spacingWidth = metrics.handSpacing * CGFloat(max(playerHands.count - 1, 0))
         return width + spacingWidth
     }
 
-    private func handWidth(_ hand: SpeedCounterHandState, scale: CGFloat) -> CGFloat {
+    private func handWidth(_ hand: SpeedCounterHandState, metrics: SpeedCounterLayoutMetrics) -> CGFloat {
         let count = max(hand.cards.count, 1)
-        var width = cardWidth(for: scale) + CGFloat(max(0, count - 1)) * cardOffsetX(for: scale)
+        var width = metrics.cardWidth + CGFloat(max(0, count - 1)) * metrics.cardOffsetX
         if hand.doubleCard != nil {
-            width += cardWidth(for: scale) * 0.6
+            width += metrics.cardWidth * 0.6
         }
         return width
     }
 
-    private func maxHandHeight(scale: CGFloat) -> CGFloat {
-        guard !playerHands.isEmpty else { return cardHeight(for: scale) }
-        return playerHands.map { handHeight($0, scale: scale) }.max() ?? cardHeight(for: scale)
+    private func maxHandHeight(metrics: SpeedCounterLayoutMetrics) -> CGFloat {
+        guard !playerHands.isEmpty else { return metrics.cardHeight }
+        return playerHands.map { handHeight($0, metrics: metrics) }.max() ?? metrics.cardHeight
     }
 
-    private func handHeight(_ hand: SpeedCounterHandState, scale: CGFloat) -> CGFloat {
+    private func handHeight(_ hand: SpeedCounterHandState, metrics: SpeedCounterLayoutMetrics) -> CGFloat {
         let count = max(hand.cards.count, 1)
-        var height = cardHeight(for: scale) + CGFloat(max(0, count - 1)) * cardOffsetY(for: scale)
+        var height = metrics.cardHeight + CGFloat(max(0, count - 1)) * metrics.cardOffsetY
         if hand.doubleCard != nil {
-            height = max(height, cardWidth(for: scale) + cardOffsetY(for: scale))
+            height = max(height, metrics.cardWidth + metrics.cardOffsetY)
         }
         return height
     }
 
-    private func countPrompt(scale: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 12 * scale) {
+    private func countPrompt(metrics: SpeedCounterLayoutMetrics) -> some View {
+        VStack(alignment: .leading, spacing: metrics.innerSpacing) {
             Text("What's the count?")
-                .font(.system(size: 17 * scale, weight: .semibold))
+                .font(.system(size: 17 * metrics.fontScale, weight: .semibold))
             TextField("Enter count", text: $answerText)
                 .keyboardType(.numbersAndPunctuation)
                 .textFieldStyle(.roundedBorder)
@@ -8699,51 +8708,51 @@ struct SpeedCounterRunView: View {
                 .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12 * scale)
+        .padding(metrics.contentPadding * 0.6)
     }
 
-    private func feedbackPrompt(message: String, scale: CGFloat) -> some View {
-        VStack(spacing: 12 * scale) {
+    private func feedbackPrompt(message: String, metrics: SpeedCounterLayoutMetrics) -> some View {
+        VStack(spacing: metrics.innerSpacing) {
             Text(message)
-                .font(.system(size: 17 * scale, weight: .semibold))
+                .font(.system(size: 17 * metrics.fontScale, weight: .semibold))
                 .multilineTextAlignment(.center)
             Button("Close") {
                 dismissFeedback()
             }
             .buttonStyle(.borderedProminent)
         }
-        .padding(12 * scale)
+        .padding(metrics.contentPadding * 0.6)
     }
 
-    private func nextHandPrompt(scale: CGFloat) -> some View {
-        VStack(spacing: 12 * scale) {
+    private func nextHandPrompt(metrics: SpeedCounterLayoutMetrics) -> some View {
+        VStack(spacing: metrics.innerSpacing) {
             Text("Ready for the next hand?")
-                .font(.system(size: 17 * scale, weight: .semibold))
+                .font(.system(size: 17 * metrics.fontScale, weight: .semibold))
             Button(action: continueAfterPrompt) {
                 Text("Next Hand")
-                    .font(.system(size: 17 * scale, weight: .semibold))
+                    .font(.system(size: 17 * metrics.fontScale, weight: .semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10 * scale)
-                    .padding(.horizontal, 12 * scale)
+                    .padding(.vertical, metrics.contentPadding * 0.55)
+                    .padding(.horizontal, metrics.contentPadding * 0.6)
                     .background(Color.accentColor)
                     .foregroundColor(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12 * scale, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: metrics.panelCornerRadius, style: .continuous))
             }
         }
-        .padding(12 * scale)
+        .padding(metrics.contentPadding * 0.6)
     }
 
     @ViewBuilder
-    private func modalOverlay<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func modalOverlay<Content: View>(metrics: SpeedCounterLayoutMetrics, @ViewBuilder content: () -> Content) -> some View {
         Color.black.opacity(0.35)
             .ignoresSafeArea()
             .overlay(
                 content()
-                    .frame(maxWidth: 360)
+                    .frame(maxWidth: metrics.modalWidth)
                     .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(radius: 14)
-                    .padding()
+                    .clipShape(RoundedRectangle(cornerRadius: metrics.modalCornerRadius, style: .continuous))
+                    .shadow(radius: metrics.modalShadow)
+                    .padding(metrics.contentPadding)
             )
     }
 
