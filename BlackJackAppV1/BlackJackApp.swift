@@ -2439,8 +2439,18 @@ struct StrategyAdvisor {
             action = basicHardStrategy(total: total, dealerUp: dealerUp)
         }
 
+        // No double after the initial two cards; fall back to the appropriate non-double action
+        if action == .double && hand.cards.count > 2 {
+            action = nonDoubleFallback(total: total, containsAce: containsAce)
+        }
+
         // No double after split when DAS is off
         if action == .double && hand.fromSplit && !rules.doubleAfterSplit {
+            action = .hit
+        }
+
+        // No double after the initial two cards
+        if action == .double && hand.cards.count > 2 {
             action = .hit
         }
 
@@ -2485,6 +2495,16 @@ struct StrategyAdvisor {
         default:
             return .stand
         }
+    }
+
+    private static func nonDoubleFallback(total: Int, containsAce: Bool) -> PlayerAction {
+        // For soft hands, basic strategy falls back to standing on soft 18+ and hitting otherwise.
+        if containsAce && total <= 21 {
+            return total >= 18 ? .stand : .hit
+        }
+
+        // For hard totals that normally double (9–11), the alternative is to hit.
+        return .hit
     }
 }
 
