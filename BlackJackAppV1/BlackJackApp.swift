@@ -6186,9 +6186,11 @@ struct HandSimulationRunView: View {
 
         return VStack(alignment: .center, spacing: layout.spacing) {
             VStack(spacing: layout.smallSpacing * 0.6) {
-                Text("Bet Size:")
-                    .font(.system(size: 17 * fontScale, weight: .semibold))
-                    .frame(maxWidth: .infinity, alignment: .center)
+                if bettingEnabled {
+                    Text("Bet Size:")
+                        .font(.system(size: 17 * fontScale, weight: .semibold))
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
                 Text("$\(Int(activeBet))")
                     .font(.system(size: 20 * fontScale, weight: .semibold))
                     .monospacedDigit()
