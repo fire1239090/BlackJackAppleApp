@@ -4643,8 +4643,104 @@ struct TrainingSuiteView: View {
                 }
             }
             .padding()
+
+            NavigationLink {
+                TrainingSuiteHowToUseView()
+                    .navigationTitle("How to Use These Tools")
+                    .navigationBarTitleDisplayMode(.inline)
+            } label: {
+                Text("How to Use These Tools")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.accentColor)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .padding([.horizontal, .bottom])
         }
     }
+}
+
+struct TrainingSuiteHowToUseView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Training Suite Overview")
+                        .font(.title2.weight(.bold))
+                    Text("The training suite is designed to help you build the three main skills card counters need: keeping the count, playing basic strategy, and deck estimation with bet sizing. Use the tools below to focus on each skill, then combine them in the integrated modes.")
+                        .foregroundColor(.secondary)
+                }
+
+                TrainingSuiteHowToSectionView(
+                    title: "Skill 1: Keeping the Count",
+                    description: "Work through these tools to improve accuracy and speed while tracking the running count.",
+                    items: [
+                        TrainingSuiteHowToItem(title: "Card Sorting", icon: "square.grid.2x2"),
+                        TrainingSuiteHowToItem(title: "Speed Counter", icon: "speedometer"),
+                        TrainingSuiteHowToItem(title: "Deck Count Through", icon: "rectangle.stack")
+                    ]
+                )
+
+                TrainingSuiteHowToSectionView(
+                    title: "Skill 2: Playing Basic Strategy",
+                    description: "Sharpen your decision making on each hand.",
+                    items: [
+                        TrainingSuiteHowToItem(title: "Strategy Quiz", icon: "questionmark.square.dashed")
+                    ]
+                )
+
+                TrainingSuiteHowToSectionView(
+                    title: "Skill 3: Deck Estimation and Bet Sizing",
+                    description: "Practice estimating remaining decks and sizing bets to the count.",
+                    items: [
+                        TrainingSuiteHowToItem(title: "Deck Estimation and Bet Sizing", icon: "scalemass")
+                    ]
+                )
+
+                TrainingSuiteHowToSectionView(
+                    title: "Bring It All Together",
+                    description: "Combine the skills above in realistic scenarios.",
+                    items: [
+                        TrainingSuiteHowToItem(title: "Hand Simulation", icon: "hands.clap"),
+                        TrainingSuiteHowToItem(title: "Test Out", icon: "checkmark.seal")
+                    ]
+                )
+            }
+            .padding()
+        }
+    }
+}
+
+private struct TrainingSuiteHowToSectionView: View {
+    let title: String
+    let description: String
+    let items: [TrainingSuiteHowToItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+            Text(description)
+                .foregroundColor(.secondary)
+            ForEach(items) { item in
+                Label(item.title, systemImage: item.icon)
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.vertical, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct TrainingSuiteHowToItem: Identifiable {
+    let id = UUID()
+    let title: String
+    let icon: String
 }
 
 private enum DeckBetTrainingConstants {
