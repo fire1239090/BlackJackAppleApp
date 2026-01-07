@@ -4084,8 +4084,11 @@ struct StrategyQuizView: View {
                     Button {
                         showHint()
                     } label: {
-                        Label("Hint", systemImage: "lightbulb")
+                        Image(systemName: "lightbulb")
+                            .accessibilityLabel("Hint")
                     }
+                    .buttonStyle(.bordered)
+                    .tint(.yellow)
                     Button("Submit", action: submitQuiz)
                         .fontWeight(.semibold)
                 }
