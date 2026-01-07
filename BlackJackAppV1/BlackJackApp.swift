@@ -4058,6 +4058,8 @@ struct StrategyQuizView: View {
     @State private var selectedAction: PlayerAction? = .hit
     @State private var result: StrategyQuizResult?
     @State private var showResultAlert: Bool = false
+    @State private var showHintAlert: Bool = false
+    @State private var hintMessage: String = ""
     @State private var quizID = UUID()
 
     private let dealerValues = Array(2...11)
@@ -4078,13 +4080,23 @@ struct StrategyQuizView: View {
         .navigationTitle("Strategy Quiz")
         .toolbar {
             if stage == .quiz {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        showHint()
+                    } label: {
+                        Label("Hint", systemImage: "lightbulb")
+                    }
                     Button("Submit", action: submitQuiz)
                         .fontWeight(.semibold)
                 }
             }
         }
         .alert(resultAlertTitle, isPresented: $showResultAlert, actions: alertActions, message: { Text(resultAlertMessage) })
+        .alert("Hint", isPresented: $showHintAlert) {
+            Button("Got it", role: .cancel) { }
+        } message: {
+            Text(hintMessage)
+        }
         .onChange(of: stage) { newValue in
             if newValue == .quiz {
                 OrientationManager.forceLandscape()
@@ -4291,6 +4303,43 @@ struct StrategyQuizView: View {
             recordSuccess(for: evaluation)
         }
         showResultAlert = true
+    }
+
+    private func showHint() {
+        hintMessage = buildHintMessage()
+        showHintAlert = true
+    }
+
+    private func buildHintMessage() -> String {
+        var incorrectEntries: [String] = []
+
+        for section in sections {
+            for row in section.rows {
+                for cell in row.cells {
+                    let guess = selections[cell.id] ?? nil
+                    guard guess != cell.baseAction else { continue }
+                    let dealerLabel = cell.dealerValue == 11 ? "A" : "\(cell.dealerValue)"
+                    let entry = "\(section.title) \(row.label) vs \(dealerLabel): \(actionTitle(for: cell.baseAction))"
+                    incorrectEntries.append(entry)
+                }
+            }
+        }
+
+        guard !incorrectEntries.isEmpty else {
+            return "Everything matches the basic strategy chart so far."
+        }
+
+        return incorrectEntries.map { "• \($0)" }.joined(separator: "\n")
+    }
+
+    private func actionTitle(for action: PlayerAction) -> String {
+        switch action {
+        case .hit: return "Hit"
+        case .stand: return "Stand"
+        case .double: return "Double"
+        case .split: return "Split"
+        case .surrender: return "Surrender"
+        }
     }
 
     private func evaluateSelections() -> StrategyQuizResult {
