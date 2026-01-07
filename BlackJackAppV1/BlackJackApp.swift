@@ -8656,6 +8656,7 @@ struct SpeedCounterRunView: View {
 
             if let doubleCard = hand.doubleCard {
                 SpeedCounterCardView(card: doubleCard)
+                    .frame(width: metrics.cardWidth, height: metrics.cardHeight)
                     .rotationEffect(.degrees(90))
                     .offset(
                         x: CGFloat(hand.cards.count) * metrics.cardOffsetX + metrics.cardWidth * 0.12,
@@ -8678,7 +8679,8 @@ struct SpeedCounterRunView: View {
         let count = max(hand.cards.count, 1)
         var width = metrics.cardWidth + CGFloat(max(0, count - 1)) * metrics.cardOffsetX
         if hand.doubleCard != nil {
-            width += metrics.cardWidth * 0.6
+            let rotatedRightEdge = CGFloat(count) * metrics.cardOffsetX + metrics.cardWidth * 0.12 + metrics.cardHeight
+            width = max(width, rotatedRightEdge)
         }
         return width
     }
