@@ -122,10 +122,20 @@ final class TripLoggerViewModel: ObservableObject {
 
         let key = "\(session.location.lowercased())|\(session.city.lowercased())"
         if let index = locationNotes.firstIndex(where: { $0.id == key }) {
-            let combined = [locationNotes[index].notes, trimmed]
-                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                .joined(separator: "\n\n")
-            locationNotes[index].notes = combined
+            let existingNotes = locationNotes[index].notes
+            let existingEntries = existingNotes
+                .components(separatedBy: "\n\n")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            let trimmedLower = trimmed.lowercased()
+            let alreadyIncluded = existingEntries.contains { $0.lowercased() == trimmedLower }
+
+            if !alreadyIncluded {
+                let combined = ([locationNotes[index].notes, trimmed]
+                    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .joined(separator: "\n\n"))
+                locationNotes[index].notes = combined
+            }
         } else {
             locationNotes.append(
                 LocationNote(location: session.location, city: session.city, notes: trimmed)
@@ -518,6 +528,7 @@ struct SessionEditorView: View {
     @State private var showLowHoursAlert: Bool = false
     @State private var selectedIncident: SessionIncidentType?
     @State private var incidentSeverity: Double = 3
+    @State private var incidentComments: String = ""
 
     private var selectedRun: SavedRun? {
         guard let id = selectedRunID else { return nil }
@@ -543,7 +554,7 @@ struct SessionEditorView: View {
                     TextField("Duration (hours)", text: $durationText)
                         .keyboardType(.decimalPad)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Comments (optional)")
+                        Text("Session comments (optional)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         TextEditor(text: $comments)
@@ -581,6 +592,18 @@ struct SessionEditorView: View {
                                     .font(.caption)
                                     .frame(width: 28, alignment: .trailing)
                             }
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Heat comments (optional)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextEditor(text: $incidentComments)
+                                .frame(minHeight: 80)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.secondary.opacity(0.2))
+                                )
                         }
                     }
                 }
@@ -659,6 +682,7 @@ struct SessionEditorView: View {
         earningsText = String(format: "%.2f", sessionToEdit.earnings)
         durationText = String(format: "%.2f", sessionToEdit.durationHours)
         comments = sessionToEdit.comments
+        incidentComments = sessionToEdit.incidentComments
         manualEVText = String(format: "%.2f", sessionToEdit.evPerHour)
         selectedIncident = sessionToEdit.incidentType
         if let storedSeverity = sessionToEdit.incidentSeverity {
@@ -744,7 +768,8 @@ struct SessionEditorView: View {
             evSourceName: evSourceName,
             incidentType: selectedIncident,
             incidentSeverity: selectedIncident != nil ? incidentSeverity : nil,
-            comments: comments
+            comments: comments,
+            incidentComments: selectedIncident != nil ? incidentComments : ""
         )
 
         newSession.location = location
@@ -756,6 +781,7 @@ struct SessionEditorView: View {
         newSession.evSourceName = evSourceName
         newSession.incidentType = selectedIncident
         newSession.incidentSeverity = selectedIncident != nil ? incidentSeverity : nil
+        newSession.incidentComments = selectedIncident != nil ? incidentComments : ""
         newSession.comments = comments
         newSession.timestamp = sessionToEdit?.timestamp ?? Date()
 
@@ -958,6 +984,7 @@ struct TripSession: Identifiable, Codable, Equatable {
     var incidentType: SessionIncidentType?
     var incidentSeverity: Double?
     var comments: String
+    var incidentComments: String = ""
 
     var expectedValue: Double { evPerHour * durationHours }
 }
