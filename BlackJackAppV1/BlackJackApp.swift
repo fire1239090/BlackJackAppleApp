@@ -143,15 +143,18 @@ final class TripLoggerViewModel: ObservableObject {
     private func loadTrips() {
         guard let data = UserDefaults.standard.data(forKey: tripsKey), !data.isEmpty else {
             trips = []
+            clearOrphanedTripAssignments()
             return
         }
 
         do {
             trips = try JSONDecoder().decode([TripGroup].self, from: data)
+            clearOrphanedTripAssignments()
         } catch {
             loadErrorMessage = "Previous trip group data was corrupted and has been reset."
             trips = []
             UserDefaults.standard.set(Data(), forKey: tripsKey)
+            clearOrphanedTripAssignments()
         }
     }
 
@@ -168,6 +171,21 @@ final class TripLoggerViewModel: ObservableObject {
     private func persistTrips() {
         guard let data = try? JSONEncoder().encode(trips) else { return }
         UserDefaults.standard.set(data, forKey: tripsKey)
+    }
+
+    private func clearOrphanedTripAssignments() {
+        let validTripIDs = Set(trips.map(\.id))
+        var didUpdateSessions = false
+        for index in sessions.indices {
+            if let tripID = sessions[index].tripID, !validTripIDs.contains(tripID) {
+                sessions[index].tripID = nil
+                didUpdateSessions = true
+            }
+        }
+
+        if didUpdateSessions {
+            persistSessions()
+        }
     }
 
     private func updateLocationNotes(with session: TripSession) {
