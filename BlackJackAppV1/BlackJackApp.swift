@@ -122,10 +122,20 @@ final class TripLoggerViewModel: ObservableObject {
 
         let key = "\(session.location.lowercased())|\(session.city.lowercased())"
         if let index = locationNotes.firstIndex(where: { $0.id == key }) {
-            let combined = [locationNotes[index].notes, trimmed]
-                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                .joined(separator: "\n\n")
-            locationNotes[index].notes = combined
+            let existingNotes = locationNotes[index].notes
+            let existingEntries = existingNotes
+                .components(separatedBy: "\n\n")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            let trimmedLower = trimmed.lowercased()
+            let alreadyIncluded = existingEntries.contains { $0.lowercased() == trimmedLower }
+
+            if !alreadyIncluded {
+                let combined = ([locationNotes[index].notes, trimmed]
+                    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .joined(separator: "\n\n"))
+                locationNotes[index].notes = combined
+            }
         } else {
             locationNotes.append(
                 LocationNote(location: session.location, city: session.city, notes: trimmed)
@@ -544,7 +554,7 @@ struct SessionEditorView: View {
                     TextField("Duration (hours)", text: $durationText)
                         .keyboardType(.decimalPad)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Comments (optional)")
+                        Text("Session comments (optional)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         TextEditor(text: $comments)
@@ -585,7 +595,7 @@ struct SessionEditorView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Comments (optional)")
+                            Text("Heat comments (optional)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             TextEditor(text: $incidentComments)
