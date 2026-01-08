@@ -36,20 +36,24 @@ enum SessionIncidentType: String, Identifiable, CaseIterable, Codable {
 final class TripLoggerViewModel: ObservableObject {
     @Published var sessions: [TripSession] = []
     @Published var locationNotes: [LocationNote] = []
+    @Published var trips: [TripGroup] = []
     @Published var loadErrorMessage: String?
 
     private let sessionKey = "tripSessions"
     private let locationNotesKey = "locationNotes"
+    private let tripsKey = "tripGroups"
 
     init() {
         sessions = []
         locationNotes = []
+        trips = []
         loadErrorMessage = nil
     }
 
     func loadData() {
         loadSessions()
         loadLocationNotes()
+        loadTrips()
     }
 
     func addOrUpdate(session: TripSession) {
@@ -64,6 +68,36 @@ final class TripLoggerViewModel: ObservableObject {
 
     func delete(session: TripSession) {
         sessions.removeAll { $0.id == session.id }
+        persistSessions()
+    }
+
+    func addTrip(named name: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        trips.append(TripGroup(name: trimmedName))
+        persistTrips()
+    }
+
+    func updateTrip(_ updatedTrip: TripGroup) {
+        guard let index = trips.firstIndex(where: { $0.id == updatedTrip.id }) else { return }
+        trips[index] = updatedTrip
+        persistTrips()
+    }
+
+    func deleteTrip(_ trip: TripGroup) {
+        trips.removeAll { $0.id == trip.id }
+        for index in sessions.indices {
+            if sessions[index].tripID == trip.id {
+                sessions[index].tripID = nil
+            }
+        }
+        persistSessions()
+        persistTrips()
+    }
+
+    func assignSession(sessionID: UUID, to tripID: UUID?) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        sessions[index].tripID = tripID
         persistSessions()
     }
 
@@ -106,6 +140,21 @@ final class TripLoggerViewModel: ObservableObject {
         }
     }
 
+    private func loadTrips() {
+        guard let data = UserDefaults.standard.data(forKey: tripsKey), !data.isEmpty else {
+            trips = []
+            return
+        }
+
+        do {
+            trips = try JSONDecoder().decode([TripGroup].self, from: data)
+        } catch {
+            loadErrorMessage = "Previous trip group data was corrupted and has been reset."
+            trips = []
+            UserDefaults.standard.set(Data(), forKey: tripsKey)
+        }
+    }
+
     private func persistSessions() {
         guard let data = try? JSONEncoder().encode(sessions) else { return }
         UserDefaults.standard.set(data, forKey: sessionKey)
@@ -114,6 +163,11 @@ final class TripLoggerViewModel: ObservableObject {
     private func persistLocationNotes() {
         guard let data = try? JSONEncoder().encode(locationNotes) else { return }
         UserDefaults.standard.set(data, forKey: locationNotesKey)
+    }
+
+    private func persistTrips() {
+        guard let data = try? JSONEncoder().encode(trips) else { return }
+        UserDefaults.standard.set(data, forKey: tripsKey)
     }
 
     private func updateLocationNotes(with session: TripSession) {
@@ -156,14 +210,28 @@ struct TripLoggerView: View {
     @State private var editingSession: TripSession?
     @State private var selectedLocationNote: LocationNote?
     @State private var showLoadError: Bool = false
+    @State private var showAddTrip: Bool = false
+    @State private var editingTrip: TripGroup?
+    @State private var tripPendingDeletion: TripGroup?
+    @State private var showDeleteTripAlert: Bool = false
+    @State private var sessionPendingMove: TripSession?
+    @State private var showMoveSessionDialog: Bool = false
 
     private var sortedSessions: [TripSession] {
         viewModel.sessions.sorted { $0.timestamp > $1.timestamp }
     }
 
+    private var sortedTrips: [TripGroup] {
+        viewModel.trips.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private var unassignedSessions: [TripSession] {
+        sortedSessions.filter { $0.tripID == nil }
+    }
+
     private var displayedSessions: [TripSession] {
-        let recent = Array(sortedSessions.prefix(10))
-        return showAllSessions ? sortedSessions : recent
+        let recent = Array(unassignedSessions.prefix(10))
+        return showAllSessions ? unassignedSessions : recent
     }
 
     private var availableRuns: [SavedRun] {
@@ -241,6 +309,8 @@ struct TripLoggerView: View {
                 loggedSessionsSection
 
                 locationNotesSection
+
+                tripsSection
             }
             .padding()
         }
@@ -274,14 +344,43 @@ struct TripLoggerView: View {
                 }
             )
         }
+        .sheet(isPresented: $showAddTrip) {
+            TripNameEditorView(title: "New Trip") { name in
+                viewModel.addTrip(named: name)
+            }
+        }
+        .sheet(item: $editingTrip) { trip in
+            TripNameEditorView(title: "Edit Trip", initialName: trip.name) { name in
+                var updatedTrip = trip
+                updatedTrip.name = name
+                viewModel.updateTrip(updatedTrip)
+            }
+        }
         .alert(isPresented: $showLoadError) {
             Alert(title: Text("Trip Logger reset"), message: Text(viewModel.loadErrorMessage ?? ""), dismissButton: .default(Text("OK")))
+        }
+        .alert("Delete Trip?", isPresented: $showDeleteTripAlert, presenting: tripPendingDeletion) { trip in
+            Button("Delete", role: .destructive) {
+                viewModel.deleteTrip(trip)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Sessions in this trip will return to Most recent sessions.")
+        }
+        .confirmationDialog("Move Session to Trip", isPresented: $showMoveSessionDialog, presenting: sessionPendingMove) { session in
+            ForEach(sortedTrips) { trip in
+                Button(trip.name) {
+                    viewModel.assignSession(sessionID: session.id, to: trip.id)
+                }
+            }
+        } message: { _ in
+            Text("Select a trip for this session.")
         }
     }
 
     private var statsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Trackers")
+            Text("All Time Stats")
                 .font(.headline)
 
             HStack(spacing: 12) {
@@ -360,16 +459,26 @@ struct TripLoggerView: View {
 
             DisclosureGroup("Most recent sessions", isExpanded: .constant(true)) {
                     if displayedSessions.isEmpty {
-                        Text("No sessions yet. Tap Add Session to start tracking.")
+                        Text("No unassigned sessions. Tap Add Session to start tracking.")
                             .foregroundColor(.secondary)
                             .padding(.vertical, 4)
                     } else {
                         ForEach(displayedSessions) { session in
-                            sessionRow(session)
+                            TripSessionRow(
+                                session: session,
+                                onEdit: { editingSession = session },
+                                onDelete: { viewModel.delete(session: session) },
+                                onMove: {
+                                    sessionPendingMove = session
+                                    showMoveSessionDialog = true
+                                },
+                                showMove: true,
+                                isMoveEnabled: !viewModel.trips.isEmpty
+                            )
                             Divider()
                         }
 
-                    if viewModel.sessions.count > 10 {
+                    if unassignedSessions.count > 10 {
                         Button(showAllSessions ? "Show Fewer" : "See More") {
                             withAnimation { showAllSessions.toggle() }
                         }
@@ -382,51 +491,6 @@ struct TripLoggerView: View {
             .background(Color.secondary.opacity(0.08))
             .cornerRadius(12)
         }
-    }
-
-    private func sessionRow(_ session: TripSession) -> some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(session.location) — \(session.city)")
-                    .font(.subheadline.weight(.semibold))
-                Text(session.timestamp, style: .date)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(String(format: "Earnings: $%.2f over %.2f hrs", session.earnings, session.durationHours))
-                    .font(.caption)
-                if let evName = session.evSourceName {
-                    Text("EV Source: \(evName)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                if let incidentType = session.incidentType, let incidentSeverity = session.incidentSeverity {
-                    Text("Heat: \(incidentType.displayName) (Severity \(Int(incidentSeverity)))")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                let trimmedIncidentComments = session.incidentComments.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedIncidentComments.isEmpty {
-                    Text("Heat notes: \(trimmedIncidentComments)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-            Spacer()
-            HStack(spacing: 12) {
-                Button {
-                    editingSession = session
-                } label: {
-                    Image(systemName: "pencil")
-                }
-
-                Button(role: .destructive) {
-                    viewModel.delete(session: session)
-                } label: {
-                    Image(systemName: "trash")
-                }
-            }
-        }
-        .padding(.vertical, 4)
     }
 
     private var locationNotesSection: some View {
@@ -457,6 +521,55 @@ struct TripLoggerView: View {
                         .background(Color.secondary.opacity(0.08))
                         .cornerRadius(12)
                     }
+                }
+            }
+        }
+    }
+
+    private var tripsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Trips")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    showAddTrip = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if sortedTrips.isEmpty {
+                Text("Create trips to group your sessions.")
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(sortedTrips) { trip in
+                    HStack(spacing: 12) {
+                        NavigationLink(destination: TripDetailView(viewModel: viewModel, tripID: trip.id, availableRuns: availableRuns)) {
+                            Text(trip.name)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.primary)
+                        }
+                        Button {
+                            editingTrip = trip
+                        } label: {
+                            Image(systemName: "pencil")
+                        }
+
+                        Spacer()
+
+                        Button(role: .destructive) {
+                            tripPendingDeletion = trip
+                            showDeleteTripAlert = true
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.08))
+                    .cornerRadius(12)
                 }
             }
         }
@@ -522,6 +635,318 @@ struct TripLoggerView: View {
             return []
         }
         return decoded
+    }
+}
+
+struct TripDetailView: View {
+    @ObservedObject var viewModel: TripLoggerViewModel
+    let tripID: UUID
+    let availableRuns: [SavedRun]
+
+    @State private var showChart: Bool = true
+    @State private var editingSession: TripSession?
+    @State private var showAddSessionDialog: Bool = false
+
+    private var trip: TripGroup? {
+        viewModel.trips.first(where: { $0.id == tripID })
+    }
+
+    private var tripName: String {
+        trip?.name ?? "Trip"
+    }
+
+    private var tripSessions: [TripSession] {
+        viewModel.sessions
+            .filter { $0.tripID == tripID }
+            .sorted { $0.timestamp > $1.timestamp }
+    }
+
+    private var availableSessions: [TripSession] {
+        viewModel.sessions
+            .filter { $0.tripID == nil }
+            .sorted { $0.timestamp > $1.timestamp }
+    }
+
+    private var totalEarnings: Double {
+        tripSessions.reduce(0) { $0 + $1.earnings }
+    }
+
+    private var totalHours: Double {
+        tripSessions.reduce(0) { $0 + $1.durationHours }
+    }
+
+    private var actualValuePerHour: Double {
+        guard totalHours > 0 else { return 0 }
+        return totalEarnings / totalHours
+    }
+
+    private var progressPoints: [TripProgressPoint] {
+        var cumulativeHours: Double = 0
+        var cumulativeActual: Double = 0
+        var cumulativeExpected: Double = 0
+        return tripSessions.reversed().reduce(into: [TripProgressPoint]()) { partial, session in
+            cumulativeHours += session.durationHours
+            cumulativeActual += session.earnings
+            cumulativeExpected += session.expectedValue
+            partial.append(
+                TripProgressPoint(
+                    hourMark: cumulativeHours,
+                    actual: cumulativeActual,
+                    expected: cumulativeExpected
+                )
+            )
+        }
+        .sorted { $0.hourMark < $1.hourMark }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                statsSection
+
+                visualizeSection
+
+                tripSessionsSection
+            }
+            .padding()
+        }
+        .navigationTitle(tripName)
+        .sheet(item: $editingSession) { session in
+            SessionEditorView(
+                availableRuns: availableRuns,
+                sessionToEdit: session
+            ) { updated in
+                viewModel.addOrUpdate(session: updated)
+            }
+        }
+        .confirmationDialog("Add Session to Trip", isPresented: $showAddSessionDialog) {
+            ForEach(availableSessions) { session in
+                Button(sessionSummary(for: session)) {
+                    viewModel.assignSession(sessionID: session.id, to: tripID)
+                }
+            }
+        } message: {
+            Text("Select a session to add.")
+        }
+    }
+
+    private var statsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(tripName) Stats")
+                .font(.headline)
+
+            HStack(spacing: 12) {
+                statCard(title: "Total Earnings", value: totalEarnings, suffix: "", isCurrency: true)
+                statCard(title: "AV ($/hr)", value: actualValuePerHour, suffix: " /hr", isCurrency: true)
+                statCard(title: "Hours Played", value: totalHours, suffix: " hrs", isCurrency: false)
+            }
+        }
+    }
+
+    private var visualizeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Visualize Progress")
+                    .font(.headline)
+                Spacer()
+                Button(showChart ? "Hide" : "Show") {
+                    withAnimation { showChart.toggle() }
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if showChart {
+                if progressPoints.isEmpty {
+                    Text("Log sessions to generate your Expected vs Actual progress chart.")
+                        .foregroundColor(.secondary)
+                } else {
+#if canImport(Charts)
+                    Chart {
+                        ForEach(progressPoints) { point in
+                            LineMark(
+                                x: .value("Hours", point.hourMark),
+                                y: .value("Value", point.actual)
+                            )
+                            .foregroundStyle(by: .value("Series", "Actual"))
+                            .interpolationMethod(.catmullRom)
+                        }
+
+                        ForEach(progressPoints) { point in
+                            LineMark(
+                                x: .value("Hours", point.hourMark),
+                                y: .value("Value", point.expected)
+                            )
+                            .foregroundStyle(by: .value("Series", "Expected"))
+                            .interpolationMethod(.catmullRom)
+                        }
+                    }
+                    .frame(height: 220)
+                    .chartForegroundStyleScale([
+                        "Actual": .blue,
+                        "Expected": .green
+                    ])
+                    .chartLegend(.visible)
+#else
+                    Text("Charts are not available on this platform.")
+                        .foregroundColor(.secondary)
+#endif
+                }
+            }
+        }
+    }
+
+    private var tripSessionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Trip Sessions")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    showAddSessionDialog = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.bordered)
+                .disabled(availableSessions.isEmpty)
+            }
+
+            if tripSessions.isEmpty {
+                Text("No sessions added to this trip yet.")
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(tripSessions) { session in
+                    TripSessionRow(
+                        session: session,
+                        onEdit: { editingSession = session },
+                        onDelete: { viewModel.delete(session: session) },
+                        onMove: nil,
+                        showMove: false
+                    )
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private func sessionSummary(for session: TripSession) -> String {
+        "\(session.location) — \(session.city) • \(session.timestamp.formatted(date: .abbreviated, time: .omitted))"
+    }
+
+    private func statCard(title: String, value: Double, suffix: String, isCurrency: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            let formattedValue = isCurrency ? String(format: "$%.2f", value) : String(format: "%.2f", value)
+            Text(formattedValue)
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            if !suffix.isEmpty {
+                Text(suffix)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(12)
+    }
+}
+
+struct TripNameEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let title: String
+    var initialName: String = ""
+    var onSave: (String) -> Void
+
+    @State private var name: String = ""
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Trip Name")) {
+                    TextField("Enter trip name", text: $name)
+                }
+            }
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(name.trimmingCharacters(in: .whitespacesAndNewlines))
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .onAppear {
+            name = initialName
+        }
+    }
+}
+
+struct TripSessionRow: View {
+    let session: TripSession
+    var onEdit: () -> Void
+    var onDelete: () -> Void
+    var onMove: (() -> Void)?
+    var showMove: Bool = false
+    var isMoveEnabled: Bool = true
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(session.location) — \(session.city)")
+                    .font(.subheadline.weight(.semibold))
+                Text(session.timestamp, style: .date)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(String(format: "Earnings: $%.2f over %.2f hrs", session.earnings, session.durationHours))
+                    .font(.caption)
+                if let evName = session.evSourceName {
+                    Text("EV Source: \(evName)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                if let incidentType = session.incidentType, let incidentSeverity = session.incidentSeverity {
+                    Text("Heat: \(incidentType.displayName) (Severity \(Int(incidentSeverity)))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                let trimmedIncidentComments = session.incidentComments.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedIncidentComments.isEmpty {
+                    Text("Heat notes: \(trimmedIncidentComments)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            Spacer()
+            HStack(spacing: 12) {
+                if showMove {
+                    Button(action: { onMove?() }) {
+                        Image(systemName: "arrowshape.turn.up.right")
+                    }
+                    .disabled(!isMoveEnabled || onMove == nil)
+                }
+
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                }
+
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "trash")
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -1015,8 +1440,15 @@ struct TripSession: Identifiable, Codable, Equatable {
     var incidentSeverity: Double?
     var comments: String
     var incidentComments: String = ""
+    var tripID: UUID? = nil
 
     var expectedValue: Double { evPerHour * durationHours }
+}
+
+struct TripGroup: Identifiable, Codable, Equatable {
+    var id: UUID = .init()
+    var name: String
+    var createdAt: Date = .init()
 }
 
 struct LocationNote: Identifiable, Codable, Equatable {
