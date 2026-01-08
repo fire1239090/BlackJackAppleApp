@@ -399,6 +399,17 @@ struct TripLoggerView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
+                if let incidentType = session.incidentType, let incidentSeverity = session.incidentSeverity {
+                    Text("Heat: \(incidentType.displayName) (Severity \(Int(incidentSeverity)))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                let trimmedIncidentComments = session.incidentComments.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedIncidentComments.isEmpty {
+                    Text("Heat notes: \(trimmedIncidentComments)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
             Spacer()
             HStack(spacing: 12) {
