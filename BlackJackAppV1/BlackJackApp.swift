@@ -481,7 +481,12 @@ struct TripLoggerView: View {
             .sorted { $0.timestamp > $1.timestamp }
             .compactMap {
                 guard let type = $0.incidentType, let severity = $0.incidentSeverity else { return nil }
-                return IncidentReport(type: type, severity: severity, date: $0.timestamp)
+                return IncidentReport(
+                    type: type,
+                    severity: severity,
+                    date: $0.timestamp,
+                    comments: $0.incidentComments
+                )
             }
     }
 
@@ -832,7 +837,12 @@ struct LocationNoteDetailView: View {
             .sorted { $0.timestamp > $1.timestamp }
             .compactMap {
                 guard let type = $0.incidentType, let severity = $0.incidentSeverity else { return nil }
-                return IncidentReport(type: type, severity: severity, date: $0.timestamp)
+                return IncidentReport(
+                    type: type,
+                    severity: severity,
+                    date: $0.timestamp,
+                    comments: $0.incidentComments
+                )
             }
     }
 
@@ -844,11 +854,20 @@ struct LocationNoteDetailView: View {
                         Text("Heat Reports")
                             .font(.headline)
                         ForEach(incidentSummaries) { report in
-                            Text(incidentDescription(from: report))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(8)
-                                .background(Color.orange.opacity(0.1))
-                                .cornerRadius(8)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(incidentDescription(from: report))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                let trimmedComments = report.comments.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !trimmedComments.isEmpty {
+                                    Text(trimmedComments)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .padding(8)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(8)
                         }
                     }
                 }
@@ -1019,6 +1038,7 @@ struct IncidentReport: Identifiable {
     var type: SessionIncidentType
     var severity: Double
     var date: Date
+    var comments: String
 }
 
 // MARK: - Core models
