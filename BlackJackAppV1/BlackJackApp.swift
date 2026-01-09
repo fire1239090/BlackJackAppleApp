@@ -229,9 +229,10 @@ struct TripLoggerView: View {
     @State private var selectedLocationNote: LocationNote?
     @State private var showLoadError: Bool = false
     @State private var showAddTrip: Bool = false
-    @State private var editingTrip: TripGroup?
     @State private var tripPendingDeletion: TripGroup?
     @State private var showDeleteTripAlert: Bool = false
+    @State private var sessionPendingDeletion: TripSession?
+    @State private var showDeleteSessionAlert: Bool = false
     @State private var sessionPendingMove: TripSession?
     @State private var showMoveSessionDialog: Bool = false
 
@@ -390,13 +391,6 @@ struct TripLoggerView: View {
                 viewModel.addTrip(named: name)
             }
         }
-        .sheet(item: $editingTrip) { trip in
-            TripNameEditorView(title: "Edit Trip", initialName: trip.name) { name in
-                var updatedTrip = trip
-                updatedTrip.name = name
-                viewModel.updateTrip(updatedTrip)
-            }
-        }
         .alert(isPresented: $showLoadError) {
             Alert(title: Text("Trip Logger reset"), message: Text(viewModel.loadErrorMessage ?? ""), dismissButton: .default(Text("OK")))
         }
@@ -407,6 +401,14 @@ struct TripLoggerView: View {
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text("Sessions in this trip will return to Most recent sessions.")
+        }
+        .alert("Delete Session?", isPresented: $showDeleteSessionAlert, presenting: sessionPendingDeletion) { session in
+            Button("Delete Session", role: .destructive) {
+                viewModel.delete(session: session)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("This session will be removed from your recent sessions.")
         }
     }
 
@@ -499,7 +501,10 @@ struct TripLoggerView: View {
                             TripSessionRow(
                                 session: session,
                                 onEdit: { editingSession = session },
-                                onDelete: { viewModel.delete(session: session) },
+                                onDelete: {
+                                    sessionPendingDeletion = session
+                                    showDeleteSessionAlert = true
+                                },
                                 onMove: {
                                     sessionPendingMove = session
                                     showMoveSessionDialog = true
@@ -582,11 +587,6 @@ struct TripLoggerView: View {
                             Text(trip.name)
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundColor(.primary)
-                        }
-                        Button {
-                            editingTrip = trip
-                        } label: {
-                            Image(systemName: "pencil")
                         }
 
                         Spacer()
@@ -678,6 +678,7 @@ struct TripDetailView: View {
     @State private var showChart: Bool = true
     @State private var editingSession: TripSession?
     @State private var showAddSessionDialog: Bool = false
+    @State private var editingTrip: TripGroup?
 
     private var trip: TripGroup? {
         viewModel.trips.first(where: { $0.id == tripID })
@@ -735,6 +736,8 @@ struct TripDetailView: View {
         ZStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    tripHeader
+
                     statsSection
 
                     visualizeSection
@@ -770,11 +773,33 @@ struct TripDetailView: View {
                 viewModel.addOrUpdate(session: updated)
             }
         }
+        .sheet(item: $editingTrip) { trip in
+            TripNameEditorView(title: "Edit Trip", initialName: trip.name) { name in
+                var updatedTrip = trip
+                updatedTrip.name = name
+                viewModel.updateTrip(updatedTrip)
+            }
+        }
+    }
+
+    private var tripHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(tripName)
+                .font(.title2.weight(.bold))
+            Button {
+                if let trip {
+                    editingTrip = trip
+                }
+            } label: {
+                Image(systemName: "pencil")
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private var statsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("\(tripName) Stats")
+            Text("Trip Stats")
                 .font(.headline)
 
             HStack(spacing: 12) {
@@ -860,9 +885,12 @@ struct TripDetailView: View {
                     TripSessionRow(
                         session: session,
                         onEdit: { editingSession = session },
-                        onDelete: { viewModel.delete(session: session) },
+                        onDelete: { viewModel.assignSession(sessionID: session.id, to: nil) },
                         onMove: nil,
-                        showMove: false
+                        showMove: false,
+                        deleteSystemImage: "arrowshape.turn.up.left",
+                        deleteTint: .red,
+                        deleteRole: nil
                     )
                     Divider()
                 }
@@ -983,6 +1011,9 @@ struct TripSessionRow: View {
     var onMove: (() -> Void)?
     var showMove: Bool = false
     var isMoveEnabled: Bool = true
+    var deleteSystemImage: String = "trash"
+    var deleteTint: Color = .red
+    var deleteRole: ButtonRole? = .destructive
 
     var body: some View {
         HStack(alignment: .top) {
@@ -1024,8 +1055,9 @@ struct TripSessionRow: View {
                     Image(systemName: "pencil")
                 }
 
-                Button(role: .destructive, action: onDelete) {
-                    Image(systemName: "trash")
+                Button(role: deleteRole, action: onDelete) {
+                    Image(systemName: deleteSystemImage)
+                        .foregroundColor(deleteTint)
                 }
             }
         }
