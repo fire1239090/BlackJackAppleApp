@@ -318,19 +318,42 @@ struct TripLoggerView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                statsSection
+        ZStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    statsSection
 
-                visualizeSection
+                    visualizeSection
 
-                loggedSessionsSection
+                    loggedSessionsSection
 
-                locationNotesSection
+                    locationNotesSection
 
-                tripsSection
+                    tripsSection
+                }
+                .padding()
             }
-            .padding()
+
+            if showMoveSessionDialog, let session = sessionPendingMove {
+                CenteredSelectionDialog(
+                    title: "Move Session to Trip",
+                    message: "Select a trip for this session.",
+                    onCancel: {
+                        sessionPendingMove = nil
+                        showMoveSessionDialog = false
+                    }
+                ) {
+                    ForEach(sortedTrips) { trip in
+                        Button(trip.name) {
+                            viewModel.assignSession(sessionID: session.id, to: trip.id)
+                            sessionPendingMove = nil
+                            showMoveSessionDialog = false
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .transition(.opacity)
+            }
         }
         .navigationTitle("Trip Logger")
         .onAppear {
@@ -384,15 +407,6 @@ struct TripLoggerView: View {
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text("Sessions in this trip will return to Most recent sessions.")
-        }
-        .confirmationDialog("Move Session to Trip", isPresented: $showMoveSessionDialog, presenting: sessionPendingMove) { session in
-            ForEach(sortedTrips) { trip in
-                Button(trip.name) {
-                    viewModel.assignSession(sessionID: session.id, to: trip.id)
-                }
-            }
-        } message: { _ in
-            Text("Select a trip for this session.")
         }
     }
 
@@ -718,15 +732,34 @@ struct TripDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                statsSection
+        ZStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    statsSection
 
-                visualizeSection
+                    visualizeSection
 
-                tripSessionsSection
+                    tripSessionsSection
+                }
+                .padding()
             }
-            .padding()
+
+            if showAddSessionDialog {
+                CenteredSelectionDialog(
+                    title: "Add Session to Trip",
+                    message: "Select a session to add.",
+                    onCancel: { showAddSessionDialog = false }
+                ) {
+                    ForEach(availableSessions) { session in
+                        Button(sessionSummary(for: session)) {
+                            viewModel.assignSession(sessionID: session.id, to: tripID)
+                            showAddSessionDialog = false
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .transition(.opacity)
+            }
         }
         .navigationTitle(tripName)
         .sheet(item: $editingSession) { session in
@@ -736,15 +769,6 @@ struct TripDetailView: View {
             ) { updated in
                 viewModel.addOrUpdate(session: updated)
             }
-        }
-        .confirmationDialog("Add Session to Trip", isPresented: $showAddSessionDialog) {
-            ForEach(availableSessions) { session in
-                Button(sessionSummary(for: session)) {
-                    viewModel.assignSession(sessionID: session.id, to: tripID)
-                }
-            }
-        } message: {
-            Text("Select a session to add.")
         }
     }
 
@@ -870,6 +894,47 @@ struct TripDetailView: View {
         .padding()
         .background(Color.secondary.opacity(0.08))
         .cornerRadius(12)
+    }
+}
+
+struct CenteredSelectionDialog<Content: View>: View {
+    let title: String
+    let message: String
+    let onCancel: () -> Void
+    let content: () -> Content
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onCancel)
+
+            VStack(alignment: .leading, spacing: 16) {
+                Text(title)
+                    .font(.headline)
+
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        content()
+                    }
+                }
+                .frame(maxHeight: 260)
+
+                Button("Cancel", action: onCancel)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .buttonStyle(.bordered)
+            }
+            .padding(20)
+            .frame(maxWidth: 320)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(radius: 16)
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 
