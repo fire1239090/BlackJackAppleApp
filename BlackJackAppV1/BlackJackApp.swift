@@ -235,6 +235,9 @@ struct TripLoggerView: View {
     @State private var showDeleteSessionAlert: Bool = false
     @State private var sessionPendingMove: TripSession?
     @State private var showMoveSessionDialog: Bool = false
+    @State private var showAllTimeStatsInfo: Bool = false
+    @State private var showLocationNotesInfo: Bool = false
+    @State private var showTripsInfo: Bool = false
 
     private var sortedSessions: [TripSession] {
         viewModel.sessions.sorted { $0.timestamp > $1.timestamp }
@@ -410,12 +413,38 @@ struct TripLoggerView: View {
         } message: { _ in
             Text("This session will be removed from your recent sessions.")
         }
+        .alert("All Time Stats", isPresented: $showAllTimeStatsInfo) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("These are the stats for all sessions logged, regardless of if they are sorted into various trips.")
+        }
+        .alert("Location Notes", isPresented: $showLocationNotesInfo) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("These are notes on a given location aggregated across all the sessions logged. You can remove, edit, or add notes for a location by selecting it and editing from there.")
+        }
+        .alert("Trips", isPresented: $showTripsInfo) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("These are for sorting sessions into broader Trips, so you can track results and stats for a given trip instead of all time.")
+        }
     }
 
     private var statsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("All Time Stats")
-                .font(.headline)
+            HStack(spacing: 8) {
+                Text("All Time Stats")
+                    .font(.headline)
+                Button {
+                    showAllTimeStatsInfo = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel("All time stats info")
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                Spacer()
+            }
 
             HStack(spacing: 12) {
                 statCard(title: "Total Earnings", value: totalEarnings, suffix: "", isCurrency: true)
@@ -532,8 +561,19 @@ struct TripLoggerView: View {
 
     private var locationNotesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Location Notes")
-                .font(.headline)
+            HStack(spacing: 8) {
+                Text("Location Notes")
+                    .font(.headline)
+                Button {
+                    showLocationNotesInfo = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel("Location notes info")
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                Spacer()
+            }
 
             if groupedLocationNotes.isEmpty {
                 Text("Your location notes will appear here after you log sessions.")
@@ -568,6 +608,14 @@ struct TripLoggerView: View {
             HStack {
                 Text("Trips")
                     .font(.headline)
+                Button {
+                    showTripsInfo = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel("Trips info")
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
                 Spacer()
                 Button {
                     showAddTrip = true
