@@ -17,20 +17,20 @@ final class OrientationAppDelegate: NSObject, UIApplicationDelegate {
 
 final class IdleTimerCoordinator {
     static let shared = IdleTimerCoordinator()
-    private var activeSceneCount = 0
     private var wasIdleTimerDisabled = false
     private var hasCapturedIdleState = false
 
-    func setSceneActive(_ isActive: Bool) {
-        let delta = isActive ? 1 : -1
-        activeSceneCount = max(0, activeSceneCount + delta)
-
+    func updateForConnectedScenes() {
         if !hasCapturedIdleState {
             wasIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
             hasCapturedIdleState = true
         }
 
-        if activeSceneCount > 0 {
+        let hasActiveScene = UIApplication.shared.connectedScenes.contains { scene in
+            scene.activationState == .foregroundActive
+        }
+
+        if hasActiveScene {
             UIApplication.shared.isIdleTimerDisabled = true
         } else {
             UIApplication.shared.isIdleTimerDisabled = wasIdleTimerDisabled
@@ -10886,7 +10886,6 @@ struct BlackJackAppV1App: App {
 
 struct AppRootView: View {
     @Environment(\.scenePhase) private var scenePhase
-    @State private var isSceneActive = false
 
     var body: some View {
         HomeView()
@@ -10902,20 +10901,8 @@ struct AppRootView: View {
 
 #if canImport(UIKit)
     private func handleScenePhaseChange(_ newPhase: ScenePhase) {
-        switch newPhase {
-        case .active:
-            if !isSceneActive {
-                isSceneActive = true
-                IdleTimerCoordinator.shared.setSceneActive(true)
-            }
-        case .inactive, .background:
-            if isSceneActive {
-                isSceneActive = false
-                IdleTimerCoordinator.shared.setSceneActive(false)
-            }
-        @unknown default:
-            break
-        }
+        _ = newPhase
+        IdleTimerCoordinator.shared.updateForConnectedScenes()
     }
 #endif
 }
