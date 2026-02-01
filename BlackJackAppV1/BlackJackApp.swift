@@ -10874,7 +10874,7 @@ struct BlackJackAppV1App: App {
 #if canImport(UIKit)
     @UIApplicationDelegateAdaptor(OrientationAppDelegate.self) var appDelegate
     @Environment(\.scenePhase) private var scenePhase
-    @State private var lastScenePhase: ScenePhase?
+    @State private var isSceneActive = false
 #endif
 
     var body: some Scene {
@@ -10893,14 +10893,17 @@ struct BlackJackAppV1App: App {
 
 #if canImport(UIKit)
     private func handleScenePhaseChange(_ newPhase: ScenePhase) {
-        guard lastScenePhase != newPhase else { return }
-        defer { lastScenePhase = newPhase }
-
         switch newPhase {
         case .active:
-            IdleTimerCoordinator.shared.setSceneActive(true)
+            if !isSceneActive {
+                isSceneActive = true
+                IdleTimerCoordinator.shared.setSceneActive(true)
+            }
         case .inactive, .background:
-            IdleTimerCoordinator.shared.setSceneActive(false)
+            if isSceneActive {
+                isSceneActive = false
+                IdleTimerCoordinator.shared.setSceneActive(false)
+            }
         @unknown default:
             break
         }
