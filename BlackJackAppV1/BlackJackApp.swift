@@ -6610,7 +6610,7 @@ struct HandSimulationRunView: View {
             smallSpacing = spacing * 0.7
             innerPadding = minSide * 0.015
             cornerRadius = minSide * 0.03
-            cardWidth = base * 0.18
+            cardWidth = base * 0.22
             cardHeight = cardWidth * (3.5 / 2.5)
             cardOffsetX = cardWidth * 0.34
             cardOffsetY = cardHeight * 0.07
@@ -6685,6 +6685,9 @@ struct HandSimulationRunView: View {
     @State private var handResolutions: [HandResolution] = []
     @State private var activeHandIndex: Int = 0
     @State private var isResolvingDealer: Bool = false
+    @State private var cardScaleOverride: CGFloat?
+    @State private var layoutSize: CGSize = .zero
+    @State private var tableAreaSize: CGSize = .zero
 
     private struct BetFeedback: Identifiable {
         let id = UUID()
@@ -6719,6 +6722,11 @@ struct HandSimulationRunView: View {
         ChipOption(value: 100, color: .black),
         ChipOption(value: 500, color: .purple)
     ]
+
+    private enum NextCardTarget {
+        case dealer
+        case player(handIndex: Int, isDouble: Bool)
+    }
 
     private var isTestOutMode: Bool {
         testOutConfig != nil
@@ -6846,6 +6854,8 @@ struct HandSimulationRunView: View {
                 }
                 .presentationDetents([.medium, .large])
             }
+            .onAppear { layoutSize = proxy.size }
+            .onChange(of: proxy.size) { layoutSize = $0 }
         }
     }
 
@@ -6860,8 +6870,16 @@ struct HandSimulationRunView: View {
             )
             let dealerCardArea = CGSize(width: proxy.size.width, height: max(dealerAreaHeight - layout.labelHeight, 0))
             let playerCardArea = CGSize(width: proxy.size.width, height: max(playerCardsHeight, 0))
-            let rawScale = globalCardScale(layout: layout, dealerArea: dealerCardArea, playerArea: playerCardArea)
-            let cardScale = min(rawScale * 1.2, 1.0)
+            let rawScale = globalCardScale(
+                layout: layout,
+                dealerArea: dealerCardArea,
+                playerArea: playerCardArea,
+                dealerCards: dealerCards,
+                playerHands: playerHands,
+                activeHandIndex: activeHandIndex
+            )
+            let preferredScale = min(rawScale * 1.2, 1.0)
+            let cardScale = min(cardScaleOverride ?? preferredScale, preferredScale)
 
             VStack(spacing: spacerBetweenSections) {
                 dealerSection(layout: layout, scale: cardScale)
@@ -6883,6 +6901,8 @@ struct HandSimulationRunView: View {
             .padding(.horizontal, layout.padding)
             .background(Color.secondary.opacity(0.08))
             .cornerRadius(layout.cornerRadius)
+            .onAppear { tableAreaSize = proxy.size }
+            .onChange(of: proxy.size) { tableAreaSize = $0 }
             .overlay {
                 if awaitingBet {
                     VStack(spacing: layout.spacing) {
@@ -6958,7 +6978,13 @@ struct HandSimulationRunView: View {
             let slotWidth = enumeratedHands.isEmpty
                 ? layout.cardWidth * scale
                 : proxy.size.width / CGFloat(max(enumeratedHands.count, 1))
-            let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth, globalScale: scale)
+            let layoutInfo = handLayout(
+                for: enumeratedHands,
+                layout: layout,
+                slotWidth: slotWidth,
+                activeHandIndex: activeHandIndex,
+                globalScale: scale
+            )
             let contentWidth = layoutInfo.contentWidth
             let maxHeight = layoutInfo.maxHeight
             let horizontalPadding = enumeratedHands.isEmpty ? 0 : max((proxy.size.width - contentWidth) / 2, 0)
@@ -7289,6 +7315,7 @@ struct HandSimulationRunView: View {
         for hands: [(Int, SpeedCounterHandState)],
         layout: SimulationLayout,
         slotWidth: CGFloat,
+        activeHandIndex: Int,
         globalScale: CGFloat = 1
     ) -> (maxHeight: CGFloat, contentWidth: CGFloat) {
         let metrics = hands.reduce((maxHeight: layout.cardHeight, contentWidth: CGFloat(0))) { partial, pair in
@@ -7300,17 +7327,28 @@ struct HandSimulationRunView: View {
         return metrics
     }
 
-    private func dealerStackSize(layout: SimulationLayout, scale: CGFloat) -> CGSize {
+    private func dealerStackSize(
+        layout: SimulationLayout,
+        scale: CGFloat,
+        dealerCards: [SpeedCounterDealtCard]
+    ) -> CGSize {
         let count = max(dealerCards.count, 1)
         let width = (layout.cardWidth * scale * CGFloat(count)) + (layout.smallSpacing * scale * CGFloat(max(count - 1, 0)))
         let height = layout.cardHeight * scale
         return CGSize(width: width, height: height)
     }
 
-    private func globalCardScale(layout: SimulationLayout, dealerArea: CGSize, playerArea: CGSize) -> CGFloat {
+    private func globalCardScale(
+        layout: SimulationLayout,
+        dealerArea: CGSize,
+        playerArea: CGSize,
+        dealerCards: [SpeedCounterDealtCard],
+        playerHands: [SpeedCounterHandState],
+        activeHandIndex: Int
+    ) -> CGFloat {
         guard dealerArea.width > 0, dealerArea.height > 0, playerArea.width > 0, playerArea.height > 0 else { return 1 }
 
-        let dealerSize = dealerStackSize(layout: layout, scale: 1)
+        let dealerSize = dealerStackSize(layout: layout, scale: 1, dealerCards: dealerCards)
         let dealerWidthScale = dealerArea.width / dealerSize.width
         let dealerHeightScale = dealerArea.height / dealerSize.height
 
@@ -7318,11 +7356,81 @@ struct HandSimulationRunView: View {
         let slotWidth = enumeratedHands.isEmpty
             ? layout.cardWidth
             : playerArea.width / CGFloat(max(enumeratedHands.count, 1))
-        let layoutInfo = handLayout(for: enumeratedHands, layout: layout, slotWidth: slotWidth, globalScale: 1)
+        let layoutInfo = handLayout(
+            for: enumeratedHands,
+            layout: layout,
+            slotWidth: slotWidth,
+            activeHandIndex: activeHandIndex,
+            globalScale: 1
+        )
         let playerWidthScale = playerArea.width / max(layoutInfo.contentWidth, 1)
         let playerHeightScale = playerArea.height / max(layoutInfo.maxHeight, 1)
 
         return min(dealerWidthScale, dealerHeightScale, playerWidthScale, playerHeightScale)
+    }
+
+    private func ensureCardFits(nextCardTarget: NextCardTarget) {
+        guard layoutSize.width > 0, layoutSize.height > 0, tableAreaSize.width > 0, tableAreaSize.height > 0 else { return }
+
+        let layout = SimulationLayout(size: layoutSize)
+        let dealerAreaHeight = tableAreaSize.height * 0.38
+        let spacerBetweenSections = layout.smallSpacing
+        let spacerInsidePlayer = layout.smallSpacing
+        let playerCardsHeight = max(
+            tableAreaSize.height - dealerAreaHeight - spacerBetweenSections - layout.labelHeight - spacerInsidePlayer,
+            0
+        )
+        let dealerCardArea = CGSize(width: tableAreaSize.width, height: max(dealerAreaHeight - layout.labelHeight, 0))
+        let playerCardArea = CGSize(width: tableAreaSize.width, height: max(playerCardsHeight, 0))
+        let rawScale = globalCardScale(
+            layout: layout,
+            dealerArea: dealerCardArea,
+            playerArea: playerCardArea,
+            dealerCards: dealerCards,
+            playerHands: playerHands,
+            activeHandIndex: activeHandIndex
+        )
+        let preferredScale = min(rawScale * 1.2, 1.0)
+        let appliedScale = min(cardScaleOverride ?? preferredScale, preferredScale)
+
+        var nextDealerCards = dealerCards
+        var nextPlayerHands = playerHands
+
+        switch nextCardTarget {
+        case .dealer:
+            nextDealerCards.append(placeholderCard())
+        case let .player(handIndex, isDouble):
+            guard handIndex >= 0, handIndex < nextPlayerHands.count else { return }
+            if isDouble {
+                nextPlayerHands[handIndex].doubleCard = placeholderCard()
+            } else {
+                nextPlayerHands[handIndex].cards.append(placeholderCard())
+            }
+        }
+
+        let nextScale = min(
+            globalCardScale(
+                layout: layout,
+                dealerArea: dealerCardArea,
+                playerArea: playerCardArea,
+                dealerCards: nextDealerCards,
+                playerHands: nextPlayerHands,
+                activeHandIndex: activeHandIndex
+            ) * 1.2,
+            1.0
+        )
+
+        if nextScale < appliedScale {
+            cardScaleOverride = nextScale
+        }
+    }
+
+    private func placeholderCard() -> SpeedCounterDealtCard {
+        SpeedCounterDealtCard(
+            card: SpeedCounterCard(rank: 1, suit: .spades),
+            isFaceDown: false,
+            isPerpendicular: false
+        )
     }
 
     private func dispatchFailure(_ reason: TestOutFailureReason) {
@@ -7355,6 +7463,7 @@ struct HandSimulationRunView: View {
 
     private func startShoe() {
         guard !testOutTerminated else { return }
+        cardScaleOverride = nil
         shoe = SpeedCounterCard.shoe(decks: rules.decks)
         cardsPlayed = 0
         runningCount = 0
@@ -7376,6 +7485,7 @@ struct HandSimulationRunView: View {
 
     private func advanceHand() {
         guard !testOutTerminated else { return }
+        cardScaleOverride = nil
         dealerCards = []
         playerHands = []
         handBets = []
@@ -7481,6 +7591,7 @@ struct HandSimulationRunView: View {
         guard !testOutTerminated else { return nil }
         guard let next = await MainActor.run(body: { drawCard() }) else { return nil }
         await MainActor.run {
+            ensureCardFits(nextCardTarget: .player(handIndex: index, isDouble: false))
             withAnimation(.easeInOut(duration: animationSpeed)) {
                 playerHands[index].cards.append(next)
             }
@@ -7493,6 +7604,7 @@ struct HandSimulationRunView: View {
         guard !testOutTerminated else { return nil }
         guard let next = await MainActor.run(body: { drawCard(faceDown: faceDown) }) else { return nil }
         await MainActor.run {
+            ensureCardFits(nextCardTarget: .dealer)
             withAnimation(.easeInOut(duration: animationSpeed)) {
                 dealerCards.append(next)
             }
@@ -7661,6 +7773,7 @@ struct HandSimulationRunView: View {
         case .double:
             guard handState.cards.count == 2 else { return }
             if let newCard = drawCard() {
+                ensureCardFits(nextCardTarget: .player(handIndex: activeHandIndex, isDouble: true))
                 withAnimation(.easeInOut(duration: animationSpeed)) {
                     playerHands[activeHandIndex].doubleCard = newCard
                 }
@@ -7670,6 +7783,7 @@ struct HandSimulationRunView: View {
             await concludeHand(immediateProfit: nil, finalHand: updatedModel, correctionMessage: correctionMessage)
         case .hit:
             if let newCard = drawCard() {
+                ensureCardFits(nextCardTarget: .player(handIndex: activeHandIndex, isDouble: false))
                 withAnimation(.easeInOut(duration: animationSpeed)) {
                     playerHands[activeHandIndex].cards.append(newCard)
                 }
@@ -7716,6 +7830,7 @@ struct HandSimulationRunView: View {
 
         for offset in 0..<2 {
             if let extra = drawCard() {
+                ensureCardFits(nextCardTarget: .player(handIndex: index + offset, isDouble: false))
                 withAnimation(.easeInOut(duration: animationSpeed)) {
                     playerHands[index + offset].cards.append(extra)
                 }
@@ -7856,6 +7971,7 @@ struct HandSimulationRunView: View {
             let soft = hand.isSoft
             if value < 17 || (value == 17 && rules.dealerHitsSoft17 && soft) {
                 guard let newCard = drawCard() else { break }
+                ensureCardFits(nextCardTarget: .dealer)
                 withAnimation(.easeInOut(duration: animationSpeed)) {
                     hand.cards.append(Card(rank: newCard.card.rank))
                     dealerCards.append(newCard)
