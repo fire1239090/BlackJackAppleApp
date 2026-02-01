@@ -15,6 +15,29 @@ final class OrientationAppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
+final class IdleTimerCoordinator {
+    static let shared = IdleTimerCoordinator()
+    private var wasIdleTimerDisabled = false
+    private var hasCapturedIdleState = false
+
+    func updateForConnectedScenes() {
+        if !hasCapturedIdleState {
+            wasIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
+            hasCapturedIdleState = true
+        }
+
+        let hasActiveScene = UIApplication.shared.connectedScenes.contains { scene in
+            scene.activationState == .foregroundActive
+        }
+
+        if hasActiveScene {
+            UIApplication.shared.isIdleTimerDisabled = true
+        } else {
+            UIApplication.shared.isIdleTimerDisabled = wasIdleTimerDisabled
+        }
+    }
+}
+
 // MARK: - Trip Logger
 
 enum EVSourceChoice: String, Identifiable, CaseIterable {
@@ -10854,7 +10877,32 @@ struct BlackJackAppV1App: App {
 
     var body: some Scene {
         WindowGroup {
-            HomeView()
+            AppRootView()
+#if canImport(UIKit)
+#endif
         }
     }
+}
+
+struct AppRootView: View {
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        HomeView()
+#if canImport(UIKit)
+            .onChange(of: scenePhase) { newPhase in
+                handleScenePhaseChange(newPhase)
+            }
+            .onAppear {
+                handleScenePhaseChange(scenePhase)
+            }
+#endif
+    }
+
+#if canImport(UIKit)
+    private func handleScenePhaseChange(_ newPhase: ScenePhase) {
+        _ = newPhase
+        IdleTimerCoordinator.shared.updateForConnectedScenes()
+    }
+#endif
 }
