@@ -15,6 +15,29 @@ final class OrientationAppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
+final class IdleTimerCoordinator {
+    static let shared = IdleTimerCoordinator()
+    private var activeSceneCount = 0
+    private var wasIdleTimerDisabled = false
+    private var hasCapturedIdleState = false
+
+    func setSceneActive(_ isActive: Bool) {
+        let delta = isActive ? 1 : -1
+        activeSceneCount = max(0, activeSceneCount + delta)
+
+        if !hasCapturedIdleState {
+            wasIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
+            hasCapturedIdleState = true
+        }
+
+        if activeSceneCount > 0 {
+            UIApplication.shared.isIdleTimerDisabled = true
+        } else {
+            UIApplication.shared.isIdleTimerDisabled = wasIdleTimerDisabled
+        }
+    }
+}
+
 // MARK: - Trip Logger
 
 enum EVSourceChoice: String, Identifiable, CaseIterable {
@@ -10850,27 +10873,37 @@ struct HomeView: View {
 struct BlackJackAppV1App: App {
 #if canImport(UIKit)
     @UIApplicationDelegateAdaptor(OrientationAppDelegate.self) var appDelegate
-    @State private var wasIdleTimerDisabled = false
-    @State private var hasCapturedIdleState = false
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var lastScenePhase: ScenePhase?
 #endif
 
     var body: some Scene {
         WindowGroup {
             HomeView()
 #if canImport(UIKit)
-                .onAppear {
-                    if !hasCapturedIdleState {
-                        wasIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
-                        hasCapturedIdleState = true
-                    }
-                    UIApplication.shared.isIdleTimerDisabled = true
+                .onChange(of: scenePhase) { newPhase in
+                    handleScenePhaseChange(newPhase)
                 }
-                .onDisappear {
-                    if hasCapturedIdleState {
-                        UIApplication.shared.isIdleTimerDisabled = wasIdleTimerDisabled
-                    }
+                .onAppear {
+                    handleScenePhaseChange(scenePhase)
                 }
 #endif
         }
     }
+
+#if canImport(UIKit)
+    private func handleScenePhaseChange(_ newPhase: ScenePhase) {
+        guard lastScenePhase != newPhase else { return }
+        defer { lastScenePhase = newPhase }
+
+        switch newPhase {
+        case .active:
+            IdleTimerCoordinator.shared.setSceneActive(true)
+        case .inactive, .background:
+            IdleTimerCoordinator.shared.setSceneActive(false)
+        @unknown default:
+            break
+        }
+    }
+#endif
 }
