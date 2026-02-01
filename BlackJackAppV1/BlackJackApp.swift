@@ -10850,11 +10850,27 @@ struct HomeView: View {
 struct BlackJackAppV1App: App {
 #if canImport(UIKit)
     @UIApplicationDelegateAdaptor(OrientationAppDelegate.self) var appDelegate
+    @State private var wasIdleTimerDisabled = false
+    @State private var hasCapturedIdleState = false
 #endif
 
     var body: some Scene {
         WindowGroup {
             HomeView()
+#if canImport(UIKit)
+                .onAppear {
+                    if !hasCapturedIdleState {
+                        wasIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
+                        hasCapturedIdleState = true
+                    }
+                    UIApplication.shared.isIdleTimerDisabled = true
+                }
+                .onDisappear {
+                    if hasCapturedIdleState {
+                        UIApplication.shared.isIdleTimerDisabled = wasIdleTimerDisabled
+                    }
+                }
+#endif
         }
     }
 }
