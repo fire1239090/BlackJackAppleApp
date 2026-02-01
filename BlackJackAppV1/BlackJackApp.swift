@@ -10873,22 +10873,31 @@ struct HomeView: View {
 struct BlackJackAppV1App: App {
 #if canImport(UIKit)
     @UIApplicationDelegateAdaptor(OrientationAppDelegate.self) var appDelegate
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var isSceneActive = false
 #endif
 
     var body: some Scene {
         WindowGroup {
-            HomeView()
+            AppRootView()
 #if canImport(UIKit)
-                .onChange(of: scenePhase) { newPhase in
-                    handleScenePhaseChange(newPhase)
-                }
-                .onAppear {
-                    handleScenePhaseChange(scenePhase)
-                }
 #endif
         }
+    }
+}
+
+struct AppRootView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isSceneActive = false
+
+    var body: some View {
+        HomeView()
+#if canImport(UIKit)
+            .onChange(of: scenePhase) { newPhase in
+                handleScenePhaseChange(newPhase)
+            }
+            .onAppear {
+                handleScenePhaseChange(scenePhase)
+            }
+#endif
     }
 
 #if canImport(UIKit)
