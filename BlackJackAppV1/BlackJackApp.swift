@@ -9618,9 +9618,36 @@ struct SpeedCounterRunView: View {
         guard await dealCard(toPlayerHand: 0) != nil else { await finishShoe(); return }
         guard let dealerUp = await dealDealerCard(faceDown: false) else { await finishShoe(); return }
 
+        let dealerHand = Hand(cards: dealerCards.map { Card(rank: $0.card.rank) })
+        let playerOpeningHand = hand(from: playerHands[0])
+        let dealerUpRank = dealerUp.card.rank
+        let dealerShouldPeek = dealerUpRank == 1 || dealerUpRank >= 10
+
+        if dealerShouldPeek && dealerHand.isBlackjack {
+            await revealHoleCard()
+            await clearTable()
+            handsDealt += 1
+            promptCounter += 1
+            handlePostHand()
+            return
+        }
+
+        if playerOpeningHand.isBlackjack {
+            await revealHoleCard()
+            await clearTable()
+            handsDealt += 1
+            promptCounter += 1
+            handlePostHand()
+            return
+        }
+
         await playPlayerHands(dealerUp: dealerUp.card)
         await revealHoleCard()
-        await dealerPlay()
+
+        let playerHasLiveHand = playerHands.contains { !hand(from: $0).isBusted }
+        if playerHasLiveHand {
+            await dealerPlay()
+        }
         await clearTable()
 
         handsDealt += 1
