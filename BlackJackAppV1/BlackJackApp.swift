@@ -5475,6 +5475,10 @@ struct BetSizingTable: Codable, Hashable {
         return String(format: "%.2f", value)
     }
 
+    func minimumBet() -> Double {
+        bets.values.min() ?? 0
+    }
+
     func hash(into hasher: inout Hasher) {
         for key in DeckBetTrainingConstants.trueCountRange {
             hasher.combine(bets[key, default: 0])
@@ -7526,13 +7530,13 @@ struct HandSimulationRunView: View {
         guard chipsEnabled else { return }
         let delta = Double(chip.value) * (negativeChipMode ? -1 : 1)
         let proposed = currentBet + delta
-        let minimumBet = minimumBetForCurrentTrueCount()
+        let minimumBet = settings.betTable.minimumBet()
 
         if proposed < minimumBet {
             currentBet = minimumBet
             activeAlert = SimulationAlert(
                 title: "Minimum Bet",
-                message: "The minimum bet for true count \(String(format: "%.2f", trueCount)) is $\(Int(minimumBet)). Your wager has been adjusted to that amount.",
+                message: "The minimum bet in your betting chart is $\(Int(minimumBet)). Your wager has been adjusted to that amount.",
                 onDismiss: nil
             )
             return
@@ -7595,15 +7599,6 @@ struct HandSimulationRunView: View {
         }
 
         return (correctRange, feedback, rangeLabel, tcLabel)
-    }
-
-    private func minimumBetForCurrentTrueCount() -> Double {
-        let tc = trueCount
-        let lower = Int(floor(tc))
-        let upper = Int(ceil(tc))
-        let lowerBet = settings.betTable.value(for: lower)
-        let upperBet = settings.betTable.value(for: upper)
-        return min(lowerBet, upperBet)
     }
 
     private func handleAction(_ action: PlayerAction) {
