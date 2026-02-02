@@ -4715,7 +4715,7 @@ struct HowToCountCardsView: View {
 
                 HowToCountSectionView(
                     title: "1. Play Basic Strategy Perfectly",
-                    body: "Basic strategy is non-negotiable. If you make mistakes on hit/stand/double/split decisions, any advantage from counting disappears. Memorize the chart for the rules you’re playing and rehearse until every decision is automatic. Counting works only when your baseline play is correct.",
+                    descriptionText: "Basic strategy is non-negotiable. If you make mistakes on hit/stand/double/split decisions, any advantage from counting disappears. Memorize the chart for the rules you’re playing and rehearse until every decision is automatic. Counting works only when your baseline play is correct.",
                     bullets: [
                         "Use the strategy chart every session until you can recall it without hesitation.",
                         "Focus on hard totals, soft totals, and pair splits separately.",
@@ -4725,7 +4725,7 @@ struct HowToCountCardsView: View {
 
                 HowToCountSectionView(
                     title: "2. Keep a Running Count",
-                    body: "Use a simple counting system like Hi-Lo to track the ratio of high to low cards remaining. Assign values to each card as it appears, then keep a running total.",
+                    descriptionText: "Use a simple counting system like Hi-Lo to track the ratio of high to low cards remaining. Assign values to each card as it appears, then keep a running total.",
                     bullets: [
                         "2–6 = +1 (helps the player).",
                         "7–9 = 0 (neutral).",
@@ -4736,7 +4736,7 @@ struct HowToCountCardsView: View {
 
                 HowToCountSectionView(
                     title: "3. Convert to a True Count",
-                    body: "The running count means different things in a single-deck game versus a six-deck shoe. Normalize it by dividing by the number of decks remaining to get the true count.",
+                    descriptionText: "The running count means different things in a single-deck game versus a six-deck shoe. Normalize it by dividing by the number of decks remaining to get the true count.",
                     bullets: [
                         "Estimate decks remaining by looking at the discard tray.",
                         "True Count = Running Count ÷ Decks Remaining.",
@@ -4746,7 +4746,7 @@ struct HowToCountCardsView: View {
 
                 HowToCountSectionView(
                     title: "4. Size Your Bets to the True Count",
-                    body: "You only press your bet when the true count is positive enough to give you the edge. Keep bets small or minimum at low/negative counts, and scale up as the count rises.",
+                    descriptionText: "You only press your bet when the true count is positive enough to give you the edge. Keep bets small or minimum at low/negative counts, and scale up as the count rises.",
                     bullets: [
                         "True Count ≤ 0: minimum bet.",
                         "True Count +1 to +2: small raise.",
@@ -4757,7 +4757,7 @@ struct HowToCountCardsView: View {
 
                 HowToCountSectionView(
                     title: "5. Stay Disciplined",
-                    body: "Counting isn’t about winning every session—it’s about playing thousands of hands with a small edge. Stay calm, avoid emotional bets, and always prioritize longevity.",
+                    descriptionText: "Counting isn’t about winning every session—it’s about playing thousands of hands with a small edge. Stay calm, avoid emotional bets, and always prioritize longevity.",
                     bullets: [
                         "Never chase losses or bet outside the plan.",
                         "If you lose the count, reset and return to minimum bets.",
@@ -4772,14 +4772,14 @@ struct HowToCountCardsView: View {
 
 private struct HowToCountSectionView: View {
     let title: String
-    let body: String
+    let descriptionText: String
     let bullets: [String]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.headline)
-            Text(body)
+            Text(descriptionText)
                 .foregroundColor(.secondary)
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(bullets, id: \.self) { bullet in
