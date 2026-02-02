@@ -4803,29 +4803,50 @@ private struct HowToCountSectionView: View {
 private struct YouTubeVideoView: View {
     let videoID: String
 
-    var body: some View {
-        if let url = URL(string: "https://www.youtube.com/embed/\(videoID)") {
-            WebView(url: url)
-        } else {
-            VStack(spacing: 8) {
-                Image(systemName: "video.slash")
-                    .font(.title2)
-                Text("Video unavailable")
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.secondary.opacity(0.08))
-        }
+    private var embedHTML: String {
+        """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name=\"viewport\" content=\"initial-scale=1.0, maximum-scale=1.0\" />
+            <style>
+              html, body { margin: 0; padding: 0; background: transparent; height: 100%; }
+              .video-wrapper { position: relative; padding-bottom: 56.25%; height: 0; }
+              iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+            </style>
+          </head>
+          <body>
+            <div class=\"video-wrapper\">
+              <iframe
+                src=\"https://www.youtube.com/embed/\(videoID)?playsinline=1&modestbranding=1\"
+                title=\"YouTube video player\"
+                allow=\"autoplay; encrypted-media; picture-in-picture\"
+                allowfullscreen
+              ></iframe>
+            </div>
+          </body>
+        </html>
+        """
     }
+
+    var body: some View {
+        WebView(content: .html(embedHTML))
+    }
+}
+
+private enum WebViewContent: Equatable {
+    case url(URL)
+    case html(String)
 }
 
 #if canImport(UIKit)
 private struct WebView: UIViewRepresentable {
-    let url: URL
+    let content: WebViewContent
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
         let view = WKWebView(frame: .zero, configuration: config)
         view.scrollView.isScrollEnabled = false
         view.backgroundColor = .clear
@@ -4834,25 +4855,36 @@ private struct WebView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        if uiView.url != url {
-            uiView.load(URLRequest(url: url))
+        switch content {
+        case .url(let url):
+            if uiView.url != url {
+                uiView.load(URLRequest(url: url))
+            }
+        case .html(let html):
+            uiView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
         }
     }
 }
 #elseif canImport(AppKit)
 private struct WebView: NSViewRepresentable {
-    let url: URL
+    let content: WebViewContent
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.mediaTypesRequiringUserActionForPlayback = []
         let view = WKWebView(frame: .zero, configuration: config)
         view.setValue(false, forKey: "drawsBackground")
         return view
     }
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
-        if nsView.url != url {
-            nsView.load(URLRequest(url: url))
+        switch content {
+        case .url(let url):
+            if nsView.url != url {
+                nsView.load(URLRequest(url: url))
+            }
+        case .html(let html):
+            nsView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
         }
     }
 }
