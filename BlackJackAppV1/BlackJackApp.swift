@@ -4696,6 +4696,7 @@ struct PlaceholderFeatureView: View {
 
 struct SupportProjectView: View {
     private let patreonURL = URL(string: "https://patreon.com/AdvantagedPlayAnalytics?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink")!
+    private let youtubeURL = URL(string: "https://www.youtube.com/@AdvantagePlayAnalytics")!
 
     var body: some View {
         VStack(spacing: 20) {
@@ -4703,14 +4704,26 @@ struct SupportProjectView: View {
                 .font(.largeTitle.weight(.semibold))
                 .multilineTextAlignment(.center)
 
-            Link(destination: patreonURL) {
-                Label("Support on Patreon", systemImage: "heart.fill")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.accentColor)
-                    .cornerRadius(12)
+            VStack(spacing: 12) {
+                Link(destination: patreonURL) {
+                    Label("Support on Patreon", systemImage: "heart.fill")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .cornerRadius(12)
+                }
+
+                Link(destination: youtubeURL) {
+                    Label("Watch on YouTube", systemImage: "play.rectangle.fill")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor.opacity(0.85))
+                        .cornerRadius(12)
+                }
             }
             .padding(.horizontal)
         }
