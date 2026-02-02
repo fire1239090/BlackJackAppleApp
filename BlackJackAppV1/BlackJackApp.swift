@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import UIKit
+import WebKit
 #if canImport(Charts)
 import Charts
 #endif
@@ -4693,6 +4694,221 @@ struct PlaceholderFeatureView: View {
         .padding()
     }
 }
+
+struct HowToCountCardsView: View {
+    private let videoID = "-PtwX44oG-M"
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                YouTubeVideoView(videoID: videoID)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("How to Count Cards")
+                        .font(.title2.weight(.bold))
+                    Text("Counting cards is a disciplined, step-by-step process. You don’t jump straight to betting big—you first master perfect play, then layer in the count, then translate it into a true count, and only then adjust your bets. This keeps your edge consistent and protects your bankroll.")
+                        .foregroundColor(.secondary)
+                }
+
+                HowToCountSectionView(
+                    title: "1. Play Basic Strategy Perfectly",
+                    descriptionText: "Basic strategy is non-negotiable. If you make mistakes on hit/stand/double/split decisions, any advantage from counting disappears. Memorize the chart for the rules you’re playing and rehearse until every decision is automatic. Counting works only when your baseline play is correct.",
+                    bullets: [
+                        "Use the strategy chart every session until you can recall it without hesitation.",
+                        "Focus on hard totals, soft totals, and pair splits separately.",
+                        "Avoid “gut feel” decisions—stick to the chart every hand."
+                    ]
+                )
+
+                HowToCountSectionView(
+                    title: "2. Keep a Running Count",
+                    descriptionText: "Use a simple counting system like Hi-Lo to track the ratio of high to low cards remaining. Assign values to each card as it appears, then keep a running total.",
+                    bullets: [
+                        "2–6 = +1 (helps the player).",
+                        "7–9 = 0 (neutral).",
+                        "10–A = -1 (helps the dealer).",
+                        "Start at 0 each shuffle and update the count every card."
+                    ]
+                )
+
+                HowToCountSectionView(
+                    title: "3. Convert to a True Count",
+                    descriptionText: "The running count means different things in a single-deck game versus a six-deck shoe. Normalize it by dividing by the number of decks remaining to get the true count.",
+                    bullets: [
+                        "Estimate decks remaining by looking at the discard tray.",
+                        "True Count = Running Count ÷ Decks Remaining.",
+                        "Round down in your favor if you want to stay conservative."
+                    ]
+                )
+
+                HowToCountSectionView(
+                    title: "4. Size Your Bets to the True Count",
+                    descriptionText: "You only press your bet when the true count is positive enough to give you the edge. Keep bets small or minimum at low/negative counts, and scale up as the count rises.",
+                    bullets: [
+                        "True Count ≤ 0: minimum bet.",
+                        "True Count +1 to +2: small raise.",
+                        "True Count +3 and higher: increase in steps based on your risk tolerance.",
+                        "Use a consistent bet spread you can sustain without overheating your bankroll."
+                    ]
+                )
+
+                HowToCountSectionView(
+                    title: "5. Stay Disciplined",
+                    descriptionText: "Counting isn’t about winning every session—it’s about playing thousands of hands with a small edge. Stay calm, avoid emotional bets, and always prioritize longevity.",
+                    bullets: [
+                        "Never chase losses or bet outside the plan.",
+                        "If you lose the count, reset and return to minimum bets.",
+                        "Practice regularly so counting stays effortless under pressure."
+                    ]
+                )
+            }
+            .padding()
+        }
+    }
+}
+
+private struct HowToCountSectionView: View {
+    let title: String
+    let descriptionText: String
+    let bullets: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+            Text(descriptionText)
+                .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(bullets, id: \.self) { bullet in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("•")
+                            .font(.headline)
+                        Text(bullet)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct YouTubeVideoView: View {
+    let videoID: String
+
+    private var embedHTML: String {
+        """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name=\"viewport\" content=\"initial-scale=1.0, maximum-scale=1.0\" />
+            <style>
+              html, body { margin: 0; padding: 0; background: transparent; height: 100%; }
+              .video-wrapper { position: relative; padding-bottom: 56.25%; height: 0; }
+              iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+            </style>
+          </head>
+          <body>
+            <div class=\"video-wrapper\">
+              <iframe
+                src=\"https://www.youtube.com/embed/\(videoID)?playsinline=1&modestbranding=1\"
+                title=\"YouTube video player\"
+                allow=\"autoplay; encrypted-media; picture-in-picture\"
+                allowfullscreen
+              ></iframe>
+            </div>
+          </body>
+        </html>
+        """
+    }
+
+    var body: some View {
+        WebView(content: .html(embedHTML))
+    }
+}
+
+private enum WebViewContent: Equatable {
+    case url(URL)
+    case html(String)
+}
+
+#if canImport(UIKit)
+private struct WebView: UIViewRepresentable {
+    let content: WebViewContent
+    
+    final class Coordinator {
+        var lastLoadedContent: WebViewContent?
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
+        let view = WKWebView(frame: .zero, configuration: config)
+        view.scrollView.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        return view
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        guard context.coordinator.lastLoadedContent != content else { return }
+        switch content {
+        case .url(let url):
+            if uiView.url != url {
+                uiView.load(URLRequest(url: url))
+            }
+        case .html(let html):
+            uiView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
+        }
+        context.coordinator.lastLoadedContent = content
+    }
+}
+#elseif canImport(AppKit)
+private struct WebView: NSViewRepresentable {
+    let content: WebViewContent
+    
+    final class Coordinator {
+        var lastLoadedContent: WebViewContent?
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.mediaTypesRequiringUserActionForPlayback = []
+        let view = WKWebView(frame: .zero, configuration: config)
+        view.setValue(false, forKey: "drawsBackground")
+        return view
+    }
+
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        guard context.coordinator.lastLoadedContent != content else { return }
+        switch content {
+        case .url(let url):
+            if nsView.url != url {
+                nsView.load(URLRequest(url: url))
+            }
+        case .html(let html):
+            nsView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
+        }
+        context.coordinator.lastLoadedContent = content
+    }
+}
+#endif
 
 struct SupportProjectView: View {
     private let patreonURL = URL(string: "https://patreon.com/AdvantagedPlayAnalytics?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink")!
@@ -10957,7 +11173,7 @@ struct HomeView: View {
                         .padding(.top, 12)
 
                     NavigationLink {
-                        PlaceholderFeatureView(title: "How to Count Cards")
+                        HowToCountCardsView()
                             .navigationTitle("How to Count Cards")
                             .navigationBarTitleDisplayMode(.inline)
                     } label: {
