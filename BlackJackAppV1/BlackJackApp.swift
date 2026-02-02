@@ -4694,6 +4694,31 @@ struct PlaceholderFeatureView: View {
     }
 }
 
+struct SupportProjectView: View {
+    private let patreonURL = URL(string: "https://patreon.com/AdvantagedPlayAnalytics?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink")!
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Support This Project")
+                .font(.largeTitle.weight(.semibold))
+                .multilineTextAlignment(.center)
+
+            Link(destination: patreonURL) {
+                Label("Support on Patreon", systemImage: "heart.fill")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.accentColor)
+                    .cornerRadius(12)
+            }
+            .padding(.horizontal)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+}
+
 struct StrategyQuizResult {
     let incorrectCount: Int
     let includedSections: [StrategyChartSectionType]
@@ -10955,7 +10980,7 @@ struct HomeView: View {
                     }
 
                     NavigationLink {
-                        PlaceholderFeatureView(title: "Support This Project")
+                        SupportProjectView()
                             .navigationTitle("Support")
                             .navigationBarTitleDisplayMode(.inline)
                     } label: {
