@@ -4829,7 +4829,7 @@ private struct YouTubeVideoView: View {
           <body>
             <div class=\"video-wrapper\">
               <iframe
-                src=\"https://www.youtube.com/embed/\(videoID)?playsinline=1&modestbranding=1&rel=0&enablejsapi=1&origin=https://www.youtube.com\"
+                src=\"https://www.youtube.com/embed/\(videoID)?playsinline=1&modestbranding=1&rel=0\"
                 title=\"YouTube video player\"
                 allow=\"autoplay; encrypted-media; picture-in-picture; fullscreen\"
                 allowfullscreen
