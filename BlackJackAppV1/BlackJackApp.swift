@@ -7521,7 +7521,7 @@ struct HandSimulationRunView: View {
     ) -> some View {
         let indicatorSize = max(CGFloat(8), layout.cardWidth * 0.08 * scale)
 
-        ZStack(alignment: .bottomLeading) {
+        return ZStack(alignment: .bottomLeading) {
             ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
                 SpeedCounterCardView(card: card)
                     .frame(width: layout.cardWidth * scale)
