@@ -7519,7 +7519,7 @@ struct HandSimulationRunView: View {
         isActive: Bool,
         showActiveIndicator: Bool
     ) -> some View {
-        let indicatorSize = max(8, layout.cardWidth * 0.08 * scale)
+        let indicatorSize = max(CGFloat(8), layout.cardWidth * 0.08 * scale)
 
         ZStack(alignment: .bottomLeading) {
             ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
