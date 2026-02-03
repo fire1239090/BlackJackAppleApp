@@ -4697,6 +4697,9 @@ struct PlaceholderFeatureView: View {
 
 struct HowToCountCardsView: View {
     private let videoID = "-PtwX44oG-M"
+    private var videoURL: URL {
+        URL(string: "https://www.youtube.com/watch?v=\(videoID)")!
+    }
 
     var body: some View {
         ScrollView {
@@ -4705,6 +4708,14 @@ struct HowToCountCardsView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                Link(destination: videoURL) {
+                    Label("Open video in YouTube", systemImage: "play.rectangle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.secondary.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("How to Count Cards")
@@ -4818,9 +4829,9 @@ private struct YouTubeVideoView: View {
           <body>
             <div class=\"video-wrapper\">
               <iframe
-                src=\"https://www.youtube.com/embed/\(videoID)?playsinline=1&modestbranding=1\"
+                src=\"https://www.youtube.com/embed/\(videoID)?playsinline=1&modestbranding=1&rel=0&enablejsapi=1&origin=https://www.youtube.com\"
                 title=\"YouTube video player\"
-                allow=\"autoplay; encrypted-media; picture-in-picture\"
+                allow=\"autoplay; encrypted-media; picture-in-picture; fullscreen\"
                 allowfullscreen
               ></iframe>
             </div>
