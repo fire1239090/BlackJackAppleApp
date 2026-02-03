@@ -7254,11 +7254,14 @@ struct HandSimulationRunView: View {
             let maxHeight = layoutInfo.maxHeight
             let horizontalPadding = enumeratedHands.isEmpty ? 0 : max((proxy.size.width - contentWidth) / 2, 0)
 
+            let showActiveIndicator = playerHands.count > 1
+
             HStack(spacing: 0) {
                 ForEach(enumeratedHands, id: \.element.id) { index, hand in
-                    let handScale = layout.handScale(isActive: index == activeHandIndex) * scale
+                    let isActive = index == activeHandIndex
+                    let handScale = layout.handScale(isActive: isActive) * scale
                     let width = max(slotWidth, handWidth(hand, layout: layout, scale: handScale, globalScale: 1))
-                    playerHandView(hand, layout: layout, scale: handScale)
+                    playerHandView(hand, layout: layout, scale: handScale, isActive: isActive, showActiveIndicator: showActiveIndicator)
                         .frame(width: width, height: maxHeight, alignment: .bottom)
                 }
             }
@@ -7509,8 +7512,16 @@ struct HandSimulationRunView: View {
         }
     }
 
-    private func playerHandView(_ hand: SpeedCounterHandState, layout: SimulationLayout, scale: CGFloat) -> some View {
-        ZStack(alignment: .bottomLeading) {
+    private func playerHandView(
+        _ hand: SpeedCounterHandState,
+        layout: SimulationLayout,
+        scale: CGFloat,
+        isActive: Bool,
+        showActiveIndicator: Bool
+    ) -> some View {
+        let indicatorSize = max(CGFloat(8), layout.cardWidth * 0.08 * scale)
+
+        return ZStack(alignment: .bottomLeading) {
             ForEach(Array(hand.cards.enumerated()), id: \.offset) { index, card in
                 SpeedCounterCardView(card: card)
                     .frame(width: layout.cardWidth * scale)
@@ -7532,6 +7543,18 @@ struct HandSimulationRunView: View {
             height: handHeight(hand, layout: layout, scale: scale, globalScale: 1),
             alignment: .bottomLeading
         )
+        .overlay(alignment: .top) {
+            if showActiveIndicator && isActive {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: indicatorSize, height: indicatorSize)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.7), lineWidth: max(1, indicatorSize * 0.15))
+                    )
+                    .accessibilityLabel("Active hand")
+            }
+        }
     }
 
     private func totalHandsWidth(layout: SimulationLayout, globalScale: CGFloat = 1) -> CGFloat {
