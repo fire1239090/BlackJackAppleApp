@@ -4038,7 +4038,11 @@ struct ContentView: View {
     @State private var numRealities: Int = 500
     @State private var bankroll: Double = 10000
     @State private var deviations: [DeviationRule] = DeviationRule.defaultRules
-    @State private var debugEnabled: Bool = false
+
+    @State private var showPenetrationInfo: Bool = false
+    @State private var showBetSpreadInfo: Bool = false
+    @State private var showDeviationsInfo: Bool = false
+    @State private var showSimulationInfo: Bool = false
 
     @State private var result: SimulationResult?
     @State private var isSimulating: Bool = false
@@ -4055,10 +4059,6 @@ struct ContentView: View {
     @State private var runBeingRenamed: SavedRun?
     @State private var renameText: String = ""
     @State private var duplicateRenameAlert: Bool = false
-
-    @State private var debugRecords: [DebugRecord] = []
-    @State private var debugCSV: String = ""
-    @State private var copyStatus: String?
 
     private var currentRuleSet: GameRules {
         GameRules(
@@ -4083,7 +4083,6 @@ struct ContentView: View {
                     resultSection
                     recentRunsSection
                     savedRunsSection
-                    debugSection
                 }
                 .padding()
             }
@@ -4131,6 +4130,26 @@ struct ContentView: View {
                 }
             }
         }
+        .alert("Penetration", isPresented: $showPenetrationInfo) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("The percentage of the deck that is dealt before a shuffle.")
+        }
+        .alert("Bet Spreads", isPresented: $showBetSpreadInfo) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("The way betting changes at different True Counts.")
+        }
+        .alert("Deviations", isPresented: $showDeviationsInfo) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Changes to basic strategy based on True Count.")
+        }
+        .alert("Simulation", isPresented: $showSimulationInfo) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("The simulator runs many independent realities. For each one, it deals a set number of hands based on your hours and hands-per-hour settings, applies your rules, bet spread, and enabled deviations hand-by-hand, then records outcomes. It combines all realities to estimate EV/hour, variance, and risk of ruin.")
+        }
         .navigationViewStyle(.stack)
     }
 
@@ -4150,6 +4169,13 @@ struct ContentView: View {
             Toggle("Surrender allowed", isOn: $surrenderAllowed)
             HStack {
                 Text("Penetration")
+                Button {
+                    showPenetrationInfo = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
                 Slider(value: $penetration, in: 0.5...0.95)
                 Text(String(format: "%.0f%%", penetration * 100))
             }
@@ -4163,7 +4189,19 @@ struct ContentView: View {
     }
 
     private var bettingSection: some View {
-        Section(header: Text("Bet Spreads").font(.headline)) {
+        Section(header:
+            HStack(spacing: 8) {
+                Text("Bet Spreads")
+                    .font(.headline)
+                Button {
+                    showBetSpreadInfo = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+            }
+        ) {
             HStack {
                 Text("Min bet")
                 TextField("Min", value: $minBet, format: .number)
@@ -4208,7 +4246,19 @@ struct ContentView: View {
     }
 
     private var deviationSection: some View {
-        Section(header: Text("Deviations").font(.headline)) {
+        Section(header:
+            HStack(spacing: 8) {
+                Text("Deviations")
+                    .font(.headline)
+                Button {
+                    showDeviationsInfo = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+            }
+        ) {
             NavigationLink {
                 DeviationManagerView(deviations: $deviations, currentRules: currentRuleSet)
             } label: {
@@ -4228,7 +4278,19 @@ struct ContentView: View {
     }
 
     private var simSection: some View {
-        Section(header: Text("Simulation").font(.headline)) {
+        Section(header:
+            HStack(spacing: 8) {
+                Text("Simulation")
+                    .font(.headline)
+                Button {
+                    showSimulationInfo = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+            }
+        ) {
             HStack {
                 Text("Hours per simulation")
                 TextField("5", value: $hoursToSimulate, format: .number)
@@ -4253,7 +4315,6 @@ struct ContentView: View {
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
             }
-            Toggle("Enable debug logging", isOn: $debugEnabled)
 
             HStack {
                 Button(action: runSimulation) {
@@ -4398,50 +4459,6 @@ struct ContentView: View {
         }
     }
 
-    private var debugSection: some View {
-        Section(header: Text("Debug").font(.headline)) {
-            if debugEnabled {
-                Text("Debug logging is ON. Run a simulation to capture decisions (up to 5000 hands).")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            } else {
-                Text("Enable debug logging above to record per-hand decisions.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            if !debugRecords.isEmpty {
-                Text("Logged \(debugRecords.count) decisions.")
-                    .font(.subheadline)
-
-                ScrollView(.horizontal) {
-                    ScrollView {
-                        Text(debugCSV)
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                    }
-                }
-
-                HStack {
-                    Button("Copy CSV") {
-                        copyDebugCSV()
-                    }
-                    .disabled(debugCSV.isEmpty)
-
-                    if let copyStatus {
-                        Text(copyStatus)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                Text("Select and copy the text above to paste into a CSV file or spreadsheet.")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-
     // MARK: - Saved runs
 
     private func loadSavedRuns() {
@@ -4558,20 +4575,7 @@ struct ContentView: View {
         spreads.remove(atOffsets: offsets)
     }
 
-    private func copyDebugCSV() {
-        guard !debugCSV.isEmpty else { return }
-#if canImport(UIKit)
-        UIPasteboard.general.string = debugCSV
-        copyStatus = "Copied to clipboard"
-#else
-        copyStatus = "Copy not supported on this platform"
-#endif
 
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            copyStatus = nil
-        }
-    }
 
     // MARK: - Simulation controls
 
@@ -4581,42 +4585,7 @@ struct ContentView: View {
         isSimulating = false
     }
 
-    private func makeCSV(from records: [DebugRecord]) -> String {
-        var lines: [String] = [
-            "reality,handIndex,splitDepth,trueCount,playerCards,dealerUp,dealerHole,total,isSoft,action,wager,insuranceBet,insuranceDecision,insuranceResult,insuranceNet,bankrollStart,payout,bankrollEnd,result,playerFinal,dealerFinal"
-        ]
-        for r in records {
-            let cards = r.playerCards.map(String.init).joined(separator: "-")
-            let insuranceResult = r.insuranceResult ?? "null"
-            let insuranceNet = r.insuranceNet.map { String(format: "%.2f", $0) } ?? "null"
-            let entries: [String] = [
-                "\(r.realityIndex)",
-                "\(r.handIndex)",
-                "\(r.splitDepth)",
-                String(format: "%.2f", r.trueCount),
-                cards,
-                "\(r.dealerUp)",
-                "\(r.dealerHole)",
-                "\(r.total)",
-                r.isSoft ? "1" : "0",
-                r.action,
-                String(format: "%.2f", r.wager),
-                String(format: "%.2f", r.insuranceBet),
-                r.insuranceDecision,
-                insuranceResult,
-                insuranceNet,
-                String(format: "%.2f", r.bankrollStart),
-                String(format: "%.2f", r.payout),
-                String(format: "%.2f", r.bankrollEnd),
-                r.result,
-                "\(r.playerFinal)",
-                "\(r.dealerFinal)"
-            ]
 
-            lines.append(entries.joined(separator: ","))
-        }
-        return lines.joined(separator: "\n")
-    }
 
     private func runSimulation() {
         guard !isSimulating else { return }
@@ -4626,9 +4595,6 @@ struct ContentView: View {
         completedSimulations = 0
         startTime = Date()
         result = nil
-        debugRecords = []
-        debugCSV = ""
-        copyStatus = nil
 
         let input = SimulationInput(
             rules: currentRuleSet,
@@ -4646,7 +4612,7 @@ struct ContentView: View {
         )
 
         simulationTask = Task(priority: .userInitiated) {
-            let simulator = BlackjackSimulator(input: input, debugEnabled: debugEnabled)
+            let simulator = BlackjackSimulator(input: input, debugEnabled: false)
 
             let outcome = await simulator.simulate(
                 input: input,
@@ -4668,10 +4634,6 @@ struct ContentView: View {
                         self.trimRecentRuns()
                         self.persistRecentRuns()
 
-                        if self.debugEnabled {
-                            self.debugRecords = simulator.debugLog
-                            self.debugCSV = makeCSV(from: simulator.debugLog)
-                        }
                     }
                 }
             }
