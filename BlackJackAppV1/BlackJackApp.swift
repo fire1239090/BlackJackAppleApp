@@ -6115,14 +6115,19 @@ struct DeckEstimationTrainingView: View {
 
     private func submitGuess() {
         let difference = abs(selectedGuess - currentDecks)
+        let exactlyCorrect = difference <= 0.0001
         let correct = difference <= 0.25 + 0.0001
         stats.deckEstimationTotal += 1
         if correct { stats.deckEstimationCorrect += 1 }
 
         let correctLabel = DeckBetTrainingConstants.deckLabel(currentDecks)
-        feedback = correct
-            ? "Within the margin! The discard tray showed \(correctLabel) decks."
-            : "Not quite. It was \(correctLabel) decks."
+        if exactlyCorrect {
+            feedback = "Exactly right! You nailed it at \(correctLabel) decks."
+        } else if correct {
+            feedback = "Within the margin! The discard tray showed \(correctLabel) decks."
+        } else {
+            feedback = "Not quite. It was \(correctLabel) decks."
+        }
 
         let nextDecks = DeckBetTrainingConstants.deckCounts.randomElement() ?? currentDecks
 
