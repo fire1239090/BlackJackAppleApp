@@ -9143,6 +9143,9 @@ struct CardSortingView: View {
     @State private var attemptsThisSession: Int = 0
     @State private var correctThisSession: Int = 0
     @State private var cardShownAt: Date = Date()
+    @State private var showIncorrectSortPopup: Bool = false
+    @State private var incorrectSortMessage: String = ""
+    @State private var shouldAdvanceAfterIncorrectAlert: Bool = false
 
     private var attempts: [CardSortingAttemptEntry] {
         (try? JSONDecoder().decode([CardSortingAttemptEntry].self, from: storedAttempts)) ?? []
@@ -9183,6 +9186,16 @@ struct CardSortingView: View {
             if !showIntro {
                 cardShownAt = Date()
             }
+        }
+        .alert("Incorrect Sort", isPresented: $showIncorrectSortPopup) {
+            Button("Continue", role: .cancel) {
+                if shouldAdvanceAfterIncorrectAlert {
+                    shouldAdvanceAfterIncorrectAlert = false
+                    advanceToNextCard()
+                }
+            }
+        } message: {
+            Text(incorrectSortMessage)
         }
     }
 
@@ -9332,7 +9345,21 @@ struct CardSortingView: View {
             ? "Correct! \(currentCard.display) is \(currentCard.category.rawValue)."
             : "Oops! \(currentCard.display) is \(currentCard.category.rawValue)."
 
+        if !isCorrect {
+            incorrectSortMessage = "\(currentCard.display) belongs in \(currentCard.category.rawValue)."
+            showIncorrectSortPopup = true
+        }
+
         appendAttempt(correct: isCorrect, decisionTime: decisionDuration)
+
+        if isCorrect {
+            advanceToNextCard()
+        } else {
+            shouldAdvanceAfterIncorrectAlert = true
+        }
+    }
+
+    private func advanceToNextCard() {
         currentCard = TrainingCard.fullDeck().randomElement() ?? currentCard
         cardShownAt = Date()
     }
