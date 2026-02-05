@@ -6124,7 +6124,8 @@ struct DeckEstimationTrainingView: View {
         if exactlyCorrect {
             feedback = "Exactly right! You nailed it at \(correctLabel) decks."
         } else if correct {
-            feedback = "Within the margin! The discard tray showed \(correctLabel) decks."
+            let guessedLabel = DeckBetTrainingConstants.deckLabel(selectedGuess)
+            feedback = "Within the margin! The discard tray showed \(correctLabel) decks and you guessed \(guessedLabel)."
         } else {
             feedback = "Not quite. It was \(correctLabel) decks."
         }
