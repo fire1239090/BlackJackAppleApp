@@ -4856,6 +4856,7 @@ private struct WebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+        config.userContentController.add(context.coordinator, name: "youtubeEmbedStatus")
         let view = WKWebView(frame: .zero, configuration: config)
         view.scrollView.isScrollEnabled = false
         view.backgroundColor = .clear
@@ -4911,6 +4912,7 @@ private struct WebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.mediaTypesRequiringUserActionForPlayback = []
+        config.userContentController.add(context.coordinator, name: "youtubeEmbedStatus")
         let view = WKWebView(frame: .zero, configuration: config)
         view.setValue(false, forKey: "drawsBackground")
         view.navigationDelegate = context.coordinator
