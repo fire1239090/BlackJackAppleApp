@@ -4775,36 +4775,46 @@ private struct HowToCountSectionView: View {
 
 private struct YouTubeVideoView: View {
     let videoID: String
+    @State private var loadState: WebViewLoadState = .loading
 
-    private var embedHTML: String {
-        """
-        <!doctype html>
-        <html>
-          <head>
-            <meta name=\"viewport\" content=\"initial-scale=1.0, maximum-scale=1.0\" />
-            <style>
-              html, body { margin: 0; padding: 0; background: transparent; height: 100%; }
-              .video-wrapper { position: relative; padding-bottom: 56.25%; height: 0; }
-              iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
-            </style>
-          </head>
-          <body>
-            <div class=\"video-wrapper\">
-              <iframe
-                src=\"https://www.youtube.com/embed/\(videoID)?playsinline=1&modestbranding=1&rel=0\"
-                title=\"YouTube video player\"
-                allow=\"autoplay; encrypted-media; picture-in-picture; fullscreen\"
-                allowfullscreen
-              ></iframe>
-            </div>
-          </body>
-        </html>
-        """
+    private var videoURL: URL {
+        URL(string: "https://www.youtube.com/watch?v=\(videoID)")!
+    }
+
+    private var embedURL: URL {
+        URL(string: "https://www.youtube.com/embed/\(videoID)?playsinline=1&modestbranding=1&rel=0")!
     }
 
     var body: some View {
-        WebView(content: .html(embedHTML))
+        ZStack {
+            WebView(content: .url(embedURL), onLoadStateChange: { newState in
+                loadState = newState
+            })
+
+            if case .failed = loadState {
+                VStack(spacing: 10) {
+                    Image(systemName: "play.slash")
+                        .font(.title2)
+                    Text("Embedded playback isn’t available right now.")
+                        .font(.subheadline.weight(.semibold))
+                        .multilineTextAlignment(.center)
+                    Link(destination: videoURL) {
+                        Label("Open in YouTube", systemImage: "arrow.up.right.square")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.ultraThinMaterial)
+            }
+        }
     }
+}
+
+private enum WebViewLoadState: Equatable {
+    case loading
+    case loaded
+    case failed(String)
 }
 
 private enum WebViewContent: Equatable {
@@ -4815,9 +4825,27 @@ private enum WebViewContent: Equatable {
 #if canImport(UIKit)
 private struct WebView: UIViewRepresentable {
     let content: WebViewContent
+    var onLoadStateChange: ((WebViewLoadState) -> Void)? = nil
     
-    final class Coordinator {
+    final class Coordinator: NSObject, WKNavigationDelegate {
         var lastLoadedContent: WebViewContent?
+        var onLoadStateChange: ((WebViewLoadState) -> Void)?
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            onLoadStateChange?(.loading)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            onLoadStateChange?(.loaded)
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            onLoadStateChange?(.failed(error.localizedDescription))
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            onLoadStateChange?(.failed(error.localizedDescription))
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -4832,6 +4860,8 @@ private struct WebView: UIViewRepresentable {
         view.scrollView.isScrollEnabled = false
         view.backgroundColor = .clear
         view.isOpaque = false
+        view.navigationDelegate = context.coordinator
+        context.coordinator.onLoadStateChange = onLoadStateChange
         return view
     }
 
@@ -4851,9 +4881,27 @@ private struct WebView: UIViewRepresentable {
 #elseif canImport(AppKit)
 private struct WebView: NSViewRepresentable {
     let content: WebViewContent
+    var onLoadStateChange: ((WebViewLoadState) -> Void)? = nil
     
-    final class Coordinator {
+    final class Coordinator: NSObject, WKNavigationDelegate {
         var lastLoadedContent: WebViewContent?
+        var onLoadStateChange: ((WebViewLoadState) -> Void)?
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            onLoadStateChange?(.loading)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            onLoadStateChange?(.loaded)
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            onLoadStateChange?(.failed(error.localizedDescription))
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            onLoadStateChange?(.failed(error.localizedDescription))
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -4865,6 +4913,8 @@ private struct WebView: NSViewRepresentable {
         config.mediaTypesRequiringUserActionForPlayback = []
         let view = WKWebView(frame: .zero, configuration: config)
         view.setValue(false, forKey: "drawsBackground")
+        view.navigationDelegate = context.coordinator
+        context.coordinator.onLoadStateChange = onLoadStateChange
         return view
     }
 
