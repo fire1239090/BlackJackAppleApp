@@ -4781,13 +4781,65 @@ private struct YouTubeVideoView: View {
         URL(string: "https://www.youtube.com/watch?v=\(videoID)")!
     }
 
-    private var embedURL: URL {
-        URL(string: "https://www.youtube.com/embed/\(videoID)?playsinline=1&modestbranding=1&rel=0")!
+    private var embedHTML: String {
+        """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name=\"viewport\" content=\"initial-scale=1.0, maximum-scale=1.0\" />
+            <style>
+              html, body { margin: 0; padding: 0; background: transparent; height: 100%; }
+              .video-wrapper { position: relative; width: 100%; height: 100%; }
+              #player { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+            </style>
+            <script>
+              function report(status) {
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.youtubeEmbedStatus) {
+                  window.webkit.messageHandlers.youtubeEmbedStatus.postMessage(status);
+                }
+              }
+
+              var player;
+              var fallbackTimer;
+              function onYouTubeIframeAPIReady() {
+                fallbackTimer = setTimeout(function () {
+                  report('timeout');
+                }, 8000);
+
+                player = new YT.Player('player', {
+                  videoId: '\(videoID)',
+                  playerVars: {
+                    playsinline: 1,
+                    rel: 0,
+                    modestbranding: 1
+                  },
+                  events: {
+                    'onReady': function () {
+                      clearTimeout(fallbackTimer);
+                      report('ready');
+                    },
+                    'onError': function (event) {
+                      clearTimeout(fallbackTimer);
+                      report('error:' + event.data);
+                    }
+                  }
+                });
+              }
+            </script>
+            <script src=\"https://www.youtube.com/iframe_api\"></script>
+          </head>
+          <body>
+            <div class=\"video-wrapper\">
+              <div id=\"player\"></div>
+            </div>
+          </body>
+        </html>
+        """
     }
 
     var body: some View {
         ZStack {
-            WebView(content: .url(embedURL), onLoadStateChange: { newState in
+            WebView(content: .html(embedHTML), onLoadStateChange: { newState in
                 loadState = newState
             })
 
@@ -4827,7 +4879,7 @@ private struct WebView: UIViewRepresentable {
     let content: WebViewContent
     var onLoadStateChange: ((WebViewLoadState) -> Void)? = nil
     
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var lastLoadedContent: WebViewContent?
         var onLoadStateChange: ((WebViewLoadState) -> Void)?
 
@@ -4845,6 +4897,17 @@ private struct WebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             onLoadStateChange?(.failed(error.localizedDescription))
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "youtubeEmbedStatus", let body = message.body as? String else { return }
+            if body == "ready" {
+                onLoadStateChange?(.loaded)
+            } else if body == "timeout" {
+                onLoadStateChange?(.failed("Timed out while loading embed"))
+            } else if body.hasPrefix("error:") {
+                onLoadStateChange?(.failed(body))
+            }
         }
     }
 
@@ -4884,7 +4947,7 @@ private struct WebView: NSViewRepresentable {
     let content: WebViewContent
     var onLoadStateChange: ((WebViewLoadState) -> Void)? = nil
     
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var lastLoadedContent: WebViewContent?
         var onLoadStateChange: ((WebViewLoadState) -> Void)?
 
@@ -4902,6 +4965,17 @@ private struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             onLoadStateChange?(.failed(error.localizedDescription))
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "youtubeEmbedStatus", let body = message.body as? String else { return }
+            if body == "ready" {
+                onLoadStateChange?(.loaded)
+            } else if body == "timeout" {
+                onLoadStateChange?(.failed("Timed out while loading embed"))
+            } else if body.hasPrefix("error:") {
+                onLoadStateChange?(.failed(body))
+            }
         }
     }
 
