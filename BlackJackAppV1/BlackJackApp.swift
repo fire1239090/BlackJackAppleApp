@@ -4788,6 +4788,7 @@ private struct YouTubeVideoView: View {
           <head>
             <meta name=\"viewport\" content=\"initial-scale=1.0, maximum-scale=1.0\" />
             <meta name=\"referrer\" content=\"strict-origin-when-cross-origin\" />
+            <meta http-equiv=\"Referrer-Policy\" content=\"strict-origin-when-cross-origin\" />
             <style>
               html, body { margin: 0; padding: 0; background: transparent; height: 100%; }
               .video-wrapper { position: relative; width: 100%; height: 100%; }
@@ -4812,7 +4813,10 @@ private struct YouTubeVideoView: View {
                   playerVars: {
                     playsinline: 1,
                     rel: 0,
-                    modestbranding: 1
+                    modestbranding: 1,
+                    enablejsapi: 1,
+                    origin: 'https://www.youtube.com',
+                    widget_referrer: 'https://www.youtube.com'
                   },
                   events: {
                     'onReady': function () {
@@ -4820,6 +4824,8 @@ private struct YouTubeVideoView: View {
                       var iframe = player.getIframe && player.getIframe();
                       if (iframe) {
                         iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+                        iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
+                        iframe.setAttribute('allowfullscreen', 'true');
                       }
                       report('ready');
                     },
