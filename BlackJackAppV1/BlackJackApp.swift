@@ -4787,6 +4787,7 @@ private struct YouTubeVideoView: View {
         <html>
           <head>
             <meta name=\"viewport\" content=\"initial-scale=1.0, maximum-scale=1.0\" />
+            <meta name=\"referrer\" content=\"strict-origin-when-cross-origin\" />
             <style>
               html, body { margin: 0; padding: 0; background: transparent; height: 100%; }
               .video-wrapper { position: relative; width: 100%; height: 100%; }
@@ -4816,6 +4817,10 @@ private struct YouTubeVideoView: View {
                   events: {
                     'onReady': function () {
                       clearTimeout(fallbackTimer);
+                      var iframe = player.getIframe && player.getIframe();
+                      if (iframe) {
+                        iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+                      }
                       report('ready');
                     },
                     'onError': function (event) {
