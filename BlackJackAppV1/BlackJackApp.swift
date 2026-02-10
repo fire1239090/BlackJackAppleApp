@@ -6896,7 +6896,8 @@ struct HandSimulationRunView: View {
     private var discardAssetName: String {
         let decksDiscarded = max(0.25, min(Double(cardsPlayed) / 52.0, Double(settings.rules.decks)))
         let closest = discardSizes.min(by: { abs($0 - decksDiscarded) < abs($1 - decksDiscarded) }) ?? 0.25
-        return DeckBetTrainingConstants.deckAssetName(for: closest, showDividers: settings.showDiscardTrayDividers)
+        let shouldShowDividers = isTestOutMode ? false : settings.showDiscardTrayDividers
+        return DeckBetTrainingConstants.deckAssetName(for: closest, showDividers: shouldShowDividers)
     }
 
     private var rules: GameRules {
