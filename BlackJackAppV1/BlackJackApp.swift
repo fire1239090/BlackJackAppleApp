@@ -6360,6 +6360,7 @@ struct HandSimulationSettings {
     var runningCountCadence: Int = 3
     var betTable: BetSizingTable = .default
     var dealSpeed: Double = 0.45
+    var showDiscardTrayDividers: Bool = true
 }
 
 struct HandSimulationSession: Identifiable, Codable {
@@ -6895,7 +6896,7 @@ struct HandSimulationRunView: View {
     private var discardAssetName: String {
         let decksDiscarded = max(0.25, min(Double(cardsPlayed) / 52.0, Double(settings.rules.decks)))
         let closest = discardSizes.min(by: { abs($0 - decksDiscarded) < abs($1 - decksDiscarded) }) ?? 0.25
-        return DeckBetTrainingConstants.deckAssetName(for: closest, showDividers: true)
+        return DeckBetTrainingConstants.deckAssetName(for: closest, showDividers: settings.showDiscardTrayDividers)
     }
 
     private var rules: GameRules {
@@ -8350,6 +8351,7 @@ struct TestOutRunView: View {
         base.runningCountCadence = 3
         base.betTable = .testOutDefault
         base.dealSpeed = Double.random(in: 0.25...0.9)
+        base.showDiscardTrayDividers = false
         return base
     }
 
