@@ -7163,7 +7163,7 @@ struct HandSimulationRunView: View {
 
         return VStack(alignment: .center, spacing: layout.spacing) {
             VStack(spacing: layout.smallSpacing * 0.6) {
-                if bettingEnabled {
+                if bettingEnabled && awaitingBet {
                     Text("Bet Size:")
                         .font(.system(size: 17 * fontScale, weight: .semibold))
                         .frame(maxWidth: .infinity, alignment: .center)
