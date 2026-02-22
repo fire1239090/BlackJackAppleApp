@@ -7682,7 +7682,7 @@ struct HandSimulationRunView: View {
         if remainingFraction < (1 - rules.penetration) || shoe.count < 20 {
             finalizeShoeIfNeeded()
             if isTestOutMode {
-                completeSession()
+                completeSession(testOutSuccess: true)
             } else {
                 startShoe()
             }
@@ -8201,12 +8201,14 @@ struct HandSimulationRunView: View {
         )
     }
 
-    private func completeSession() {
+    private func completeSession(testOutSuccess: Bool = false) {
         finalizeShoeIfNeeded()
         guard !sessionLogged else { return }
         if isTestOutMode {
             sessionLogged = true
-            testOutConfig?.onSuccess()
+            if testOutSuccess {
+                testOutConfig?.onSuccess()
+            }
             dismiss()
             return
         }
