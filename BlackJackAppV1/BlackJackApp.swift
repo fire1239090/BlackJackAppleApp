@@ -6402,6 +6402,17 @@ struct HandSimulationSession: Identifiable, Codable {
 
 struct TestOutConfiguration {
     let onFailure: (TestOutFailureReason) -> Void
+    let onSuccess: () -> Void
+}
+
+struct TestOutCompletionRecord: Identifiable, Codable {
+    let id: UUID
+    let date: Date
+
+    init(date: Date) {
+        id = UUID()
+        self.date = date
+    }
 }
 
 enum TestOutFailureReason: Hashable {
@@ -7669,8 +7680,12 @@ struct HandSimulationRunView: View {
     private func checkForReshuffle() -> Bool {
         let remainingFraction = Double(shoe.count) / Double(max(rules.decks * 52, 1))
         if remainingFraction < (1 - rules.penetration) || shoe.count < 20 {
-            finalizeShoeIfNeeded()
-            startShoe()
+            if isTestOutMode {
+                completeSession(testOutSuccess: true)
+            } else {
+                finalizeShoeIfNeeded()
+                startShoe()
+            }
             return true
         }
         return false
@@ -8186,11 +8201,14 @@ struct HandSimulationRunView: View {
         )
     }
 
-    private func completeSession() {
+    private func completeSession(testOutSuccess: Bool = false) {
         finalizeShoeIfNeeded()
         guard !sessionLogged else { return }
         if isTestOutMode {
             sessionLogged = true
+            if testOutSuccess {
+                testOutConfig?.onSuccess()
+            }
             dismiss()
             return
         }
@@ -8212,12 +8230,24 @@ struct HandSimulationRunView: View {
 // MARK: - Test Out
 
 struct TestOutView: View {
+    @AppStorage("testOutCompletions") private var storedCompletions: Data = Data()
+
     @State private var allowSurrender: Bool = true
     @State private var currentRunID: UUID = UUID()
     @State private var navigateToRun: Bool = false
     @State private var failureReason: TestOutFailureReason?
+    @State private var navigateToSuccess: Bool = false
 
     private let betTable = BetSizingTable.testOutDefault
+
+    private var allCompletions: [TestOutCompletionRecord] {
+        (try? JSONDecoder().decode([TestOutCompletionRecord].self, from: storedCompletions)) ?? []
+    }
+
+    private var weeklyCompletionsCount: Int {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return 0 }
+        return allCompletions.filter { $0.date >= weekAgo }.count
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -8235,6 +8265,8 @@ struct TestOutView: View {
                         .toggleStyle(SwitchToggleStyle(tint: .accentColor))
 
                     BetSizingTableView(betTable: betTable, isEditable: false, title: "True Count / Bet Spread")
+
+                    testOutStatsSummary
 
                     Button(action: startTestOut) {
                         Text("Start Test Out")
@@ -8272,14 +8304,37 @@ struct TestOutView: View {
         .cornerRadius(12)
     }
 
+    private var testOutStatsSummary: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Test Out Successes")
+                .font(.headline)
+            Text("All-time: \(allCompletions.count)")
+            Text("Last 7 days: \(weeklyCompletionsCount)")
+                .foregroundColor(.secondary)
+        }
+        .font(.subheadline)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08))
+        .cornerRadius(12)
+    }
+
     private var navigationLinks: some View {
         Group {
             NavigationLink(isActive: $navigateToRun) {
                 TestOutRunView(
                     surrenderAllowed: allowSurrender,
                     runID: currentRunID,
-                    onFailure: handleFailure
+                    onFailure: handleFailure,
+                    onSuccess: handleSuccess
                 )
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+
+            NavigationLink(isActive: $navigateToSuccess) {
+                TestOutSuccessView(onDone: resetToStart)
             } label: {
                 EmptyView()
             }
@@ -8312,18 +8367,32 @@ struct TestOutView: View {
     private func startTestOut() {
         currentRunID = UUID()
         failureReason = nil
+        navigateToSuccess = false
         navigateToRun = true
     }
 
     private func handleFailure(_ reason: TestOutFailureReason) {
         navigateToRun = false
+        navigateToSuccess = false
         failureReason = reason
+    }
+
+    private func handleSuccess() {
+        var completions = allCompletions
+        completions.append(TestOutCompletionRecord(date: Date()))
+        if let data = try? JSONEncoder().encode(completions) {
+            storedCompletions = data
+        }
+        failureReason = nil
+        navigateToRun = false
+        navigateToSuccess = true
     }
 
     private func resetToStart() {
         currentRunID = UUID()
         failureReason = nil
         navigateToRun = false
+        navigateToSuccess = false
     }
 }
 
@@ -8331,6 +8400,7 @@ struct TestOutRunView: View {
     let surrenderAllowed: Bool
     let runID: UUID
     let onFailure: (TestOutFailureReason) -> Void
+    let onSuccess: () -> Void
 
     @State private var sessionSettings: HandSimulationSettings?
 
@@ -8359,11 +8429,18 @@ struct TestOutRunView: View {
             onComplete: { _ in },
             navigationTitle: "Test Out",
             endActionLabel: "End Test",
-            testOutConfig: TestOutConfiguration(onFailure: { reason in
-                DispatchQueue.main.async {
-                    onFailure(reason)
+            testOutConfig: TestOutConfiguration(
+                onFailure: { reason in
+                    DispatchQueue.main.async {
+                        onFailure(reason)
+                    }
+                },
+                onSuccess: {
+                    DispatchQueue.main.async {
+                        onSuccess()
+                    }
                 }
-            })
+            )
         )
         .id(runID)
         .navigationBarBackButtonHidden(false)
@@ -8372,6 +8449,38 @@ struct TestOutRunView: View {
                 sessionSettings = configuredSettings
             }
         }
+    }
+}
+
+struct TestOutSuccessView: View {
+    let onDone: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 56))
+                .foregroundColor(.green)
+            Text("Congratulations!")
+                .font(.title2.weight(.semibold))
+            Text("You completed a full shoe without any test out errors.")
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
+
+            Button(action: onDone) {
+                Text("Back to Test Out")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.horizontal)
+
+            Spacer()
+        }
+        .padding()
+        .navigationBarBackButtonHidden(true)
     }
 }
 
@@ -10895,6 +11004,7 @@ struct TrainingStatsView: View {
     @AppStorage("strategyQuizFullCompletions") private var quizFullCompletions: Int = 0
     @AppStorage("deckBetTrainingStats") private var deckBetStatsData: Data = Data()
     @AppStorage("handSimulationSessions") private var storedHandSimulation: Data = Data()
+    @AppStorage("testOutCompletions") private var storedTestOutCompletions: Data = Data()
 
     private var sessions: [DeckCountThroughSession] {
         (try? JSONDecoder().decode([DeckCountThroughSession].self, from: storedSessions)) ?? []
@@ -10937,6 +11047,13 @@ struct TrainingStatsView: View {
     }
     private var handSimulationOverall: HandSimulationStats { .make(for: handSimulationSessions) }
     private var handSimulationWeekly: HandSimulationStats { .make(for: lastWeekHandSimulation) }
+    private var testOutCompletions: [TestOutCompletionRecord] {
+        (try? JSONDecoder().decode([TestOutCompletionRecord].self, from: storedTestOutCompletions)) ?? []
+    }
+    private var testOutLastWeekCompletions: [TestOutCompletionRecord] {
+        guard let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else { return [] }
+        return testOutCompletions.filter { $0.date >= weekAgo }
+    }
 
     var body: some View {
         List {
@@ -11001,11 +11118,13 @@ struct TrainingStatsView: View {
                 statRow(title: "Longest Perfect Shoe Streak", overall: Double(handSimulationOverall.longestPerfectStreak), weekly: Double(handSimulationWeekly.longestPerfectStreak), formatter: countLabel)
             }
 
-            Section("More Training Stats") {
-                Text("Attempt the Test Out from the Training Suite. Performance tracking will appear here in a future update.")
-                    .foregroundColor(.secondary)
-                    .font(.subheadline)
-                    .padding(.vertical, 4)
+            Section("Test Out") {
+                statRow(
+                    title: "Successful Test Outs",
+                    overall: Double(testOutCompletions.count),
+                    weekly: Double(testOutLastWeekCompletions.count),
+                    formatter: countLabel
+                )
             }
         }
         .navigationTitle("Training Stats")
