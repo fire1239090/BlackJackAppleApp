@@ -6952,8 +6952,10 @@ struct HandSimulationRunView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(endActionLabel, action: completeSession)
-                            .fontWeight(.semibold)
+                        Button(endActionLabel) {
+                            completeSession()
+                        }
+                        .fontWeight(.semibold)
                     }
                 }
 
