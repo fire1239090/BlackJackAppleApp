@@ -7680,10 +7680,10 @@ struct HandSimulationRunView: View {
     private func checkForReshuffle() -> Bool {
         let remainingFraction = Double(shoe.count) / Double(max(rules.decks * 52, 1))
         if remainingFraction < (1 - rules.penetration) || shoe.count < 20 {
-            finalizeShoeIfNeeded()
             if isTestOutMode {
                 completeSession(testOutSuccess: true)
             } else {
+                finalizeShoeIfNeeded()
                 startShoe()
             }
             return true
