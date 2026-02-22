@@ -6354,7 +6354,6 @@ struct HandSimulationSettings {
         blackjackPayout: 1.5,
         penetration: 0.75
     )
-    var resplitAces: Bool = true
     var bettingEnabled: Bool = true
     var askRunningCount: Bool = true
     var runningCountCadence: Int = 3
@@ -6532,7 +6531,6 @@ struct HandSimulationView: View {
             }
             Toggle("Dealer Hits Soft 17", isOn: $settings.rules.dealerHitsSoft17)
             Toggle("Surrender Allowed", isOn: $settings.rules.surrenderAllowed)
-            Toggle("Re-split Aces", isOn: $settings.resplitAces)
             VStack(alignment: .leading) {
                 HStack {
                     Text("Penetration")
@@ -7271,7 +7269,7 @@ struct HandSimulationRunView: View {
         case .split:
             if !hand.canSplit { return false }
             if handState.splitDepth >= maxSplitDepth { return false }
-            if hand.isSplitAce && !settings.resplitAces && handState.splitDepth > 0 { return false }
+            if hand.isSplitAce && handState.splitDepth > 0 { return false }
             return true
         case .surrender:
             return rules.surrenderAllowed && hand.cards.count == 2 && handState.splitDepth == 0
@@ -7954,7 +7952,7 @@ struct HandSimulationRunView: View {
         let hand = playerHands[index]
         guard hand.cards.count == 2 else { return }
         guard hand.splitDepth < maxSplitDepth else { return }
-        if hand.isSplitAce && !settings.resplitAces && hand.splitDepth > 0 { return }
+        if hand.isSplitAce && hand.splitDepth > 0 { return }
         let bet = handBet(for: index)
 
         let first = hand.cards[0]
@@ -8346,7 +8344,6 @@ struct TestOutRunView: View {
             blackjackPayout: 1.5,
             penetration: 0.8
         )
-        base.resplitAces = false
         base.bettingEnabled = true
         base.askRunningCount = true
         base.runningCountCadence = 3
